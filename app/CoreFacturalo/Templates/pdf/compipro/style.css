@@ -1,0 +1,165 @@
+/*
+| Plantilla de comprobantes COMPIPRO — formato A4
+|
+| Replica el modelo aprobado por el cliente: cabecera con logo, recuadros con
+| borde, detalle con cabecera naranja y pie de tres bloques.
+|
+| Las variantes con RETENCIÓN y con DETRACCIÓN usan esta misma hoja: los
+| bloques informativos aparecen solo cuando el comprobante los tiene.
+*/
+
+body {
+    font-family: sans-serif;
+    font-size: 8.5pt;
+    color: #000000;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+td, th {
+    vertical-align: top;
+}
+
+.cen { text-align: center; }
+.der { text-align: right; }
+.izq { text-align: left; }
+.negrita { font-weight: bold; }
+
+/* Rótulos en gris azulado, como en el modelo */
+.et {
+    color: #1F4E79;
+    font-weight: normal;
+}
+
+/* ───────── Cabecera ───────── */
+.cabecera { margin-bottom: 8px; }
+
+.col-logo { width: 25%; }
+.col-empresa { width: 45%; font-size: 8pt; line-height: 1.35; }
+.col-doc { width: 30%; }
+
+/* El logo se adapta al ancho de su columna y se limita en alto, de modo que
+   cualquier tamaño de imagen entre sin desarmar la cabecera. */
+.logo { max-width: 100%; max-height: 62px; }
+
+.empresa-nombre {
+    font-weight: bold;
+    font-size: 9.5pt;
+}
+
+.caja-doc {
+    border: 1px solid #000000;
+    width: 100%;
+}
+
+.caja-doc td {
+    text-align: center;
+    padding: 3px 6px;
+}
+
+.doc-ruc    { font-weight: bold; font-size: 12pt; }
+.doc-tipo   { font-weight: bold; font-size: 10pt; }
+.doc-numero { font-weight: bold; font-size: 11pt; }
+
+/* ───────── Recuadros de datos ───────── */
+.caja {
+    border: 1px solid #808080;
+    margin-bottom: 6px;
+}
+
+.caja td {
+    padding: 3px 6px;
+}
+
+/* ───────── Detalle ───────── */
+.detalle {
+    border: 1px solid #000000;
+    margin-bottom: 0;
+}
+
+.detalle th {
+    background-color: #E8722C;
+    color: #FFFFFF;
+    font-weight: bold;
+    text-align: center;
+    padding: 4px 5px;
+    border-right: 1px solid #FFFFFF;
+}
+
+.detalle td {
+    padding: 3px 5px;
+    border-right: 1px solid #CCCCCC;
+}
+
+.detalle tr.vacia td {
+    height: 14px;
+}
+
+/* ───────── Totales ───────── */
+.totales {
+    border-left: 1px solid #000000;
+    border-right: 1px solid #000000;
+    border-bottom: 1px solid #000000;
+    margin-bottom: 6px;
+}
+
+.totales .letras {
+    width: 60%;
+    padding: 6px 10px;
+}
+
+.letras-tit {
+    color: #1F4E79;
+    margin-bottom: 2px;
+}
+
+.letras-val {
+    font-weight: bold;
+}
+
+.totales .montos {
+    width: 40%;
+    padding: 4px 6px;
+}
+
+.tabla-montos td {
+    padding: 1px 3px;
+}
+
+.mt-et  { text-align: right; font-weight: bold; }
+.mt-sim { text-align: right; width: 28px; }
+.mt-val { text-align: right; font-weight: bold; width: 70px; }
+
+.tabla-montos .total { font-size: 9.5pt; }
+
+/* ───────── Bloques de retención / detracción ───────── */
+.info { margin-bottom: 6px; }
+
+.info-tit {
+    color: #1F4E79;
+    font-weight: bold;
+    padding-bottom: 2px;
+}
+
+/* ───────── Pie ───────── */
+.pie { margin-top: 4px; }
+
+.pie-col {
+    border: 1px solid #808080;
+    padding: 6px 8px;
+    font-size: 7.5pt;
+    vertical-align: top;
+}
+
+.pie-datos td {
+    padding: 1px 2px;
+    font-size: 7.5pt;
+}
+
+.qr {
+    width: 90px;
+    height: 90px;
+}

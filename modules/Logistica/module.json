@@ -1,0 +1,14 @@
+{
+    "name": "Logistica",
+    "alias": "logistica",
+    "description": "",
+    "keywords": [],
+    "active": 1,
+    "order": 0,
+    "providers": [
+        "Modules\\Logistica\\Providers\\LogisticaServiceProvider"
+    ],
+    "aliases": {},
+    "files": [],
+    "requires": []
+}

@@ -1,0 +1,107 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MKT-01 AI Response Schema",
+  "description": "Esquema de la respuesta JSON que el LLM debe retornar en cada turno de conversación.",
+  "type": "object",
+  "required": ["reply", "intent", "confidence", "entities_extracted", "conversation_state", "actions"],
+  "properties": {
+    "reply": {
+      "type": "string",
+      "description": "Texto que el usuario verá en el chat. Breve, humano, máximo 2-3 oraciones."
+    },
+    "intent": {
+      "type": "string",
+      "enum": [
+        "saludo",
+        "consulta_general",
+        "solicitar_catalogo",
+        "registrar_para_cotizacion",
+        "solicitar_muestra_virtual",
+        "lead_de_feria",
+        "postventa_simple",
+        "reclamo_o_urgente",
+        "pedir_humano",
+        "no_relacionado",
+        "no_entendido"
+      ],
+      "description": "Intención detectada del mensaje del usuario."
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Nivel de confianza en la intención detectada (0.0 a 1.0)."
+    },
+    "entities_extracted": {
+      "type": "object",
+      "description": "Datos acumulados extraídos de TODA la conversación.",
+      "properties": {
+        "nombre_contacto": { "type": ["string", "null"] },
+        "empresa": { "type": ["string", "null"] },
+        "rubro": { "type": ["string", "null"] },
+        "correo": { "type": ["string", "null"] },
+        "celular": { "type": ["string", "null"] },
+        "ciudad_entrega": { "type": ["string", "null"] },
+        "fecha_objetivo": { "type": ["string", "null"] },
+        "evento_feria": { "type": ["string", "null"] },
+        "presupuesto_mencionado": { "type": ["string", "null"] },
+        "items_solicitados": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item_texto_original": { "type": "string" },
+              "item_categoria": { "type": ["string", "null"] },
+              "item_subcategoria": { "type": ["string", "null"] },
+              "item_cantidad": { "type": ["integer", "null"] },
+              "item_personalizacion": { "type": ["string", "null"] }
+            },
+            "required": ["item_texto_original"]
+          }
+        },
+        "interes_resumen": { "type": ["string", "null"] }
+      }
+    },
+    "conversation_state": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "type": "string",
+          "enum": [
+            "apertura",
+            "exploracion",
+            "orientacion",
+            "catalogo",
+            "registro_cotizacion",
+            "cierre",
+            "abandono",
+            "escalamiento"
+          ]
+        },
+        "missing_fields": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "has_contact": { "type": "boolean" },
+        "has_commercial_intent": { "type": "boolean" },
+        "has_useful_data": { "type": "boolean" }
+      },
+      "required": ["phase", "missing_fields", "has_contact", "has_commercial_intent", "has_useful_data"]
+    },
+    "actions": {
+      "type": "object",
+      "properties": {
+        "should_register_lead": { "type": "boolean" },
+        "ready_to_convert": { "type": "boolean" },
+        "send_catalog": { "type": ["string", "null"] },
+        "escalate_to_human": { "type": "boolean" },
+        "close_conversation": { "type": "boolean" }
+      },
+      "required": ["should_register_lead", "ready_to_convert", "send_catalog", "escalate_to_human", "close_conversation"]
+    },
+    "lead_summary": {
+      "type": ["string", "null"],
+      "description": "Resumen de 3-6 líneas del lead. Solo si should_register_lead es true."
+    }
+  }
+}

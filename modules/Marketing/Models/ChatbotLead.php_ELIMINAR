@@ -1,0 +1,24 @@
+<?php
+
+namespace Modules\Marketing\Models;
+
+use App\Models\Tenant\ModelTenant;
+
+class ChatbotLead extends ModelTenant
+{
+    protected $table = 'marketing_chatbot_leads';
+
+    protected $fillable = [
+        'name',
+        'email',
+        'phone',
+        'company_name',
+        'source',
+        'status',
+        'meta',
+    ];
+
+    protected $casts = [
+        'meta' => 'array',
+    ];
+}
