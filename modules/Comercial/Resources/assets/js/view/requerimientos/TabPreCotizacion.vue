@@ -1,75 +1,9 @@
 <template>
   <div v-loading="loading" class="tab-precotizacion">
 
-    <!-- ═══ COM-02 · "Referencia del producto": agregar 1 ítem por IA (texto XOR imagen), sin borrar los existentes ═══
-         Se muestra en arranque en frío (sin prequote) y con prequote editable. La sección "Imagen del requerimiento"
-         + "Re-interpretar con imagen" se mantiene aparte, más abajo. -->
-    <el-card v-if="refReqId && !loading && (!prequote || isEditable)" shadow="never"
-             class="mb-2" style="border-left:3px solid #4f46e5;">
-      <div slot="header" style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
-        <span><i class="el-icon-magic-stick" style="color:#4f46e5;"></i> <strong>Referencia del producto</strong> <span style="color:#dc2626;">*</span></span>
-        <small style="color:#909399; text-align:right;">Escribe el producto o sube una imagen. La IA interpretará la referencia y agregará un nuevo ítem.</small>
-      </div>
-
-      <!-- Modo TEXTO (o vacío): textarea + zona de drop de imagen -->
-      <div v-if="referenceMode !== 'imagen'"
-           @dragover.prevent @drop.prevent="onReferenceDrop"
-           style="border:2px dashed #c7d2fe; border-radius:6px; padding:10px; background:#f9fafb;">
-        <el-input v-model="referenceText" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }"
-                  :disabled="interpretingItem"
-                  placeholder="Escribe el producto (ej. '50 llaveros metálicos con logo') o arrastra una imagen aquí"
-                  @input="onReferenceTextInput"></el-input>
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:8px;">
-          <small style="color:#6b7280;">También podés arrastrar una imagen sobre este recuadro.</small>
-          <el-button size="mini" icon="el-icon-upload"
-                     :disabled="referenceMode === 'texto' || interpretingItem"
-                     @click="triggerReferenceImageUpload">Subir imagen</el-button>
-        </div>
-      </div>
-
-      <!-- Modo IMAGEN: preview + quitar -->
-      <div v-else style="display:flex; align-items:center; gap:14px; border:2px solid #34d399; border-radius:6px; padding:12px; background:#ecfdf5;">
-        <img :src="referenceImagePreview" alt="Referencia"
-             style="width:110px; height:82px; object-fit:cover; border-radius:6px; border:1px solid #d1d5db; background:#fff;"/>
-        <div style="flex:1;">
-          <strong style="color:#065f46;">Imagen cargada como referencia</strong>
-          <p style="color:#6b7280; margin:4px 0; font-size:12px;">Se interpretará para generar un nuevo ítem. Para escribir texto, primero quitá la imagen.</p>
-          <el-button size="mini" type="danger" plain icon="el-icon-delete"
-                     :disabled="interpretingItem" @click="removeReferenceImage">Quitar imagen</el-button>
-        </div>
-      </div>
-
-      <input ref="referenceImageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif"
-             style="display:none;" @change="onReferenceImageSelected"/>
-
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:10px;">
-        <el-tag size="small" effect="plain"
-                :type="referenceMode === 'texto' ? '' : (referenceMode === 'imagen' ? 'success' : 'info')">
-          {{ referenceMode === 'texto' ? 'Referencia detectada: Texto' : (referenceMode === 'imagen' ? 'Referencia detectada: Imagen' : 'Sin referencia') }}
-        </el-tag>
-        <el-button type="primary" icon="el-icon-plus" :loading="interpretingItem"
-                   :disabled="!referenceMode" @click="interpretItem">
-          {{ interpretingItem ? 'Interpretando…' : 'Interpretar ítem' }}
-        </el-button>
-      </div>
-    </el-card>
-
-    <!-- Sin precotización: botón para generar -->
-    <div v-if="!prequote && !loading" style="text-align:center; padding:30px 0;">
-      <p style="color:#888; margin-bottom:15px;">Este requerimiento aún no tiene precotización generada.</p>
-      <el-button type="primary" icon="el-icon-magic-stick" @click="generatePrequote" :loading="generating">
-        Generar Pre-Cotización con IA
-      </el-button>
-    </div>
-
-    <!-- Con precotización: editor -->
-    <div v-if="prequote">
-
-      <!-- Info general — Resumen General (COM-02).
-           Fila 1: los 4 indicadores históricos (valores PERSISTIDOS por el backend) + Utilidad Real.
-           Fila 2: los 4 indicadores nuevos del costo real + TOTAL (persistido).
-           Los 5 nuevos se calculan EN VIVO desde los ítems (computed `resumenCostoReal`),
-           así reflejan lo que hay en pantalla aunque todavía no se haya guardado. -->
+    <!-- Totales SIEMPRE arriba (barra fija): mismos valores del Resumen General.
+         Fila 1: indicadores persistidos + Utilidad Real. Fila 2: costo real en vivo + TOTAL. -->
+    <div v-if="prequote" class="precot-totals">
       <el-row :gutter="15">
         <el-col :span="4">
           <strong>Estado:</strong>
@@ -88,7 +22,7 @@
           <span :title="tituloEnVivo"><strong>Utilidad Real:</strong> <span style="color:#67C23A;">S/ {{ resumenCostoReal.utilidadReal.toFixed(2) }}</span></span>
         </el-col>
       </el-row>
-      <el-row :gutter="15" class="mb-2" style="margin-top:6px;">
+      <el-row :gutter="15" style="margin-top:6px;">
         <el-col :span="4">
           <span :title="tituloEnVivo"><strong>Margen Real:</strong> {{ margenRealTotalPct.toFixed(2) }}%</span>
         </el-col>
@@ -105,43 +39,124 @@
           <strong style="font-size:16px;">TOTAL: S/ {{ parseFloat(prequote.total).toFixed(2) }}</strong>
         </el-col>
       </el-row>
+    </div>
 
-      <!-- S2 — Imagen de referencia del requerimiento (multimodal AIEngine) -->
-      <el-card v-if="prequote" shadow="never" class="mb-2 image-ref-card">
-        <div slot="header" class="image-ref-header">
-          <span><i class="el-icon-picture-outline"></i> <strong>Imagen del requerimiento (opcional)</strong></span>
-          <small style="color:#909399;">Si subes una imagen, la IA la usa para inferir mejor material, técnica, medidas y variantes.</small>
-        </div>
+    <!-- ═══ Ingreso: 2 acordeones lado a lado ═══
+         Izq: "Referencia del producto" por IA (texto XOR imagen), sin borrar los existentes.
+         Der: crear kits (SOLO FRONTAL por ahora; el backend llega después).
+         Se muestra en arranque en frío (sin prequote) y con prequote editable. -->
+    <el-row :gutter="12" class="mb-2">
+      <el-col :xs="24" :md="12" v-if="refReqId && !loading && (!prequote || isEditable)">
+        <el-collapse v-model="iaCollapseOpen" class="precot-collapse">
+          <el-collapse-item name="ia">
+            <template slot="title">
+              <span><i class="el-icon-magic-stick" style="color:#4f46e5;"></i> <strong>Ingresar productos con IA</strong></span>
+              <small style="color:#909399; margin-left:auto; padding-right:8px;">Texto o imagen → nuevo ítem</small>
+            </template>
 
-        <div v-if="!prequote.reference_image_path" class="image-ref-empty">
-          <el-button v-if="isEditable" size="small" type="primary" plain icon="el-icon-upload"
-                     @click="triggerImageUpload" :loading="uploadingImage">
-            Subir imagen
-          </el-button>
-          <span v-else style="color:#909399;">Sin imagen.</span>
-        </div>
+            <!-- Modo TEXTO (o vacío): textarea + zona de drop de imagen -->
+            <div v-if="referenceMode !== 'imagen'"
+                 @dragover.prevent @drop.prevent="onReferenceDrop"
+                 style="border:2px dashed #c7d2fe; border-radius:6px; padding:10px; background:#f9fafb;">
+              <el-input v-model="referenceText" type="textarea" :autosize="{ minRows: 1, maxRows: 6 }"
+                        :disabled="interpretingItem"
+                        placeholder="Escribe el producto (ej. '50 llaveros metálicos con logo') o arrastra una imagen aquí"
+                        @input="onReferenceTextInput"></el-input>
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:8px;">
+                <small style="color:#6b7280;">También podés arrastrar una imagen sobre este recuadro.</small>
+              </div>
+            </div>
 
-        <div v-else class="image-ref-loaded">
-          <img :src="referenceImageUrl" :alt="'Imagen de referencia'"
-               class="image-ref-thumb" @click="openImagePreview"/>
-          <div class="image-ref-actions">
-            <el-button v-if="isEditable" size="mini" icon="el-icon-refresh-right"
-                       @click="triggerImageUpload" :loading="uploadingImage">Cambiar</el-button>
-            <el-button v-if="isEditable" size="mini" type="danger" plain icon="el-icon-delete"
-                       @click="deleteReferenceImage" :loading="deletingImage">Quitar</el-button>
-            <el-button v-if="isEditable" size="mini" type="success" icon="el-icon-magic-stick"
-                       @click="reinterpretWithImage" :loading="reinterpretingImage">
-              Re-interpretar con imagen
-            </el-button>
-            <small style="color:#909399; display:block; margin-top:4px;">
-              "Re-interpretar" reemplaza los items actuales con los detectados por el LLM viendo la imagen.
-            </small>
-          </div>
-        </div>
+            <!-- Modo IMAGEN: preview + quitar -->
+            <div v-else style="display:flex; align-items:center; gap:14px; border:2px solid #34d399; border-radius:6px; padding:12px; background:#ecfdf5;">
+              <img :src="referenceImagePreview" alt="Referencia"
+                   style="width:110px; height:82px; object-fit:cover; border-radius:6px; border:1px solid #d1d5db; background:#fff;"/>
+              <div style="flex:1;">
+                <strong style="color:#065f46;">Imagen cargada como referencia</strong>
+                <p style="color:#6b7280; margin:4px 0; font-size:12px;">Se interpretará para generar un nuevo ítem. Para escribir texto, primero quitá la imagen.</p>
+                <el-button size="mini" type="danger" plain icon="el-icon-delete"
+                           :disabled="interpretingItem" @click="removeReferenceImage">Quitar imagen</el-button>
+              </div>
+            </div>
 
-        <input ref="imageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif"
-               style="display:none;" @change="onImageSelected"/>
-      </el-card>
+            <input ref="referenceImageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif"
+                   style="display:none;" @change="onReferenceImageSelected"/>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:10px;">
+              <el-tag size="small" effect="plain"
+                      :type="referenceMode === 'texto' ? '' : (referenceMode === 'imagen' ? 'success' : 'info')">
+                {{ referenceMode === 'texto' ? 'Referencia detectada: Texto' : (referenceMode === 'imagen' ? 'Referencia detectada: Imagen' : 'Sin referencia') }}
+              </el-tag>
+              <el-button icon="el-icon-plus" :loading="addingManual"
+                         :disabled="addingManual || interpretingItem" @click="addManualItem">
+                {{ addingManual ? 'Agregando…' : 'Ítem manual' }}
+              </el-button>
+              <el-button type="primary" icon="el-icon-plus" :loading="interpretingItem"
+                         :disabled="!referenceMode" @click="interpretItem">
+                {{ interpretingItem ? 'Interpretando…' : 'Interpretar ítem' }}
+              </el-button>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
+      </el-col>
+      <el-col :xs="24" :md="12">
+        <el-collapse v-model="kitCollapseOpen" class="precot-collapse">
+          <el-collapse-item name="kit">
+            <template slot="title">
+              <span><i class="el-icon-goods" style="color:#e6a23c;"></i> <strong>Crear kits</strong></span>
+              <el-tag size="mini" type="info" effect="plain" style="margin-left:8px;">Solo frontal</el-tag>
+            </template>
+            <div class="kit-front">
+              <p class="kit-front__hint">Agrupa productos de esta precotización en un kit. Por ahora vive solo en pantalla; el guardado en servidor llega después.</p>
+              <el-input v-model="kitDraft.nombre" size="mini" placeholder="Nombre del kit (ej. Kit bienvenida)"
+                        style="margin-bottom:8px;" maxlength="120"></el-input>
+              <el-input v-model="kitDraft.descripcion" size="mini" type="textarea"
+                        :autosize="{minRows:1,maxRows:3}" placeholder="Descripción (opcional)"
+                        style="margin-bottom:8px;"></el-input>
+              <el-select v-model="kitDraft.itemIds" multiple collapse-tags size="mini"
+                         placeholder="Productos del kit" style="width:100%; margin-bottom:8px;"
+                         :disabled="!prequote || !prequote.items || !prequote.items.length">
+                <el-option v-for="it in (prequote && prequote.items ? prequote.items : [])"
+                           :key="it.id || ('tmp-' + it.item_order)"
+                           :label="(it.product_name || ('Ítem ' + it.item_order)) + ' × ' + it.quantity"
+                           :value="it.id || ('tmp-' + it.item_order)"></el-option>
+              </el-select>
+              <div>
+                <el-button size="mini" type="warning" plain icon="el-icon-plus"
+                           @click="addKitLocal" :disabled="!kitDraft.nombre.trim() || (prequote && !isEditable)">
+                  Agregar kit
+                </el-button>
+              </div>
+              <div v-if="kitsLocal.length" class="kit-front__list">
+                <div v-for="k in kitsLocal" :key="k.id" class="kit-front__row">
+                  <div>
+                    <strong>{{ k.nombre }}</strong>
+                    <span style="color:#909399;">({{ k.itemIds.length }} prod.)</span>
+                    <div v-if="k.descripcion" style="font-size:11px; color:#606266;">{{ k.descripcion }}</div>
+                  </div>
+                  <el-button size="mini" type="text" icon="el-icon-delete"
+                             @click="removeKitLocal(k.id)">Quitar</el-button>
+                </div>
+              </div>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
+      </el-col>
+    </el-row>
+
+    <!-- Sin precotización: botón para generar -->
+    <div v-if="!prequote && !loading" style="text-align:center; padding:30px 0;">
+      <p style="color:#888; margin-bottom:15px;">Este requerimiento aún no tiene precotización generada.</p>
+      <el-button type="primary" icon="el-icon-magic-stick" @click="generatePrequote" :loading="generating">
+        Generar Pre-Cotización con IA
+      </el-button>
+      <el-button icon="el-icon-plus" @click="addManualItem" :loading="addingManual" style="margin-left:8px;">
+        {{ addingManual ? 'Agregando…' : 'Agregar ítem manual' }}
+      </el-button>
+    </div>
+
+    <!-- Con precotización: editor -->
+    <div v-if="prequote">
 
       <!-- Input file compartido para la imagen POR ÍTEM (mismo patrón que la del requerimiento) -->
       <input ref="itemImageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif"
@@ -216,94 +231,108 @@
                 </span>
               </div>
 
-              <el-row :gutter="12" type="flex" style="flex-wrap:wrap;" class="detalles-tecnicos-row">
-                <el-col :span="8">
-                  <div class="ai-field">
-                    <label class="lbl-help" title="Material del producto. Si lo sugirió la IA, confírmalo con el cliente.">Material <i class="el-icon-info field-tip-icon"></i></label>
-                    <el-input v-model="props.row.material" size="mini" :disabled="!isEditable"
-                              placeholder="Ej: algodón, dry fit, plástico..."
-                              @input="onFieldEdited(props.row, 'material')"
-                              :class="{ 'ai-inferred-input': isInferred(props.row, 'material') }">
-                      <el-tooltip v-if="isInferred(props.row, 'material')" slot="suffix"
-                                  content="Inferido por IA — confirma con el cliente" placement="top">
-                        <i class="el-icon-magic-stick ai-inferred-icon"></i>
-                      </el-tooltip>
-                    </el-input>
+              <div class="erp-detail-layout">
+                <div class="erp-detail-main">
+                  <div class="erp-tech-grid">
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Material del producto. Si lo sugirió la IA, confírmalo con el cliente.">Material <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input v-model="props.row.material" size="mini" :disabled="!isEditable"
+                                placeholder="Ej: algodón, dry fit, plástico..."
+                                @input="onFieldEdited(props.row, 'material')"
+                                :class="{ 'ai-inferred-input': isInferred(props.row, 'material') }">
+                        <el-tooltip v-if="isInferred(props.row, 'material')" slot="suffix"
+                                    content="Inferido por IA — confirma con el cliente" placement="top">
+                          <i class="el-icon-magic-stick ai-inferred-icon"></i>
+                        </el-tooltip>
+                      </el-input>
+                    </div>
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Medida o tamaño del producto.">Medida / Tamaño <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input v-model="props.row.medida" size="mini" :disabled="!isEditable"
+                                placeholder="Ej: 500ml, A5, 30x40cm..."
+                                @input="onFieldEdited(props.row, 'medida')"
+                                :class="{ 'ai-inferred-input': isInferred(props.row, 'medida') }">
+                        <el-tooltip v-if="isInferred(props.row, 'medida')" slot="suffix"
+                                    content="Inferido por IA — confirma con el cliente" placement="top">
+                          <i class="el-icon-magic-stick ai-inferred-icon"></i>
+                        </el-tooltip>
+                      </el-input>
+                    </div>
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Detalle de la personalización solicitada (texto, logo, color, etc.).">Personalización <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input v-model="props.row.personalizacion" size="mini" :disabled="!isEditable"
+                                placeholder="Ej: logo bordado, texto..."
+                                @input="onFieldEdited(props.row, 'personalizacion')"
+                                :class="{ 'ai-inferred-input': isInferred(props.row, 'personalizacion') }">
+                        <el-tooltip v-if="isInferred(props.row, 'personalizacion')" slot="suffix"
+                                    content="Inferido por IA — confirma con el cliente" placement="top">
+                          <i class="el-icon-magic-stick ai-inferred-icon"></i>
+                        </el-tooltip>
+                      </el-input>
+                    </div>
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Técnica de impresión o aplicación (serigrafía, bordado, sublimado, etc.).">Técnica <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input v-model="props.row.tecnica_impresion" size="mini" :disabled="!isEditable"
+                                placeholder="Ej: serigrafía, bordado, sublimado..."
+                                @input="onFieldEdited(props.row, 'tecnica_impresion')"
+                                :class="{ 'ai-inferred-input': isInferred(props.row, 'tecnica_impresion') }">
+                        <el-tooltip v-if="isInferred(props.row, 'tecnica_impresion')" slot="suffix"
+                                    content="Inferido por IA — confirma con el cliente" placement="top">
+                          <i class="el-icon-magic-stick ai-inferred-icon"></i>
+                        </el-tooltip>
+                      </el-input>
+                    </div>
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Forma de empaque o presentación del producto.">Empaque / Presentación <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input v-model="props.row.empaque" size="mini" :disabled="!isEditable"
+                                placeholder="Ej: bolsa individual, caja..."
+                                @input="onFieldEdited(props.row, 'empaque')"
+                                :class="{ 'ai-inferred-input': isInferred(props.row, 'empaque') }">
+                        <el-tooltip v-if="isInferred(props.row, 'empaque')" slot="suffix"
+                                    content="Inferido por IA — confirma con el cliente" placement="top">
+                          <i class="el-icon-magic-stick ai-inferred-icon"></i>
+                        </el-tooltip>
+                      </el-input>
+                    </div>
+                    <div class="ai-field erp-obs">
+                      <label class="lbl-help" title="Notas internas de esta línea; no se muestran al cliente.">Observaciones <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input v-model="props.row.observaciones" size="mini" :disabled="!isEditable"
+                                type="textarea" :autosize="{minRows: 2, maxRows: 6}"
+                                placeholder="Notas internas para esta línea (opcional)">
+                      </el-input>
+                    </div>
+                    <div class="erp-tech-minirow">
+                      <div class="ai-field ai-field--with-outside-icon">
+                        <label class="lbl-help" title="Cantidad de colores de la impresión (afecta el costo).">Colores <i class="el-icon-info field-tip-icon"></i></label>
+                        <el-input-number v-model="props.row.cantidad_colores" size="mini" :min="1" :max="20"
+                                         controls-position="right" :disabled="!isEditable"
+                                         @change="onFieldEdited(props.row, 'cantidad_colores')"
+                                         :class="{ 'ai-inferred-input': isInferred(props.row, 'cantidad_colores') }">
+                        </el-input-number>
+                        <el-tooltip v-if="isInferred(props.row, 'cantidad_colores')"
+                                    content="Inferido por IA — confirma con el cliente" placement="top">
+                          <i class="el-icon-magic-stick ai-inferred-icon ai-inferred-icon--outside"></i>
+                        </el-tooltip>
+                      </div>
+                      <div class="ai-field ai-field--with-outside-icon">
+                        <label class="lbl-help" title="Cantidad de lados o caras a personalizar.">Lados <i class="el-icon-info field-tip-icon"></i></label>
+                        <el-input-number v-model="props.row.cantidad_lados" size="mini" :min="1" :max="6"
+                                         controls-position="right" :disabled="!isEditable"
+                                         @change="onFieldEdited(props.row, 'cantidad_lados')"
+                                         :class="{ 'ai-inferred-input': isInferred(props.row, 'cantidad_lados') }">
+                        </el-input-number>
+                        <el-tooltip v-if="isInferred(props.row, 'cantidad_lados')"
+                                    content="Inferido por IA — confirma con el cliente" placement="top">
+                          <i class="el-icon-magic-stick ai-inferred-icon ai-inferred-icon--outside"></i>
+                        </el-tooltip>
+                      </div>
+                      <div class="ai-field">
+                        <label class="lbl-help" title="Factor manual de la impresión (millares). Multiplica el Costo Total de Impresión: costo × colores × lados × millar. Por defecto 1.">Millar <i class="el-icon-info field-tip-icon"></i></label>
+                        <el-input-number v-model="props.row.cantidad_millar" size="mini" :precision="2" :step="1" :min="0"
+                                         controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
+                      </div>
+                    </div>
                   </div>
-                </el-col>
-                <el-col :span="8">
-                  <div class="ai-field">
-                    <label class="lbl-help" title="Medida o tamaño del producto.">Medida / Tamaño <i class="el-icon-info field-tip-icon"></i></label>
-                    <el-input v-model="props.row.medida" size="mini" :disabled="!isEditable"
-                              placeholder="Ej: 500ml, A5, 30x40cm..."
-                              @input="onFieldEdited(props.row, 'medida')"
-                              :class="{ 'ai-inferred-input': isInferred(props.row, 'medida') }">
-                      <el-tooltip v-if="isInferred(props.row, 'medida')" slot="suffix"
-                                  content="Inferido por IA — confirma con el cliente" placement="top">
-                        <i class="el-icon-magic-stick ai-inferred-icon"></i>
-                      </el-tooltip>
-                    </el-input>
-                  </div>
-                </el-col>
-                <el-col :span="8">
-                  <div class="ai-field">
-                    <label class="lbl-help" title="Forma de empaque o presentación del producto.">Empaque / Presentación <i class="el-icon-info field-tip-icon"></i></label>
-                    <el-input v-model="props.row.empaque" size="mini" :disabled="!isEditable"
-                              placeholder="Ej: bolsa individual, caja..."
-                              @input="onFieldEdited(props.row, 'empaque')"
-                              :class="{ 'ai-inferred-input': isInferred(props.row, 'empaque') }">
-                      <el-tooltip v-if="isInferred(props.row, 'empaque')" slot="suffix"
-                                  content="Inferido por IA — confirma con el cliente" placement="top">
-                        <i class="el-icon-magic-stick ai-inferred-icon"></i>
-                      </el-tooltip>
-                    </el-input>
-                  </div>
-                </el-col>
-                <el-col :span="6">
-                  <div class="ai-field ai-field--with-outside-icon">
-                    <label class="lbl-help" title="Cantidad de colores de la impresión (afecta el costo).">Cant. colores <i class="el-icon-info field-tip-icon"></i></label>
-                    <el-input-number v-model="props.row.cantidad_colores" size="mini" :min="1" :max="20"
-                                     controls-position="right" :disabled="!isEditable"
-                                     @change="onFieldEdited(props.row, 'cantidad_colores')"
-                                     :class="{ 'ai-inferred-input': isInferred(props.row, 'cantidad_colores') }">
-                    </el-input-number>
-                    <el-tooltip v-if="isInferred(props.row, 'cantidad_colores')"
-                                content="Inferido por IA — confirma con el cliente" placement="top">
-                      <i class="el-icon-magic-stick ai-inferred-icon ai-inferred-icon--outside"></i>
-                    </el-tooltip>
-                  </div>
-                </el-col>
-                <el-col :span="6">
-                  <div class="ai-field ai-field--with-outside-icon">
-                    <label class="lbl-help" title="Cantidad de lados o caras a personalizar.">Cant. lados <i class="el-icon-info field-tip-icon"></i></label>
-                    <el-input-number v-model="props.row.cantidad_lados" size="mini" :min="1" :max="6"
-                                     controls-position="right" :disabled="!isEditable"
-                                     @change="onFieldEdited(props.row, 'cantidad_lados')"
-                                     :class="{ 'ai-inferred-input': isInferred(props.row, 'cantidad_lados') }">
-                    </el-input-number>
-                    <el-tooltip v-if="isInferred(props.row, 'cantidad_lados')"
-                                content="Inferido por IA — confirma con el cliente" placement="top">
-                      <i class="el-icon-magic-stick ai-inferred-icon ai-inferred-icon--outside"></i>
-                    </el-tooltip>
-                  </div>
-                </el-col>
-                <el-col :span="6">
-                  <div class="ai-field">
-                    <label class="lbl-help" title="Factor manual de la impresión (millares). Multiplica el Costo Total de Impresión: costo × colores × lados × millar. Por defecto 1.">Cant. Millar <i class="el-icon-info field-tip-icon"></i></label>
-                    <el-input-number v-model="props.row.cantidad_millar" size="mini" :precision="2" :step="1" :min="0"
-                                     controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
-                  </div>
-                </el-col>
-                <el-col :span="12">
-                  <div class="ai-field">
-                    <label class="lbl-help" title="Notas internas de esta línea; no se muestran al cliente.">Observaciones <i class="el-icon-info field-tip-icon"></i></label>
-                    <el-input v-model="props.row.observaciones" size="mini" :disabled="!isEditable"
-                              type="textarea" :autosize="{minRows: 2, maxRows: 6}"
-                              placeholder="Notas internas para esta línea (opcional)">
-                    </el-input>
-                  </div>
-                </el-col>
-              </el-row>
 
               <!-- Agosto 2026 (punto 2) — kits y servicio de armado.
                    Un kit son varios productos agrupados solo para esta cotización
@@ -322,15 +351,15 @@
                 </el-col>
               </el-row>
 
-              <!-- ───────────── Sección de COSTEO (Fase A) ───────────── -->
-              <div class="costeo-section">
+              <!-- ───────────── Mi Costeo del ítem (formato mockup) ───────────── -->
+              <div class="costeo-section erp-cost">
                 <div class="costeo-section__title">
-                  <i class="el-icon-coin"></i> <strong>Costeo del ítem</strong>
+                  <i class="el-icon-coin"></i> <strong>Mi Costeo del ítem</strong>
                   <span class="costeo-section__hint">Muestra y movilidad se cargan 1 vez por pedido; impresión y empaque pueden ser por unidad. Impresión = costo × colores × lados × millar. El Seguro SCTR normal se mantiene para el Total sin IGV; el Costo Real Total usa una base de costo real propia.</span>
                 </div>
 
-                <el-row :gutter="12" type="flex" style="flex-wrap:wrap;">
-                  <el-col :span="6">
+                <div class="erp-cost-media-grid">
+                  <div class="erp-costgrid">
                     <div class="ai-field">
                       <label class="lbl-help" title="Cantidad de muestras físicas. El costo de muestra se calcula como N° de muestras × precio de la muestra.">N° de muestras <i class="el-icon-info field-tip-icon"></i></label>
                       <el-input-number v-model="props.row.numero_muestras" size="mini" :precision="0" :step="1" :min="0"
@@ -357,15 +386,11 @@
 
                       <div style="font-size:11px; color:#909399; margin-top:2px; line-height:1.2;">Costo muestra: S/ {{ costoMuestraDerivado(props.row).toFixed(2) }}</div>
                     </div>
-                  </el-col>
-                  <el-col :span="6">
                     <div class="ai-field">
                       <label class="lbl-help" title="Costo de movilidad o envío. Se carga una sola vez por pedido.">Costo movilidad (S/) <i class="el-icon-info field-tip-icon"></i></label>
                       <el-input-number v-model="props.row.costo_movilidad" size="mini" :precision="2" :step="1" :min="0"
                                        controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
                     </div>
-                  </el-col>
-                  <el-col :span="6">
                     <div class="ai-field">
                       <label class="lbl-help" title="Costo de impresión. El Costo Total de Impresión = costo × cant. colores × cant. lados × cantidad por millar. Marca «por unidad» si ese total se cobra por cada unidad del pedido en lugar de una sola vez.">Costo impresión (S/) <i class="el-icon-info field-tip-icon"></i></label>
                       <el-input-number v-model="props.row.costo_impresion" size="mini" :precision="2" :step="0.5" :min="0"
@@ -375,8 +400,6 @@
                       <el-checkbox v-model="props.row.impresion_por_unidad" :disabled="!isEditable"
                                    style="margin-top:2px;">por unidad (× cant.)</el-checkbox>
                     </div>
-                  </el-col>
-                  <el-col :span="6">
                     <div class="ai-field">
                       <label class="lbl-help" title="Costo de empaque. Puede ser fijo o por unidad.">Costo empaque (S/) <i class="el-icon-info field-tip-icon"></i></label>
                       <el-input-number v-model="props.row.costo_empaque" size="mini" :precision="2" :step="0.5" :min="0"
@@ -384,14 +407,8 @@
                       <el-checkbox v-model="props.row.empaque_por_unidad" :disabled="!isEditable"
                                    style="margin-top:2px;">por unidad (× cant.)</el-checkbox>
                     </div>
-                  </el-col>
-                </el-row>
-
-                <!-- SCTR por producto (COM-02 unitario, override sobre el % de la cotización) -->
-                <el-row :gutter="12" type="flex" style="flex-wrap:wrap; margin-top:6px;">
-                  <el-col :span="6">
-                    <div class="ai-field">
-                      <label class="lbl-help" title="Seguro SCTR de este producto. Si lo dejas vacío, hereda el % de la cotización.">SCTR (%) <i class="el-icon-info field-tip-icon"></i></label>
+                    <div class="ai-field erp-span2">
+                      <label class="lbl-help" title="Seguro SCTR de este producto. Si lo dejas vacío, hereda el % de la cotización.">Seguro SCTR % <i class="el-icon-info field-tip-icon"></i></label>
                       <!-- el-input (no el-input-number): permite dejarlo vacío = heredar.
                            el-input-number coacciona el null a 0 al renderizar. -->
                       <el-input v-model="props.row.sctr_porcentaje" size="mini" :disabled="!isEditable"
@@ -402,15 +419,27 @@
                         <el-button v-if="tieneOverrideSctr(props.row)" type="text" size="mini" style="padding:0; margin-left:6px;" :disabled="!isEditable" @click="heredarSctr(props.row)">heredar</el-button>
                       </div>
                     </div>
-                  </el-col>
-                </el-row>
+                  </div>
+                  <div class="detail-photo-drop"
+                       @click="triggerItemImageUpload(props.row)"
+                       @dragover.prevent @drop.prevent="onItemImageDrop(props.row, $event)"
+                       v-loading="uploadingItemImageId === props.row.id"
+                       role="button" tabindex="0" title="Click o arrastra una imagen">
+                    <button v-if="itemImageUrl(props.row)" class="detail-photo-remove" type="button"
+                            title="Quitar imagen" @click.stop="deleteItemImage(props.row)">×</button>
+                    <img v-if="itemImageUrl(props.row)" :src="itemImageUrl(props.row)" alt="Foto del producto"/>
+                    <div v-else class="detail-photo-copy"><strong>Click o arrastra imagen</strong><span>para cargar la foto del producto</span></div>
+                  </div>
+                </div>
+              </div>
 
-                <!-- Mini-desglose en vivo del costeo.
-                     El v-for sobre [costeoBreakdown(...)] calcula el desglose
-                     UNA sola vez y lo expone como `bd` (truco de Vue 2 para
-                     variable local en template). -->
-                <template v-for="bd in [costeoBreakdown(props.row)]">
-                  <div class="costeo-breakdown" :key="'bd-' + props.row.id">
+                </div><!-- /.erp-detail-main -->
+                <div class="erp-costcard">
+                  <div class="costtitle">▣ Mi Resultado del costeo</div>
+                  <!-- Desglose en vivo: el v-for calcula el desglose UNA sola vez
+                       y lo expone como `bd` (truco de Vue 2 para variable local). -->
+                  <template v-for="bd in [costeoBreakdown(props.row)]">
+                    <div class="costeo-breakdown" :key="'bd-' + props.row.id">
                     <!-- ── Cadena de VENTA (lo que se le cobra al cliente) ── -->
                     <div class="costeo-breakdown__row">
                       <span>Resultado margen unitario</span>
@@ -507,9 +536,10 @@
                       Vista previa con IGV {{ igvPct }}% y SCTR {{ bd.sctrPctEfectivo }}%. El valor definitivo se recalcula al guardar.
                       El precio unitario se redondea hacia arriba a terminación 0, 5 o 9.
                     </div>
-                  </div>
-                </template>
-              </div>
+                    </div>
+                  </template>
+                </div><!-- /.erp-costcard -->
+              </div><!-- /.erp-detail-layout -->
 
               <!-- ─────── Fase C: Escalones de precio por volumen ─────── -->
               <div v-if="props.row.precios_volumen_disponibles && props.row.precios_volumen_disponibles.length > 0"
@@ -557,14 +587,14 @@
 
         <el-table-column prop="item_order" label="#" width="40" align="center"></el-table-column>
 
-        <el-table-column label="Producto solicitado" min-width="120">
+        <el-table-column label="Producto solicitado" min-width="110">
           <template slot-scope="scope">
             <el-input v-model="scope.row.product_name" size="mini" :disabled="!isEditable"></el-input>
           </template>
         </el-table-column>
 
         <!-- Columna NUEVA: foto editable POR ÍTEM (multimodal). Mismo patrón que la imagen del requerimiento. -->
-        <el-table-column label="Foto" width="92" align="center">
+        <el-table-column label="Foto" width="76" align="center">
           <template slot="header">
             <span class="col-tip" title="Imagen de referencia de este producto. La IA puede usarla para inferir mejor material, técnica y medidas.">Foto <i class="el-icon-info"></i></span>
           </template>
@@ -591,7 +621,7 @@
         </el-table-column>
 
         <!-- Columna NUEVA: producto del catálogo + badge de matching -->
-        <el-table-column label="Producto del catálogo" min-width="180">
+        <el-table-column label="Producto del catálogo" min-width="150">
           <template slot="header">
             <span class="col-tip" title="Producto del catálogo de Compipro asociado a lo que pidió el cliente (sugerido por la IA).">Producto del catálogo <i class="el-icon-info"></i></span>
           </template>
@@ -627,29 +657,13 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="Cant." width="110">
+        <el-table-column label="Cant." width="96">
           <template slot-scope="scope">
             <el-input-number v-model="scope.row.quantity" size="mini" :min="1" :max="999999"
                              controls-position="right" :disabled="!isEditable" class="campo-precio"></el-input-number>
           </template>
         </el-table-column>
-        <el-table-column label="Personalización" width="140">
-          <template slot="header">
-            <span class="col-tip" title="Detalle de la personalización solicitada (texto, logo, color, etc.).">Personalización <i class="el-icon-info"></i></span>
-          </template>
-          <template slot-scope="scope">
-            <el-input v-model="scope.row.personalizacion" size="mini" :disabled="!isEditable" class="campo-descriptivo"></el-input>
-          </template>
-        </el-table-column>
-        <el-table-column label="Técnica" width="120">
-          <template slot="header">
-            <span class="col-tip" title="Técnica de impresión o aplicación (serigrafía, bordado, sublimado, etc.).">Técnica <i class="el-icon-info"></i></span>
-          </template>
-          <template slot-scope="scope">
-            <el-input v-model="scope.row.tecnica_impresion" size="mini" :disabled="!isEditable" class="campo-descriptivo"></el-input>
-          </template>
-        </el-table-column>
-        <el-table-column label="Costo Base" width="145" align="right">
+        <el-table-column label="Costo Base" width="118" align="right">
           <template slot="header">
             <span class="col-tip" title="Costo unitario base del producto, antes de aplicar el margen.">Costo Base <i class="el-icon-info"></i></span>
           </template>
@@ -667,7 +681,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="Margen %" width="135" align="right">
+        <el-table-column label="Margen %" width="108" align="right">
           <template slot="header">
             <span class="col-tip" title="Porcentaje de ganancia aplicado sobre el costo base.">Margen % <i class="el-icon-info"></i></span>
           </template>
@@ -687,7 +701,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="Margen (S/)" width="110" align="right">
+        <el-table-column label="Margen (S/)" width="96" align="right">
           <template slot="header">
             <span class="col-tip" title="Ganancia en soles del ítem (markup sobre el costo × cantidad). Solo lectura.">Margen (S/) <i class="el-icon-info"></i></span>
           </template>
@@ -695,7 +709,7 @@
             <span class="campo-calculado campo-margen-soles">S/ {{ parseFloat(scope.row.ganancia_absoluta || 0).toFixed(2) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="V. Unit." width="90" align="right">
+        <el-table-column label="V. Unit." width="86" align="right">
           <template slot="header">
             <span class="col-tip" title="Valor unitario de venta (costo base + margen), sin IGV.">V. Unit. <i class="el-icon-info"></i></span>
           </template>
@@ -703,12 +717,12 @@
             <span class="campo-calculado">S/ {{ parseFloat(scope.row.valor_unitario).toFixed(2) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="Total" width="100" align="right">
+        <el-table-column label="Total" width="92" align="right">
           <template slot-scope="scope">
             <span class="campo-calculado"><strong>S/ {{ parseFloat(scope.row.total_item).toFixed(2) }}</strong></span>
           </template>
         </el-table-column>
-        <el-table-column label="" width="128" align="center">
+        <el-table-column label="" width="108" align="center">
           <template slot-scope="scope">
             <el-button size="mini" type="success" icon="el-icon-check" circle
                        @click="saveItem(scope.row)" :disabled="!isEditable"
@@ -734,6 +748,10 @@
 
       <!-- Acciones -->
       <el-row type="flex" justify="end" class="mt-2">
+        <el-button v-if="isEditable" size="small" icon="el-icon-plus"
+                   @click="addManualItem" :loading="addingManual">
+          Ítem manual
+        </el-button>
         <el-button v-if="isEditable" type="warning" size="small" :disabled="hayProductosSinProveedor"
                    @click="changeStatus('validada')" icon="el-icon-circle-check">
           Validar
@@ -920,6 +938,14 @@ export default {
       referenceImagePreview: '',
       referenceMode: null,      // 'texto' | 'imagen' | null
       interpretingItem: false,
+      // Ítem manual (alternativa sin IA): mismo patrón de flag que interpretingItem.
+      addingManual: false,
+      // Rediseño: acordeones de ingreso (IA abierto por defecto, kits cerrado)
+      // + kits solo-frontales (el backend llega después).
+      iaCollapseOpen: ['ia'],
+      kitCollapseOpen: [],
+      kitDraft: { nombre: '', descripcion: '', itemIds: [] },
+      kitsLocal: [],
     }
   },
   computed: {
@@ -2115,6 +2141,73 @@ export default {
         this.interpretingItem = false
       }
     },
+    /**
+     * Ítem manual (alternativa sin IA a "Referencia del producto").
+     * Crea 1 ítem vacío en el backend —que bootstrapea la prequote si no
+     * existe— y refresca igual que interpretItem. La fila nace editable
+     * (sin datos inferidos), así que saveItem/deleteItem/match le sirven
+     * sin cambios.
+     */
+    async addManualItem() {
+      if (!this.refReqId) {
+        this.$message.error('No se pudo determinar el requerimiento para agregar el ítem.')
+        return
+      }
+      this.addingManual = true
+      try {
+        var payload = {}
+        // Si ya hay una prequote abierta, indicarla; si no, el backend crea una vacía (arranque en frío).
+        if (this.prequote && this.prequote.id) payload.prequote_id = this.prequote.id
+        var resp = await this.$http.post(
+          '/marketing/quotation/requerimientos/' + this.refReqId + '/prequote/items/manual',
+          payload
+        )
+        if (resp.data && resp.data.ok) {
+          this.prequote = this.parseNumericFields(resp.data.prequote)
+          this.$message.success('Ítem manual agregado. Complétalo y guárdalo.')
+          this.$emit('precotizacion-added')
+        } else {
+          this.$message.error((resp.data && resp.data.message) || 'No se pudo agregar el ítem manual.')
+        }
+      } catch (e) {
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error al agregar el ítem manual.'
+        this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+      } finally {
+        this.addingManual = false
+      }
+    },
+    /**
+     * Kits SOLO FRONTALES (el backend llega después): agrupa productos de la
+     * pantalla en un kit local. No toca endpoints ni el prequote.
+     */
+    addKitLocal() {
+      var nombre = (this.kitDraft.nombre || '').trim()
+      if (!nombre) {
+        this.$message.warning('Ponle un nombre al kit.')
+        return
+      }
+      this.kitsLocal.push({
+        id: Date.now(),
+        nombre: nombre,
+        descripcion: (this.kitDraft.descripcion || '').trim(),
+        itemIds: (this.kitDraft.itemIds || []).slice(),
+      })
+      this.kitDraft = { nombre: '', descripcion: '', itemIds: [] }
+      this.$message.success('Kit agregado (solo frontal, aún no se guarda).')
+    },
+    async removeKitLocal(id) {
+      try {
+        await this.$confirm(
+          'Se quitará el kit de la lista (solo frontal).',
+          'Quitar kit',
+          { confirmButtonText: 'Quitar', cancelButtonText: 'Cancelar', type: 'warning' }
+        )
+      } catch (e) {
+        return // el usuario canceló
+      }
+      var ix = this.kitsLocal.findIndex(function (k) { return k.id === id })
+      if (ix >= 0) this.kitsLocal.splice(ix, 1)
+    },
 
     openImagePreview() {
       this.imagePreviewVisible = true
@@ -2157,6 +2250,20 @@ export default {
         if (this.$refs.itemImageInput) this.$refs.itemImageInput.value = ''
         return
       }
+
+      await this.uploadItemImageFile(itemId, file)
+      // Limpiar el input para permitir re-seleccionar el mismo archivo
+      if (this.$refs.itemImageInput) this.$refs.itemImageInput.value = ''
+    },
+    // Dropzone del expandible (formato mockup): click o arrastre usan la misma subida.
+    onItemImageDrop(item, event) {
+      if (!item || !item.id || !this.isEditable) return
+      var files = event.dataTransfer && event.dataTransfer.files
+      if (!files || files.length === 0) return
+      this.uploadingItemImageId = item.id
+      this.uploadItemImageFile(item.id, files[0])
+    },
+    async uploadItemImageFile(itemId, file) {
 
       // Validación cliente espejo del backend (mime + 5MB)
       var allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
@@ -2276,6 +2383,56 @@ export default {
 
 .product-match-dialog .el-dialog__body { padding-top: 16px; }
 .product-match-autocomplete { max-height: 320px; overflow-y: auto; }
+
+/* Rediseño — barra de totales fija arriba del tab */
+.precot-totals {
+  position: sticky; top: 0; z-index: 20;
+  background: #fff; border: 1px solid #ebeef5; border-radius: 6px;
+  padding: 10px 12px; margin-bottom: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.04);
+}
+
+/* Rediseño — acordeones de ingreso (IA + kits) */
+.precot-collapse { border: 1px solid #ebeef5; border-radius: 6px; overflow: hidden; }
+.precot-collapse .el-collapse-item__header { padding: 0 12px; }
+.precot-collapse .el-collapse-item__content { padding: 12px; }
+
+/* Rediseño (formato mockup) — expandible: main + resultado al costado */
+.erp-detail-layout { display: grid; grid-template-columns: minmax(0,1fr) 400px; gap: 18px; align-items: start; }
+.erp-detail-main { min-width: 0; }
+.erp-tech-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 14px 18px; align-items: start; }
+.erp-tech-grid .erp-obs { grid-column: 2; grid-row: 2 / span 2; }
+.erp-tech-grid .erp-obs .el-textarea__inner { min-height: 118px; height: 100%; }
+.erp-tech-minirow { grid-column: 1; grid-row: 3; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
+.erp-tech-grid .ai-field label, .erp-costgrid .ai-field label { display: block; margin-bottom: 6px; color: #818897; text-transform: uppercase; font-size: 11px; font-weight: 800; }
+.erp-cost { margin-top: 16px; padding-top: 14px; border-top: 1px dashed #d7dce8; }
+.erp-cost-media-grid { display: grid; grid-template-columns: minmax(0,1fr) 300px; gap: 14px; align-items: stretch; }
+.erp-costgrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; align-content: start; }
+.erp-costgrid .erp-span2 { grid-column: 1 / -1; }
+.detail-photo-drop { position: relative; min-height: 210px; border: 1px dashed #b9c7dd; border-radius: 7px; background: #f8fbff; display: flex; align-items: center; justify-content: center; text-align: center; color: #657083; cursor: pointer; overflow: hidden; padding: 14px; outline: 0; }
+.detail-photo-drop:hover, .detail-photo-drop:focus { border-color: #4f46e5; background: #f6f5ff; }
+.detail-photo-drop img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.detail-photo-copy { position: relative; z-index: 1; }
+.detail-photo-copy strong { display: block; color: #2d3a50; font-size: 15px; }
+.detail-photo-copy span { display: block; margin-top: 4px; font-size: 12px; }
+.detail-photo-remove { position: absolute; top: 8px; right: 8px; z-index: 2; width: 28px; height: 28px; border: 1px solid #ffd0d8; border-radius: 50%; background: #fff; color: #ee4d64; font-weight: 900; line-height: 1; cursor: pointer; box-shadow: 0 4px 12px rgba(17,24,39,.12); }
+.erp-costcard { border: 1px solid #cfe1ff; border-radius: 7px; background: #f5f9ff; padding: 12px 14px; font-size: 13px; }
+.erp-costcard .costtitle { font-weight: 900; margin-bottom: 8px; }
+.erp-costcard .costeo-breakdown { margin: 0; }
+@media (max-width: 1100px) {
+  .erp-detail-layout { grid-template-columns: minmax(0,1fr); }
+  .erp-cost-media-grid { grid-template-columns: minmax(0,1fr); }
+  .erp-tech-grid { grid-template-columns: minmax(0,1fr); }
+  .erp-tech-grid .erp-obs { grid-column: 1; grid-row: auto; }
+  .erp-tech-minirow { grid-column: 1; grid-row: auto; }
+}
+
+/* Rediseño — kits solo-frontales */
+.kit-front__hint { color: #909399; font-size: 12px; margin: 0 0 8px; }
+.kit-front__list { margin-top: 10px; border-top: 1px dashed #dcdfe6; padding-top: 8px;
+  display: flex; flex-direction: column; gap: 8px; }
+.kit-front__row { display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 8px; background: #fafafa; border: 1px solid #ebeef5; border-radius: 6px; padding: 6px 8px; }
 
 /* S2 — Imagen de referencia */
 .image-ref-card { border-left: 3px solid #409EFF; }
@@ -2463,10 +2620,10 @@ export default {
   border-color: #b3d8ff;
 }
 
-/* ⚪ Descriptivo — tabla principal (Personalización, Técnica) + detalles técnicos */
+/* ⚪ Descriptivo — detalles técnicos del expandible */
 .campo-descriptivo .el-input__inner,
-.detalles-tecnicos-row .el-input__inner,
-.detalles-tecnicos-row .el-textarea__inner {
+.erp-tech-grid .el-input__inner,
+.erp-tech-grid .el-textarea__inner {
   background-color: #f4f4f5;
 }
 

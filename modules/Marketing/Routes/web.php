@@ -197,6 +197,13 @@ Route::middleware(['auth', 'redirect.module', 'locked.tenant', 'check.email.veri
             ->middleware('throttle:10,1')
             ->name('quotation.requerimientos.prequote.items.interpret');
 
+        // COM-02 — Ítem manual (alternativa sin IA a la referencia): agrega 1
+        // ítem vacío sin borrar. Mismo anclaje y bootstrap que interpret.
+        Route::post('/quotation/requerimientos/{requerimientoId}/prequote/items/manual',
+            [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'storeManualItem'])
+            ->middleware('throttle:10,1')
+            ->name('quotation.requerimientos.prequote.items.manual');
+
         Route::get('/quotation/prequotes/{id}/history', [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'history'])
             ->name('quotation.prequotes.history');
 

@@ -1116,6 +1116,87 @@ class QuotationPreQuoteController extends Controller
     }
 
     /**
+     * COM-02 — Ítem manual: agrega 1 ítem vacío (sin IA) a la prequote del
+     * requerimiento, como alternativa a "Referencia del producto".
+     *
+     * No crea lógica nueva: reutiliza resolveEditablePreQuote (incluye
+     * arranque en frío), orchestrator->createPreQuoteItem (defaults,
+     * matching y margen centralizados), calcEngine->recalculate,
+     * historial ACTION_ITEM_ADDED y la misma forma de respuesta que
+     * interpretItem. La fila nace editable (datos_inferidos vacío) así que
+     * updateItem/deleteItem/match le sirven sin cambios.
+     *
+     * POST /marketing/quotation/requerimientos/{requerimientoId}/prequote/items/manual
+     * Body: {prequote_id?, product_name?, quantity?}
+     */
+    public function storeManualItem(Request $request, $requerimientoId)
+    {
+        $requerimiento = \Modules\Comercial\Models\Requerimiento::findOrFail($requerimientoId);
+
+        $bootstrapped = false;
+        $prequote = $this->resolveEditablePreQuote($request, $requerimiento, 'Ítem manual', $bootstrapped);
+        if ($prequote instanceof \Illuminate\Http\JsonResponse) {
+            return $prequote; // 422 propagado (no pertenece / no editable / falta prequote_id)
+        }
+
+        $itemData = [
+            'product_name' => trim((string) $request->input('product_name', '')),
+            'quantity'     => max(1, (int) $request->input('quantity', 1)),
+            // item_order = max(existentes) + 1 (mismo criterio que interpretItem).
+            'item_order'   => (int) $prequote->items()->max('item_order') + 1,
+        ];
+
+        $item = null;
+        $enriched = null;
+        try {
+            \Illuminate\Support\Facades\DB::connection('tenant')->transaction(function () use (
+                &$item, &$enriched, $prequote, $itemData, $request
+            ) {
+                $item = $this->orchestrator->createPreQuoteItem($prequote, $itemData);
+                // No es inferido: que no cuente como "ítem con IA" ni pida revisión de IA.
+                $item->update(['is_inferred' => false]);
+
+                $this->calcEngine->recalculate($prequote);
+
+                \Modules\Marketing\Models\PreQuoteHistory::log(
+                    $prequote->id,
+                    $prequote->version,
+                    \Modules\Marketing\Models\PreQuoteHistory::ACTION_ITEM_ADDED,
+                    [
+                        'item_id'      => $item->id,
+                        'product_name' => $item->product_name,
+                        'quantity'     => $item->quantity,
+                        'source'       => 'manual',
+                    ],
+                    $request->user() ? $request->user()->id : null
+                );
+
+                $enriched = $this->enrichItemsWithMinMargin(
+                    $prequote->fresh()->load('items', 'items.catalogItem')
+                );
+            });
+
+            return response()->json([
+                'ok'       => true,
+                'item_id'  => $item->id,
+                'item'     => $item->fresh(),
+                'prequote' => $enriched,
+            ]);
+        } catch (\Throwable $e) {
+            $this->cleanupFailedInterpret($bootstrapped ? $prequote : null, null);
+            \Illuminate\Support\Facades\Log::error('QuotationPreQuoteController::storeManualItem — error', [
+                'requerimiento_id' => $requerimientoId,
+                'prequote_id'      => isset($prequote->id) ? $prequote->id : null,
+                'error'            => $e->getMessage(),
+            ]);
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Error agregando el ítem manual: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Resolver la PreQuote editable a la que agregar el ítem, o bootstrapear una
      * vacía (caso "sin pre-cotización"). Devuelve JsonResponse(422) ante error.
      *
