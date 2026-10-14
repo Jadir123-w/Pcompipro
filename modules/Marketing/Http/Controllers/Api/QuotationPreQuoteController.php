@@ -1877,4 +1877,427 @@ class QuotationPreQuoteController extends Controller
         ]);
     }
 
+    /* ═══════════════════════════════════════════════════════════════
+     * Comparativa de proveedores por ítem (mockup db).
+     * N cotizaciones por ítem; el ganador define supplier + costo_base.
+     * ═══════════════════════════════════════════════════════════════ */
+
+    /**
+     * Resolver ítem dentro de su precotización.
+     */
+    private function resolvePreQuoteItem($prequoteId, $itemId)
+    {
+        $prequote = PreQuote::findOrFail($prequoteId);
+        $item = $prequote->items()->where('id', $itemId)->firstOrFail();
+        return [$prequote, $item];
+    }
+
+    /**
+     * Nombre visible del proveedor (persons) o "Proveedor por definir".
+     */
+    private function resolveSupplierName($supplierId)
+    {
+        $supplierId = (int) $supplierId;
+        if ($supplierId <= 0) {
+            return [null, \Modules\Marketing\Models\PreQuoteItemSupplier::DEFAULT_SUPPLIER_NAME];
+        }
+        $person = \App\Models\Tenant\Person::where('type', 'suppliers')->find($supplierId);
+        if (!$person) {
+            return [null, \Modules\Marketing\Models\PreQuoteItemSupplier::DEFAULT_SUPPLIER_NAME];
+        }
+        $name = trim((string) ($person->trade_name ?: $person->name));
+        return [$supplierId, $name !== '' ? $name : \Modules\Marketing\Models\PreQuoteItemSupplier::DEFAULT_SUPPLIER_NAME];
+    }
+
+    /**
+     * Sincronizar el ganador con el ítem (supplier + costo base) y recalcular.
+     */
+    private function syncWinningQuoteToItem($prequote, $item, $quote)
+    {
+        $item->supplier_id   = $quote->supplier_id;
+        $item->supplier_name = $quote->supplier_name;
+        $item->costo_base    = $quote->costo_base;
+        $item->is_inferred   = false;
+        $item->save();
+
+        return $this->calcEngine->recalculate($prequote);
+    }
+
+    /**
+     * GET — Comparativa del ítem. Si no hay cotizaciones, siembra la
+     * primera ("Proveedor por definir", mockup) y la deja ganadora.
+     */
+    public function supplierQuotes($id, $itemId)
+    {
+        try {
+            list($prequote, $item) = $this->resolvePreQuoteItem($id, $itemId);
+
+            $quotes = $item->supplierQuotes()->get();
+            if ($quotes->isEmpty()) {
+                $quotes = collect([$item->supplierQuotes()->create([
+                    'supplier_id'       => $item->supplier_id,
+                    'supplier_name'     => $item->supplier_name ?: \Modules\Marketing\Models\PreQuoteItemSupplier::DEFAULT_SUPPLIER_NAME,
+                    'source'            => \Modules\Marketing\Models\PreQuoteItemSupplier::SOURCE_MANUAL,
+                    'product_reference' => $item->product_name,
+                    'costo_base'        => (float) ($item->costo_base ?: 0),
+                    'tiempo_entrega'    => 'Por confirmar',
+                    'es_ganador'        => true,
+                    'orden'             => 1,
+                ])]);
+            }
+
+            return response()->json(['ok' => true, 'quotes' => $quotes->values()]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Error listando cotizaciones: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * POST — Agregar cotización ("+ proveedor", mockup).
+     */
+    public function storeSupplierQuote(Request $request, $id, $itemId)
+    {
+        try {
+            list($prequote, $item) = $this->resolvePreQuoteItem($id, $itemId);
+
+            if (!$prequote->isEditable()) {
+                return response()->json([
+                    'ok'      => false,
+                    'message' => 'La precotización no es editable en estado: ' . $prequote->estado,
+                ], 422);
+            }
+
+            $v = Validator::make($request->all(), [
+                'supplier_id'       => ['nullable', 'integer'],
+                'costo_base'        => ['nullable', 'numeric', 'min:0'],
+                'product_reference' => ['nullable', 'string', 'max:255'],
+                'tiempo_entrega'    => ['nullable', 'string', 'max:150'],
+                'observacion'       => ['nullable', 'string'],
+            ]);
+            if ($v->fails()) {
+                return response()->json(['ok' => false, 'errors' => $v->errors()], 422);
+            }
+
+            list($supplierId, $supplierName) = $this->resolveSupplierName($request->input('supplier_id'));
+            $isFirst = !$item->supplierQuotes()->exists();
+
+            $quote = null;
+            \Illuminate\Support\Facades\DB::connection('tenant')->transaction(function () use (
+                &$quote, $prequote, $item, $request, $supplierId, $supplierName, $isFirst
+            ) {
+                $maxOrden = (int) $item->supplierQuotes()->max('orden');
+                $quote = $item->supplierQuotes()->create([
+                    'supplier_id'       => $supplierId,
+                    'supplier_name'     => $supplierName,
+                    'source'            => \Modules\Marketing\Models\PreQuoteItemSupplier::SOURCE_MANUAL,
+                    'product_reference' => $request->input('product_reference', $item->product_name),
+                    'costo_base'        => (float) $request->input('costo_base', 0),
+                    'tiempo_entrega'    => $request->input('tiempo_entrega', 'Por confirmar'),
+                    'observacion'       => $request->input('observacion'),
+                    'es_ganador'        => $isFirst,
+                    'orden'             => $maxOrden + 1,
+                    'user_id'           => $request->user() ? $request->user()->id : null,
+                ]);
+
+                if ($isFirst) {
+                    $this->syncWinningQuoteToItem($prequote, $item, $quote);
+                }
+
+                \Modules\Marketing\Models\PreQuoteHistory::log(
+                    $prequote->id,
+                    $prequote->version,
+                    \Modules\Marketing\Models\PreQuoteHistory::ACTION_ITEM_ADDED,
+                    [
+                        'item_id'     => $item->id,
+                        'action'      => 'supplier_quote_added',
+                        'quote_id'    => $quote->id,
+                        'supplier_id' => $supplierId,
+                    ],
+                    $request->user() ? $request->user()->id : null
+                );
+            });
+
+            return response()->json([
+                'ok'       => true,
+                'quotes'   => $item->supplierQuotes()->get()->values(),
+                'prequote' => $this->enrichItemsWithMinMargin($prequote->fresh()->load('items')),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Error agregando cotización: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * PUT — Editar cotización. Si cambia el costo del ganador, se
+     * sincroniza el ítem y se recalcula (mockup: el ganador manda).
+     */
+    public function updateSupplierQuote(Request $request, $id, $itemId, $quoteId)
+    {
+        try {
+            list($prequote, $item) = $this->resolvePreQuoteItem($id, $itemId);
+
+            if (!$prequote->isEditable()) {
+                return response()->json([
+                    'ok'      => false,
+                    'message' => 'La precotización no es editable en estado: ' . $prequote->estado,
+                ], 422);
+            }
+
+            $quote = $item->supplierQuotes()->where('id', $quoteId)->firstOrFail();
+
+            $v = Validator::make($request->all(), [
+                'supplier_id'       => ['nullable', 'integer'],
+                'costo_base'        => ['nullable', 'numeric', 'min:0'],
+                'product_reference' => ['nullable', 'string', 'max:255'],
+                'tiempo_entrega'    => ['nullable', 'string', 'max:150'],
+                'observacion'       => ['nullable', 'string'],
+                'source'            => ['nullable', 'string', 'in:manual,catalog'],
+            ]);
+            if ($v->fails()) {
+                return response()->json(['ok' => false, 'errors' => $v->errors()], 422);
+            }
+
+            \Illuminate\Support\Facades\DB::connection('tenant')->transaction(function () use (
+                $prequote, $item, $quote, $request
+            ) {
+                if ($request->has('supplier_id')) {
+                    list($supplierId, $supplierName) = $this->resolveSupplierName($request->input('supplier_id'));
+                    $quote->supplier_id   = $supplierId;
+                    $quote->supplier_name = $supplierName;
+                }
+                foreach (['product_reference', 'tiempo_entrega', 'observacion', 'source'] as $field) {
+                    if ($request->has($field)) {
+                        $quote->$field = $request->input($field);
+                    }
+                }
+                if ($request->has('costo_base')) {
+                    $quote->costo_base = (float) $request->input('costo_base');
+                }
+                $quote->save();
+
+                if ($quote->es_ganador) {
+                    $this->syncWinningQuoteToItem($prequote, $item, $quote);
+                }
+            });
+
+            return response()->json([
+                'ok'       => true,
+                'quotes'   => $item->supplierQuotes()->get()->values(),
+                'prequote' => $this->enrichItemsWithMinMargin($prequote->fresh()->load('items')),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Error actualizando cotización: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * DELETE — Quitar cotización. No se puede quitar la última (mockup
+     * deshabilita "Quitar" con 1 sola). Si era ganadora, se promueve la
+     * primera por orden y se sincroniza el ítem.
+     */
+    public function destroySupplierQuote(Request $request, $id, $itemId, $quoteId)
+    {
+        try {
+            list($prequote, $item) = $this->resolvePreQuoteItem($id, $itemId);
+
+            if (!$prequote->isEditable()) {
+                return response()->json([
+                    'ok'      => false,
+                    'message' => 'La precotización no es editable en estado: ' . $prequote->estado,
+                ], 422);
+            }
+
+            $quote = $item->supplierQuotes()->where('id', $quoteId)->firstOrFail();
+
+            if ((int) $item->supplierQuotes()->count() <= 1) {
+                return response()->json([
+                    'ok'      => false,
+                    'message' => 'El ítem debe tener al menos una cotización de proveedor.',
+                ], 422);
+            }
+
+            \Illuminate\Support\Facades\DB::connection('tenant')->transaction(function () use (
+                $prequote, $item, $quote, $request
+            ) {
+                $wasWinner = (bool) $quote->es_ganador;
+                $quote->delete();
+
+                if ($wasWinner) {
+                    $next = $item->supplierQuotes()->orderBy('orden')->orderBy('id')->first();
+                    if ($next) {
+                        $item->supplierQuotes()->update(['es_ganador' => false]);
+                        $next->es_ganador = true;
+                        $next->save();
+                        $this->syncWinningQuoteToItem($prequote, $item, $next);
+                    }
+                }
+
+                \Modules\Marketing\Models\PreQuoteHistory::log(
+                    $prequote->id,
+                    $prequote->version,
+                    \Modules\Marketing\Models\PreQuoteHistory::ACTION_ITEM_REMOVED,
+                    ['item_id' => $item->id, 'action' => 'supplier_quote_removed', 'quote_id' => (int) $quote->id],
+                    $request->user() ? $request->user()->id : null
+                );
+            });
+
+            return response()->json([
+                'ok'       => true,
+                'quotes'   => $item->supplierQuotes()->get()->values(),
+                'prequote' => $this->enrichItemsWithMinMargin($prequote->fresh()->load('items')),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Error quitando cotización: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * POST — Marcar ganadora (radio del mockup). Sincroniza supplier +
+     * costo base del ítem y recalcula la precotización.
+     */
+    public function setWinnerSupplierQuote(Request $request, $id, $itemId, $quoteId)
+    {
+        try {
+            list($prequote, $item) = $this->resolvePreQuoteItem($id, $itemId);
+
+            if (!$prequote->isEditable()) {
+                return response()->json([
+                    'ok'      => false,
+                    'message' => 'La precotización no es editable en estado: ' . $prequote->estado,
+                ], 422);
+            }
+
+            $quote = $item->supplierQuotes()->where('id', $quoteId)->firstOrFail();
+
+            \Illuminate\Support\Facades\DB::connection('tenant')->transaction(function () use (
+                $prequote, $item, $quote, $request
+            ) {
+                $item->supplierQuotes()->update(['es_ganador' => false]);
+                $quote->es_ganador = true;
+                $quote->save();
+
+                $this->syncWinningQuoteToItem($prequote, $item, $quote);
+
+                \Modules\Marketing\Models\PreQuoteHistory::log(
+                    $prequote->id,
+                    $prequote->version,
+                    \Modules\Marketing\Models\PreQuoteHistory::ACTION_ITEM_EDITED,
+                    [
+                        'item_id'     => $item->id,
+                        'action'      => 'supplier_winner_changed',
+                        'quote_id'    => $quote->id,
+                        'supplier_id' => $quote->supplier_id,
+                        'costo_base'  => (float) $quote->costo_base,
+                    ],
+                    $request->user() ? $request->user()->id : null
+                );
+            });
+
+            return response()->json([
+                'ok'       => true,
+                'quotes'   => $item->supplierQuotes()->get()->values(),
+                'prequote' => $this->enrichItemsWithMinMargin($prequote->fresh()->load('items')),
+                'item'     => $item->fresh(),
+                'message'  => 'Proveedor ganador actualizado. Totales recalculados.',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Error marcando ganadora: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * POST — "Agregar catálogo" (mockup): crea el producto en el catálogo
+     * (items) desde la referencia cotizada y marca la cotización con
+     * origen catálogo.
+     */
+    public function toCatalogSupplierQuote(Request $request, $id, $itemId, $quoteId)
+    {
+        try {
+            list($prequote, $item) = $this->resolvePreQuoteItem($id, $itemId);
+
+            if (!$prequote->isEditable()) {
+                return response()->json([
+                    'ok'      => false,
+                    'message' => 'La precotización no es editable en estado: ' . $prequote->estado,
+                ], 422);
+            }
+
+            $quote = $item->supplierQuotes()->where('id', $quoteId)->firstOrFail();
+
+            if ($quote->source === \Modules\Marketing\Models\PreQuoteItemSupplier::SOURCE_CATALOG) {
+                return response()->json(['ok' => false, 'message' => 'Ya está en catálogo.'], 422);
+            }
+
+            // Catálogos base que exige la FK de items.
+            foreach (['item_types' => '01', 'cat_unit_types' => 'NIU', 'cat_currency_types' => 'PEN', 'cat_affectation_igv_types' => '10'] as $table => $code) {
+                $exists = \Illuminate\Support\Facades\DB::connection('tenant')->table($table)->where('id', $code)->exists();
+                if (!$exists) {
+                    return response()->json([
+                        'ok'      => false,
+                        'message' => "Falta el catálogo base {$code} en {$table}; no se puede crear el producto.",
+                    ], 422);
+                }
+            }
+
+            $nombre = trim((string) ($quote->product_reference ?: $item->product_name));
+            if ($nombre === '') {
+                return response()->json(['ok' => false, 'message' => 'La cotización no tiene referencia para crear el producto.'], 422);
+            }
+
+            $catalogId = null;
+            \Illuminate\Support\Facades\DB::connection('tenant')->transaction(function () use (
+                &$catalogId, $quote, $item, $nombre, $request
+            ) {
+                $code = 'COT-' . date('YmdHis') . '-' . $quote->id;
+                $catalogId = \Illuminate\Support\Facades\DB::connection('tenant')->table('items')->insertGetId([
+                    'description'                   => mb_substr($nombre, 0, 600),
+                    'name'                          => mb_substr($nombre, 0, 600),
+                    'item_type_id'                  => '01',
+                    'internal_id'                   => mb_substr($code, 0, 30),
+                    'item_code'                     => mb_substr($code, 0, 25),
+                    'unit_type_id'                  => $item->unit_type_id ?: 'NIU',
+                    'currency_type_id'              => 'PEN',
+                    'sale_unit_price'               => (float) $quote->costo_base,
+                    'purchase_unit_price'           => (float) $quote->costo_base,
+                    'sale_affectation_igv_type_id'     => '10',
+                    'purchase_affectation_igv_type_id' => '10',
+                    'stock'                         => 0,
+                    'created_at'                    => now(),
+                    'updated_at'                    => now(),
+                ]);
+
+                $quote->source            = \Modules\Marketing\Models\PreQuoteItemSupplier::SOURCE_CATALOG;
+                $quote->product_reference = $nombre;
+                $quote->save();
+            });
+
+            return response()->json([
+                'ok'         => true,
+                'quotes'     => $item->supplierQuotes()->get()->values(),
+                'catalog_id' => $catalogId,
+                'message'    => 'Producto creado en catálogo.',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Error agregando a catálogo: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
 }

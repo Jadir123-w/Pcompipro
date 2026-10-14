@@ -91,10 +91,6 @@
                          :disabled="addingManual || interpretingItem" @click="addManualItem">
                 {{ addingManual ? 'Agregando…' : 'Ítem manual' }}
               </el-button>
-              <el-button type="primary" icon="el-icon-plus" :loading="interpretingItem"
-                         :disabled="!referenceMode" @click="interpretItem">
-                {{ interpretingItem ? 'Interpretando…' : 'Interpretar ítem' }}
-              </el-button>
             </div>
           </el-collapse-item>
         </el-collapse>
@@ -541,6 +537,87 @@
                 </div><!-- /.erp-costcard -->
               </div><!-- /.erp-detail-layout -->
 
+              <!-- ─────── Comparativa de proveedores (mockup db) ───────
+                   N cotizaciones por ítem; el ganador define el Costo Base
+                   de la línea. Origen: catálogo (lista de precios) o manual. -->
+              <div class="supplier-quotes-section">
+                <div class="supplier-quotes__title">▣ Comparativa de proveedores</div>
+                <div class="supplier-quotes__hint">El proveedor ganador define el Costo Base de esta línea. El origen lo asigna el sistema: catálogo si viene de lista de precios, manual si fue cotizado fuera del catálogo.</div>
+                <el-table :data="supplierQuotesOf(props.row)" size="mini" border style="width:100%;">
+                  <el-table-column label="Ganador" width="70" align="center">
+                    <template slot-scope="qscope">
+                      <input type="radio" :name="'supplierWinner-' + props.row.id" :value="qscope.row.id"
+                             :checked="!!qscope.row.es_ganador" :disabled="!isEditable"
+                             @change="setWinnerQuote(props.row, qscope.row)"
+                             title="Proveedor ganador: define el Costo Base"/>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Proveedor" min-width="170">
+                    <template slot-scope="qscope">
+                      <el-select :value="qscope.row.supplier_id || 0" size="mini" filterable remote reserve-keyword
+                                 placeholder="Proveedor por definir" :remote-method="searchSuppliers"
+                                 :loading="supplierSearching" :disabled="!isEditable" style="width:100%;"
+                                 @change="function (val) { saveSupplierQuote(props.row, qscope.row, { supplier_id: val || null }) }">
+                        <el-option :key="0" :label="'Proveedor por definir'" :value="0"></el-option>
+                        <el-option v-for="s in supplierOptionsFor(qscope.row)" :key="s.id"
+                                   :label="s.nombre_comercial || s.razon_social" :value="s.id"></el-option>
+                      </el-select>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Origen" width="90" align="center">
+                    <template slot-scope="qscope">
+                      <el-tag size="mini" :type="qscope.row.source === 'catalog' ? 'success' : ''" effect="plain">
+                        {{ qscope.row.source === 'catalog' ? 'Catálogo' : 'Manual' }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Producto / referencia cotizada" min-width="200">
+                    <template slot-scope="qscope">
+                      <div style="display:flex; gap:6px; align-items:center;">
+                        <el-input :value="qscope.row.product_reference" size="mini"
+                                  placeholder="Referencia manual cotizada" :disabled="!isEditable" style="flex:1;"
+                                  @change="function (val) { saveSupplierQuote(props.row, qscope.row, { product_reference: val }) }"></el-input>
+                        <el-button v-if="isEditable" size="mini" @click="openQuoteRefSearch(props.row, qscope.row)">Buscar</el-button>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Costo Base" width="110" align="right">
+                    <template slot-scope="qscope">
+                      <el-input-number :value="parseFloat(qscope.row.costo_base || 0)" size="mini" :precision="2" :step="1" :min="0"
+                                       controls-position="right" :disabled="!isEditable" style="width:100%;"
+                                       @change="function (val) { saveSupplierQuote(props.row, qscope.row, { costo_base: val }) }"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Tiempo entrega" width="130">
+                    <template slot-scope="qscope">
+                      <el-input :value="qscope.row.tiempo_entrega" size="mini" placeholder="Ej: 15 días útiles"
+                                :disabled="!isEditable"
+                                @change="function (val) { saveSupplierQuote(props.row, qscope.row, { tiempo_entrega: val }) }"></el-input>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Observación" min-width="150">
+                    <template slot-scope="qscope">
+                      <el-input :value="qscope.row.observacion" size="mini" placeholder="Observación"
+                                :disabled="!isEditable"
+                                @change="function (val) { saveSupplierQuote(props.row, qscope.row, { observacion: val }) }"></el-input>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Acción" width="150" align="center">
+                    <template slot-scope="qscope">
+                      <el-button v-if="qscope.row.source !== 'catalog' && isEditable" size="mini"
+                                 @click="toCatalogQuote(props.row, qscope.row)">Agregar catálogo</el-button>
+                      <el-tag v-else-if="qscope.row.source === 'catalog'" size="mini" type="success" effect="plain">Ya está en catálogo</el-tag>
+                      <el-button v-if="isEditable" size="mini" type="danger" plain
+                                 :disabled="supplierQuotesOf(props.row).length <= 1"
+                                 @click="removeSupplierQuote(props.row, qscope.row)">Quitar</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <div style="margin-top:8px;">
+                  <el-button v-if="isEditable" size="mini" icon="el-icon-plus" @click="addSupplierQuote(props.row)">+ proveedor</el-button>
+                </div>
+              </div>
+
               <!-- ─────── Fase C: Escalones de precio por volumen ─────── -->
               <div v-if="props.row.precios_volumen_disponibles && props.row.precios_volumen_disponibles.length > 0"
                    class="tiers-section">
@@ -881,6 +958,39 @@
         </div>
       </div>
     </el-dialog>
+
+    <!-- Dialog: Buscar referencia en catálogo para una cotización de proveedor -->
+    <el-dialog title="Buscar referencia en catálogo" :visible.sync="quoteRefDialogVisible" width="640px"
+               append-to-body>
+      <div v-if="quoteRefTarget">
+        <div style="font-size:12px; color:#909399; margin-bottom:8px;">
+          Cotización de <strong>{{ quoteRefTarget.quote.supplier_name }}</strong> — Ítem #{{ quoteRefTarget.item.item_order }}
+        </div>
+        <el-input v-model="quoteRefQuery" size="small" placeholder="Escribe para buscar en el catálogo (mínimo 2 caracteres)"
+                  @input="searchQuoteRef" clearable style="margin-bottom:10px;">
+          <el-button slot="append" icon="el-icon-search" @click="searchQuoteRef">Buscar</el-button>
+        </el-input>
+        <div v-loading="quoteRefLoading">
+          <div v-if="quoteRefResults.length === 0" style="color:#909399; font-size:12px;">Sin resultados.</div>
+          <el-table v-else :data="quoteRefResults" size="mini" border style="width:100%;">
+            <el-table-column label="Producto" min-width="200">
+              <template slot-scope="s">{{ s.row.name || s.row.titulo || s.row.description }}</template>
+            </el-table-column>
+            <el-table-column label="Precio ref." width="110" align="right">
+              <template slot-scope="s">S/ {{ parseFloat(s.row.precio_ref || s.row.sale_unit_price || 0).toFixed(2) }}</template>
+            </el-table-column>
+            <el-table-column label="" width="90" align="center">
+              <template slot-scope="s">
+                <el-button size="mini" type="primary" plain @click="pickQuoteRef(s.row)">Elegir</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </div>
+      <div slot="footer">
+        <el-button @click="quoteRefDialogVisible = false">Cerrar</el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -946,6 +1056,17 @@ export default {
       kitCollapseOpen: [],
       kitDraft: { nombre: '', descripcion: '', itemIds: [] },
       kitsLocal: [],
+      // Comparativa de proveedores por ítem (mockup db)
+      supplierQuotesMap: {},     // itemId -> [quotes]
+      supplierQuotesLoaded: {},  // itemId -> true (ya cargadas)
+      supplierQuotesLoading: {}, // itemId -> true (cargando)
+      supplierOptionsMap: {},    // quoteId -> [opciones de proveedor]
+      supplierSearching: false,
+      quoteRefDialogVisible: false,
+      quoteRefTarget: null,      // { item, quote }
+      quoteRefQuery: '',
+      quoteRefResults: [],
+      quoteRefLoading: false,
     }
   },
   computed: {
@@ -1049,6 +1170,17 @@ export default {
       immediate: true,
       handler(newId) {
         if (newId) this.loadPrequoteById(newId)
+      }
+    },
+    // Comparativa: al cambiar la precotización, cargar cotizaciones de
+    // los ítems aún no cargados (una sola vez por ítem).
+    prequote: {
+      handler(pq) {
+        var self = this
+        if (!pq || !Array.isArray(pq.items)) return
+        pq.items.forEach(function (it) {
+          if (it && it.id && !self.supplierQuotesLoaded[it.id]) self.loadSupplierQuotes(it)
+        })
       }
     }
   },
@@ -2176,6 +2308,177 @@ export default {
         this.addingManual = false
       }
     },
+    /* ──────────────────────────────────────────────────────────
+     * Comparativa de proveedores por ítem (mockup db).
+     * ────────────────────────────────────────────────────────── */
+    quotesBaseUrl(item) {
+      return '/marketing/quotation/prequotes/' + this.prequote.id + '/items/' + item.id + '/quotes'
+    },
+    supplierQuotesOf(item) {
+      if (!item || !item.id) return []
+      return this.supplierQuotesMap[item.id] || []
+    },
+    async loadSupplierQuotes(item, force) {
+      var self = this
+      if (!this.prequote || !item || !item.id) return
+      if (!force && (this.supplierQuotesLoaded[item.id] || this.supplierQuotesLoading[item.id])) return
+      this.$set(this.supplierQuotesLoading, item.id, true)
+      try {
+        var resp = await this.$http.get(this.quotesBaseUrl(item))
+        if (resp.data && resp.data.ok) {
+          this.$set(this.supplierQuotesMap, item.id, resp.data.quotes || [])
+          this.$set(this.supplierQuotesLoaded, item.id, true)
+        }
+      } catch (e) {
+        // Silencioso: la sección queda vacía hasta el próximo intento.
+      } finally {
+        this.$set(this.supplierQuotesLoading, item.id, false)
+      }
+    },
+    applyQuotesResponse(item, data) {
+      if (data.quotes) {
+        this.$set(this.supplierQuotesMap, item.id, data.quotes)
+        this.$set(this.supplierQuotesLoaded, item.id, true)
+      }
+      if (data.prequote) {
+        this.prequote = this.parseNumericFields(data.prequote)
+        this.$emit('precotizacion-added')
+      }
+    },
+    async addSupplierQuote(item) {
+      try {
+        var resp = await this.$http.post(this.quotesBaseUrl(item), {})
+        if (resp.data && resp.data.ok) {
+          this.applyQuotesResponse(item, resp.data)
+          this.$message.success('Cotización agregada. Elige el proveedor y márcalo ganador.')
+        } else {
+          this.$message.error((resp.data && resp.data.message) || 'No se pudo agregar la cotización.')
+        }
+      } catch (e) {
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error al agregar la cotización.'
+        this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+      }
+    },
+    async saveSupplierQuote(item, quote, patch) {
+      try {
+        var resp = await this.$http.put(this.quotesBaseUrl(item) + '/' + quote.id, patch)
+        if (resp.data && resp.data.ok) {
+          this.applyQuotesResponse(item, resp.data)
+        } else {
+          this.$message.error((resp.data && resp.data.message) || 'No se pudo guardar la cotización.')
+          this.loadSupplierQuotes(item, true)
+        }
+      } catch (e) {
+        var msg = (e.response && e.response.data && (e.response.data.message || (e.response.data.errors ? 'Revisa los datos.' : null))) || 'Error al guardar la cotización.'
+        this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+        this.loadSupplierQuotes(item, true)
+      }
+    },
+    async setWinnerQuote(item, quote) {
+      try {
+        var resp = await this.$http.post(this.quotesBaseUrl(item) + '/' + quote.id + '/winner', {})
+        if (resp.data && resp.data.ok) {
+          this.applyQuotesResponse(item, resp.data)
+          this.$message.success((resp.data && resp.data.message) || 'Proveedor ganador actualizado.')
+        } else {
+          this.$message.error((resp.data && resp.data.message) || 'No se pudo marcar ganadora.')
+        }
+      } catch (e) {
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error al marcar ganadora.'
+        this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+      }
+    },
+    async removeSupplierQuote(item, quote) {
+      try {
+        var resp = await this.$http.delete(this.quotesBaseUrl(item) + '/' + quote.id)
+        if (resp.data && resp.data.ok) {
+          this.applyQuotesResponse(item, resp.data)
+        } else {
+          this.$message.error((resp.data && resp.data.message) || 'No se pudo quitar la cotización.')
+        }
+      } catch (e) {
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error al quitar la cotización.'
+        this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+      }
+    },
+    async toCatalogQuote(item, quote) {
+      try {
+        var resp = await this.$http.post(this.quotesBaseUrl(item) + '/' + quote.id + '/to-catalog', {})
+        if (resp.data && resp.data.ok) {
+          this.applyQuotesResponse(item, resp.data)
+          this.$message.success((resp.data && resp.data.message) || 'Producto creado en catálogo.')
+        } else {
+          this.$message.error((resp.data && resp.data.message) || 'No se pudo agregar a catálogo.')
+        }
+      } catch (e) {
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error al agregar a catálogo.'
+        this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+      }
+    },
+    supplierOptionsFor(quote) {
+      var list = this.supplierOptionsMap[quote.id] || []
+      // La opción elegida siempre visible aunque no esté en la búsqueda actual.
+      var hasCurrent = quote.supplier_id && list.some(function (s) { return Number(s.id) === Number(quote.supplier_id) })
+      if (quote.supplier_id && !hasCurrent) {
+        list = [{ id: quote.supplier_id, razon_social: quote.supplier_name, nombre_comercial: null }].concat(list)
+      }
+      return list
+    },
+    async searchSuppliers(query) {
+      var self = this
+      if (!query || query.length < 2) return
+      this.supplierSearching = true
+      try {
+        var resp = await this.$http.get('/comercial/proyectos/search-proveedores', { params: { q: query } })
+        var rows = (resp.data && resp.data.data) || []
+        // Guardar resultados para las filas abiertas (simple: todas).
+        Object.keys(this.supplierQuotesMap).forEach(function (itemId) {
+          (self.supplierQuotesMap[itemId] || []).forEach(function (q) {
+            var merged = (self.supplierOptionsMap[q.id] || []).slice()
+            rows.forEach(function (r) {
+              if (!merged.some(function (m) { return Number(m.id) === Number(r.id) })) merged.push(r)
+            })
+            self.$set(self.supplierOptionsMap, q.id, merged)
+          })
+        })
+      } catch (e) {
+        // Silencioso.
+      } finally {
+        this.supplierSearching = false
+      }
+    },
+    openQuoteRefSearch(item, quote) {
+      this.quoteRefTarget = { item: item, quote: quote }
+      this.quoteRefQuery = quote.product_reference || item.product_name || ''
+      this.quoteRefResults = []
+      this.quoteRefDialogVisible = true
+      this.searchQuoteRef()
+    },
+    async searchQuoteRef() {
+      var self = this
+      var q = (this.quoteRefQuery || '').trim()
+      if (q.length < 2) {
+        this.quoteRefResults = []
+        return
+      }
+      this.quoteRefLoading = true
+      try {
+        var resp = await this.$http.get('/marketing/quotation/products/search', { params: { q: q, limit: 10 } })
+        this.quoteRefResults = (resp.data && resp.data.results) || []
+      } catch (e) {
+        this.quoteRefResults = []
+      } finally {
+        this.quoteRefLoading = false
+      }
+    },
+    async pickQuoteRef(row) {
+      var t = this.quoteRefTarget
+      if (!t) return
+      var name = row.name || row.titulo || row.description || ''
+      await this.saveSupplierQuote(t.item, t.quote, { product_reference: name, source: 'catalog' })
+      this.quoteRefDialogVisible = false
+      this.quoteRefTarget = null
+    },
     /**
      * Kits SOLO FRONTALES (el backend llega después): agrupa productos de la
      * pantalla en un kit local. No toca endpoints ni el prequote.
@@ -2401,7 +2704,7 @@ export default {
 .erp-detail-layout { display: grid; grid-template-columns: minmax(0,1fr) 400px; gap: 18px; align-items: start; }
 .erp-detail-main { min-width: 0; }
 .erp-tech-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 14px 18px; align-items: start; }
-.erp-tech-grid .erp-obs { grid-column: 2; grid-row: 2 / span 2; }
+.erp-tech-grid .erp-obs { grid-column: 1 / -1; grid-row: auto; }
 .erp-tech-grid .erp-obs .el-textarea__inner { min-height: 118px; height: 100%; }
 .erp-tech-minirow { grid-column: 1; grid-row: 3; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
 .erp-tech-grid .ai-field label, .erp-costgrid .ai-field label { display: block; margin-bottom: 6px; color: #818897; text-transform: uppercase; font-size: 11px; font-weight: 800; }
@@ -2680,6 +2983,16 @@ export default {
   border-left: 3px solid #67c23a;
   border-radius: 0 4px 4px 0;
 }
+/* Comparativa de proveedores por ítem (mockup db) */
+.supplier-quotes-section {
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: #fdf6ec;
+  border-left: 3px solid #e6a23c;
+  border-radius: 0 4px 4px 0;
+}
+.supplier-quotes__title { font-size: 13px; color: #606266; font-weight: 800; margin-bottom: 2px; }
+.supplier-quotes__hint { font-size: 11px; color: #909399; margin-bottom: 8px; }
 .tiers-section__title { font-size: 13px; color: #606266; margin-bottom: 8px; }
 .tiers-section__title i { color: #67c23a; margin-right: 4px; }
 .tiers-section__hint {

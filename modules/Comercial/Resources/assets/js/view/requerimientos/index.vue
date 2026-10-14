@@ -530,6 +530,7 @@
       width="1340px"
       top="14vh"
       :close-on-click-modal="false"
+      :before-close="beforeDetailDialogClose"
       class="req-dialog"
     >
       <span slot="title" class="req-dialog-title">
@@ -544,7 +545,7 @@
                cotizacion-final, cotizaciones) ocupa el ancho completo (md=24)
                porque la Bitácora se oculta para dejar espacio horizontal. -->
           <el-col :xs="24" :md="leftColSpan">
-            <el-tabs v-model="detailDialog.activeTab" type="card" @tab-click="onDetailTabClick">
+            <el-tabs v-model="detailDialog.activeTab" type="card" :before-leave="beforeDetailTabLeave" @tab-click="onDetailTabClick">
               <!-- Resumen -->
               <!-- ✅ PESTAÑA DATOS (antes "Resumen") -->
               <el-tab-pane label="Datos" name="datos">
@@ -706,7 +707,7 @@
       </div>
 
       <span slot="footer" class="dialog-footer">
-        <el-button size="mini" @click="detailDialog.visible = false">
+        <el-button size="mini" @click="requestCloseDetailDialog">
           Cerrar
         </el-button>
       </span>
@@ -1145,6 +1146,68 @@ export default {
       } finally {
         this.detailDialog.loading = false;
       }
+    },
+
+    // ── Cambios sin guardar en Datos (TabDatos) ──────────────────────
+    // true si el formulario de Datos difiere de lo último guardado.
+    tabDatosHasChanges: function() {
+      var t = this.$refs.tabDatos;
+      return !!(t && typeof t.hasUnsavedChanges === 'function' && t.hasUnsavedChanges());
+    },
+
+    discardTabDatosChanges: function() {
+      var t = this.$refs.tabDatos;
+      if (t && typeof t.discardChanges === 'function') t.discardChanges();
+    },
+
+    // Confirmación común. Resuelve si puede continuar, rechaza si cancela.
+    confirmDiscardDatosChanges: function(accion) {
+      var self = this;
+      return new Promise(function(resolve, reject) {
+        self.$confirm(
+          'Tienes cambios sin guardar en Datos. Si continúas se perderán.',
+          'Cambios sin guardar',
+          {
+            confirmButtonText: accion || 'Descartar y continuar',
+            cancelButtonText: 'Seguir editando',
+            type: 'warning'
+          }
+        ).then(function() {
+          self.discardTabDatosChanges();
+          resolve();
+        }).catch(function() {
+          reject();
+        });
+      });
+    },
+
+    // El-tabs la llama antes de cambiar: devolver false/Promise rechazada
+    // mantiene la pestaña actual.
+    beforeDetailTabLeave: function(activeName, oldActiveName) {
+      if (oldActiveName !== 'datos' || !this.tabDatosHasChanges()) return true;
+      return this.confirmDiscardDatosChanges('Descartar y cambiar');
+    },
+
+    // El-dialog la llama al intentar cerrar (X, ESC). done() cierra de verdad.
+    beforeDetailDialogClose: function(done) {
+      var self = this;
+      if (!self.tabDatosHasChanges()) {
+        done();
+        return;
+      }
+      self.confirmDiscardDatosChanges('Descartar y cerrar').then(function() {
+        done();
+      }).catch(function() {
+        // El usuario decidió seguir editando: no se cierra.
+      });
+    },
+
+    // Botón "Cerrar" del footer: pasa por la misma validación.
+    requestCloseDetailDialog: function() {
+      var self = this;
+      self.beforeDetailDialogClose(function() {
+        self.detailDialog.visible = false;
+      });
     },
 
     // Refresca el contador de productos sin proveedor al cambiar de pestaña, para

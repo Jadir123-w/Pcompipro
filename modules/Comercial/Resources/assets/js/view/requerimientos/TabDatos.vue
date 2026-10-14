@@ -303,6 +303,9 @@ CAMBIOS EN V5:
       <!-- Botón guardar (oculto en modo solo lectura / convertido a proyecto) -->
       <el-row v-if="!soloLectura">
         <el-col :span="24" style="text-align: right; margin-top: 20px; padding-top: 15px; border-top: 1px solid #ebeef5;">
+          <el-tag v-if="isFormDirty" type="warning" size="mini" effect="plain" style="margin-right: 8px;">
+            Tienes cambios sin guardar
+          </el-tag>
           <el-button type="success" :loading="submitting" @click="handleSubmit">
             <i class="el-icon-check"></i> Guardar
           </el-button>
@@ -404,7 +407,10 @@ export default {
       calculandoPrioridad: false,
 
       csrfToken: '',
-      _pendingContactoId: null
+      _pendingContactoId: null,
+      // Foto de los últimos datos guardados/cargados para detectar cambios
+      // sin guardar (la usa el padre al cambiar de pestaña o cerrar el modal).
+      formSnapshot: null
     };
   },
 
@@ -427,10 +433,49 @@ export default {
     }
   },
 
+  computed: {
+    // true si el formulario difiere de lo último guardado/cargado.
+    // Hace que el tag "Sin guardar" reaccione a cada tecla.
+    isFormDirty: function() {
+      if (this.soloLectura || !this.formSnapshot) return false;
+      try {
+        return JSON.stringify(this.formData) !== this.formSnapshot;
+      } catch (e) {
+        return false;
+      }
+    }
+  },
+
   methods: {
     initializeForm: function() {
       if (this.requerimiento && !this.isNewRecord) {
         this.loadFormData(this.requerimiento);
+      } else {
+        this.captureSnapshot();
+      }
+    },
+
+    // Guarda la foto actual del formulario para comparar después.
+    captureSnapshot: function() {
+      try {
+        this.formSnapshot = JSON.stringify(this.formData);
+      } catch (e) {
+        this.formSnapshot = null;
+      }
+    },
+
+    // La usa el padre (modal) antes de cambiar de pestaña o cerrar.
+    hasUnsavedChanges: function() {
+      return !!this.isFormDirty;
+    },
+
+    // Revierte el formulario a lo último guardado/cargado.
+    discardChanges: function() {
+      if (!this.formSnapshot) return;
+      try {
+        this.formData = JSON.parse(this.formSnapshot);
+      } catch (e) {
+        // Sin foto válida no hay nada que revertir.
       }
     },
 
@@ -476,6 +521,8 @@ export default {
           });
         }
       }
+
+      this.captureSnapshot();
     },
 
     searchEmpresas: function(query) {
@@ -539,6 +586,7 @@ export default {
         if (self._pendingContactoId) {
           self.formData.contacto_id = self._pendingContactoId;
           self._pendingContactoId = null;
+          self.captureSnapshot();
         }
 
         console.log('Contactos cargados:', self.contactosOptions);
@@ -676,6 +724,7 @@ export default {
       .then(function(response) {
         var data = response.data;
         if (data && data.ok) {
+          self.captureSnapshot();
           if (self.isNewRecord) {
             self.$message.success('Requerimiento creado exitosamente');
             self.$emit('created', data.data);

@@ -99,6 +99,7 @@
       width="1072px"
       top="14vh"
       :close-on-click-modal="false"
+      :before-close="beforeDetailDialogClose"
       class="req-dialog"
     >
       <span slot="title" class="req-dialog-title">
@@ -110,11 +111,12 @@
         <el-row :gutter="16" class="req-dialog-layout">
           <!-- Columna izquierda: tabs -->
           <el-col :xs="24" :md="16">
-            <el-tabs v-model="detailDialog.activeTab" type="card">
+            <el-tabs v-model="detailDialog.activeTab" type="card" :before-leave="beforeDetailTabLeave">
               
               <!-- ✅ PESTAÑA DATOS (usa componente TabDatos) -->
               <el-tab-pane label="Datos" name="datos">
                 <TabDatos
+                  ref="tabDatos"
                   :requerimiento="detail"
                   :isNewRecord="false"
                   :solo-lectura="!!detail.escalado_a_proyecto"
@@ -240,7 +242,7 @@
       </div>
 
       <span slot="footer" class="dialog-footer">
-        <el-button size="mini" @click="detailDialog.visible = false">
+        <el-button size="mini" @click="requestCloseDetailDialog">
           Cerrar
         </el-button>
       </span>
@@ -484,6 +486,60 @@ export default {
       } finally {
         this.logsState.loading = false
       }
+    },
+
+    // ── Cambios sin guardar en Datos (TabDatos) ──────────────────────
+    tabDatosHasChanges () {
+      const t = this.$refs.tabDatos
+      return !!(t && typeof t.hasUnsavedChanges === 'function' && t.hasUnsavedChanges())
+    },
+
+    discardTabDatosChanges () {
+      const t = this.$refs.tabDatos
+      if (t && typeof t.discardChanges === 'function') t.discardChanges()
+    },
+
+    confirmDiscardDatosChanges (accion) {
+      const self = this
+      return new Promise(function (resolve, reject) {
+        self.$confirm(
+          'Tienes cambios sin guardar en Datos. Si continúas se perderán.',
+          'Cambios sin guardar',
+          {
+            confirmButtonText: accion || 'Descartar y continuar',
+            cancelButtonText: 'Seguir editando',
+            type: 'warning'
+          }
+        ).then(function () {
+          self.discardTabDatosChanges()
+          resolve()
+        }).catch(function () {
+          reject()
+        })
+      })
+    },
+
+    beforeDetailTabLeave (activeName, oldActiveName) {
+      if (oldActiveName !== 'datos' || !this.tabDatosHasChanges()) return true
+      return this.confirmDiscardDatosChanges('Descartar y cambiar')
+    },
+
+    beforeDetailDialogClose (done) {
+      const self = this
+      if (!self.tabDatosHasChanges()) {
+        done()
+        return
+      }
+      self.confirmDiscardDatosChanges('Descartar y cerrar').then(function () {
+        done()
+      }).catch(function () {})
+    },
+
+    requestCloseDetailDialog () {
+      const self = this
+      self.beforeDetailDialogClose(function () {
+        self.detailDialog.visible = false
+      })
     },
 
     // ✅ Eventos de los componentes Tab

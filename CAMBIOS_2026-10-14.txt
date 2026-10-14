@@ -1,0 +1,74 @@
+CAMBIOS — Comparativa de proveedores en Pre-Cotización + validación de cambios sin guardar
+Rama: dev-jadir | Fecha: 2026-10-14 | Repo: EvyKuper/erp_compipro
+====================================================================================
+
+1) COMPARATIVA DE PROVEEDORES POR ÍTEM (replica del mockup E:\xampp\htdocs\db)
+--------------------------------------------------------------------------------
+Cada ítem de la pre-cotización acepta N proveedores cotizados; el ganador
+define supplier_id/name + costo_base de la línea (antes solo había 1
+proveedor directo por ítem).
+
+Archivos nuevos:
+- database/migrations/tenant/2026_10_14_000001_create_quotation_prequote_item_suppliers_table.php
+  Tabla quotation_prequote_item_suppliers: prequote_item_id (FK cascade),
+  supplier_id (persons.id, NULL = por definir), supplier_name,
+  source (manual|catalog, lo asigna el sistema), product_reference,
+  costo_base, tiempo_entrega, observacion, es_ganador, orden, user_id.
+  PENDIENTE de correr en cada tenant (php artisan migrate).
+- modules/Marketing/Models/PreQuoteItemSupplier.php
+  Modelo con casts y relación al ítem.
+
+Archivos modificados:
+- modules/Marketing/Models/PreQuoteItem.php
+  Relaciones supplierQuotes() (ordenada) y winningQuote().
+- modules/Marketing/Http/Controllers/Api/QuotationPreQuoteController.php
+  (+~423 líneas) 6 endpoints:
+  GET    .../items/{itemId}/quotes            lista (auto-siembra
+         "Proveedor por definir" ganadora si está vacío, como el mockup)
+  POST   .../items/{itemId}/quotes            agregar ("+ proveedor")
+  PUT    .../items/{itemId}/quotes/{quoteId}  editar (si toca el costo del
+         ganador, sincroniza el ítem y recalcula)
+  DELETE .../items/{itemId}/quotes/{quoteId}  quitar (prohíbe quitar la
+         última; si era ganadora promueve la siguiente por orden)
+  POST   .../quotes/{quoteId}/winner          marcar ganadora (sincroniza
+         supplier + costo base + recalcula + historial)
+  POST   .../quotes/{quoteId}/to-catalog      "Agregar catálogo" (crea el
+         producto en items con 01/NIU/PEN/10 y marca origen catálogo)
+- modules/Marketing/Routes/web.php
+  Las 6 rutas en el grupo marketing (sesión web, misma auth del Tab).
+- modules/Comercial/.../TabPreCotizacion.vue (+~323 líneas)
+  Sección "Comparativa de proveedores" en el editor expandido del ítem
+  (mismo título y textos del mockup): radio Ganador, Proveedor (buscador
+  /comercial/proyectos/search-proveedores), tag Origen auto, Referencia +
+  botón Buscar (usa /marketing/quotation/products/search y marca catálogo),
+  Costo Base, Tiempo entrega, Observación, Acción (Agregar catálogo /
+  Ya está en catálogo / Quitar) y botón "+ proveedor". Carga perezosa por
+  ítem con watcher de prequote. Incluye además: botón "Interpretar ítem"
+  retirado del acordeón de ingreso (IA inestable) y Observaciones a todo
+  el ancho del modal (.erp-obs grid-column 1/-1).
+
+Notas:
+- La pestaña Proveedores sigue asignando directo al ítem; si se usa la
+  comparativa, el ganador manda (sincroniza supplier + costo + recalcula).
+- El Buscar-referencia usa el catálogo general (el ERP no tiene mapeo
+  proveedor→catálogo como el mockup).
+
+2) VALIDACIÓN DE CAMBIOS SIN GUARDAR (modal de requerimientos)
+--------------------------------------------------------------------------------
+Detecta edición en Datos y confirma antes de cambiar de pestaña o cerrar.
+- TabDatos.vue: foto formSnapshot (al cargar, al resolver contacto async y
+  al guardar), hasUnsavedChanges()/discardChanges() y tag "Tienes cambios
+  sin guardar" junto a Guardar.
+- index.vue y kanban.vue (el modal está duplicado en ambas vistas):
+  before-leave en el-tabs y before-close en el dialog + botón Cerrar
+  pasando por el mismo guard. Al confirmar se revierte y continúa; al
+  cancelar se queda. Solo vigila Datos (las demás pestañas guardan al
+  instante). Requiere Element UI con soporte before-leave (2.x, ya usado).
+
+3) NOTAS DE ENTORNO (no van en el commit, solo informativo)
+--------------------------------------------------------------------------------
+- public/js/app.js recompilado con npm run development (gitignored, no se sube).
+- En local hizo falta FcgidBusyTimeout 3600 en Apache (crear tenant corre
+  ~1100 migraciones, >5 min) y APP_DEBUG=true + LOG_CHANNEL=daily para ver
+  errores reales. Revisar APP_KEY del .env local (cambió sin registro).
+- Migración pendiente de aplicar en tenants existentes.

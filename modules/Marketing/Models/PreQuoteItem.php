@@ -190,6 +190,23 @@ class PreQuoteItem extends ModelTenant
         return $this->belongsTo(\App\Models\Tenant\Person::class, 'supplier_id');
     }
 
+    /**
+     * Comparativa de proveedores del ítem (mockup): N cotizaciones por
+     * ítem; el ganador define supplier_id/name + costo_base de la línea.
+     */
+    public function supplierQuotes()
+    {
+        return $this->hasMany(PreQuoteItemSupplier::class, 'prequote_item_id')
+            ->orderBy('orden')
+            ->orderBy('id');
+    }
+
+    public function winningQuote()
+    {
+        return $this->hasOne(PreQuoteItemSupplier::class, 'prequote_item_id')
+            ->where('es_ganador', true);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Helpers

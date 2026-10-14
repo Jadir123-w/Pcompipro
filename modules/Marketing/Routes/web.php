@@ -217,6 +217,32 @@ Route::middleware(['auth', 'redirect.module', 'locked.tenant', 'check.email.veri
             [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'applySupplier'])
             ->name('quotation.prequotes.items.apply-supplier');
 
+        // Comparativa de proveedores por ítem (mockup db): N cotizaciones
+        // por ítem; el ganador define supplier + costo base de la línea.
+        Route::get('/quotation/prequotes/{id}/items/{itemId}/quotes',
+            [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'supplierQuotes'])
+            ->name('quotation.prequotes.items.quotes.index');
+
+        Route::post('/quotation/prequotes/{id}/items/{itemId}/quotes',
+            [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'storeSupplierQuote'])
+            ->name('quotation.prequotes.items.quotes.store');
+
+        Route::put('/quotation/prequotes/{id}/items/{itemId}/quotes/{quoteId}',
+            [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'updateSupplierQuote'])
+            ->name('quotation.prequotes.items.quotes.update');
+
+        Route::delete('/quotation/prequotes/{id}/items/{itemId}/quotes/{quoteId}',
+            [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'destroySupplierQuote'])
+            ->name('quotation.prequotes.items.quotes.destroy');
+
+        Route::post('/quotation/prequotes/{id}/items/{itemId}/quotes/{quoteId}/winner',
+            [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'setWinnerSupplierQuote'])
+            ->name('quotation.prequotes.items.quotes.winner');
+
+        Route::post('/quotation/prequotes/{id}/items/{itemId}/quotes/{quoteId}/to-catalog',
+            [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'toCatalogSupplierQuote'])
+            ->name('quotation.prequotes.items.quotes.to-catalog');
+
         Route::post('/quotation/prequotes/{id}/convert', [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'convert'])
             ->name('quotation.prequotes.convert');
 
