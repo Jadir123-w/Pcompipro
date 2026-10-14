@@ -23,6 +23,9 @@ class PreQuoteItem extends ModelTenant
         // 2026_08_12_000001 para el motivo y para por qué igual se apunta a un
         // producto genérico en lugar de dejar item_id vacío.
         'excluir_catalogo',
+        // Tipo de línea (columna sin nombre en el Tab): product|service|comision.
+        // Lo usa el combo de la tabla; el backend ajusta item_id/review según el tipo.
+        'tipo_linea',
         // COM-02 — override manual del "Cód. Artíc." de la propuesta.
         // NULL = el ítem hereda el código del catálogo (items.internal_id).
         // Sin cast a propósito: un cast 'string' volvería el NULL en '' y se

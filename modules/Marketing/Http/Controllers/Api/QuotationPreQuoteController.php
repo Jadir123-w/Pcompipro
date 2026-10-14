@@ -259,6 +259,8 @@ class QuotationPreQuoteController extends Controller
             'product_name', 'product_description', 'quantity', 'material', 'medida',
             'tecnica_impresion', 'cantidad_colores', 'cantidad_lados', 'empaque',
             'personalizacion', 'supplier_id', 'supplier_name', 'costo_base',
+            // Tipo de línea (combo sin nombre en la tabla del Tab).
+            'tipo_linea',
             'costos_adicionales', 'margen_porcentaje', 'tiempo_estimado_dias', 'observaciones',
             // Agosto 2026 (punto 9): plazo ofrecido al cliente, editable desde el
             // Preview. Distinto de tiempo_estimado_dias, que es el de producción.
@@ -281,6 +283,16 @@ class QuotationPreQuoteController extends Controller
         ];
 
         $updates = $request->only($editableFields);
+
+        // El nombre es obligatorio (el mockup omite ítems sin nombre): sin esto
+        // el UPDATE revienta con 500 por el NOT NULL de product_name.
+        if (array_key_exists('product_name', $updates)
+            && trim((string) $updates['product_name']) === '') {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Ponle un nombre al producto antes de guardar.',
+            ], 422);
+        }
 
         // COM-02 — SCTR unitario: validar/normalizar el override por ítem.
         // '' o null → NULL (hereda de la cotización). Mismo rango que el de cotización.
@@ -322,6 +334,30 @@ class QuotationPreQuoteController extends Controller
         ]);
         if ($vcl->fails()) {
             return response()->json(['ok' => false, 'errors' => $vcl->errors()], 422);
+        }
+
+        // COM-02 — Tipo de línea (combo sin nombre en la tabla del Tab):
+        // product|service|comision. Normaliza y ajusta el match como el mockup:
+        // - comision → enlaza DIRECTO el ítem COMISIÓN (id 271), sin revisión.
+        // - service → suelta el match (nunca registra item_id) y pide revisión.
+        // - product que venía de comision (item 271) → suelta y pide revisión.
+        // - product normal → no toca el match existente.
+        $tipoLinea = strtolower(trim((string) ($updates['tipo_linea'] ?? $item->tipo_linea ?? 'product')));
+        if (!in_array($tipoLinea, ['product', 'service', 'comision'], true)) $tipoLinea = 'product';
+        $updates['tipo_linea'] = $tipoLinea;
+        if ($tipoLinea === 'comision') {
+            // Comisión = línea propia del requerimiento (ya NO referencia al
+            // ítem 271 del catálogo): sin match, sin revisión, costo fijo.
+            $updates['item_id'] = null;
+            $updates['needs_product_review'] = false;
+            $updates['product_match_confidence'] = 1;
+            // Comisión = costo fijo: cantidad 1 y sin margen (como el mockup).
+            $updates['quantity'] = 1;
+            $updates['margen_porcentaje'] = 0;
+        } elseif ($tipoLinea === 'service' || (int) $item->item_id === 271) {
+            $updates['item_id'] = null;
+            $updates['needs_product_review'] = true;
+            $updates['product_match_confidence'] = 0;
         }
 
         // Snapshot ANTES del update — necesario para detectar qué campos cambiaron
@@ -422,7 +458,9 @@ class QuotationPreQuoteController extends Controller
 
         return response()->json([
             'ok'       => true,
-            'prequote' => $this->enrichItemsWithMinMargin($prequote->load('items')),
+            // Con catalogItem para que el tag muestre el nombre (ej. COMISIÓN)
+            // en vez de "ID 271" tras cambiar el tipo.
+            'prequote' => $this->enrichItemsWithMinMargin($prequote->load('items', 'items.catalogItem')),
         ]);
     }
 
@@ -1832,6 +1870,14 @@ class QuotationPreQuoteController extends Controller
 
         $item = $prequote->items()->where('id', $itemId)->firstOrFail();
 
+        // La comisión no maneja proveedores (línea propia del requerimiento).
+        if (strtolower(trim((string) ($item->tipo_linea ?? ''))) === 'comision') {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'La comisión no maneja proveedores.',
+            ], 422);
+        }
+
         $updates = [
             'supplier_id'          => (int) $request->input('supplier_id'),
             'supplier_name'        => $request->input('supplier_name'),
@@ -1889,6 +1935,10 @@ class QuotationPreQuoteController extends Controller
     {
         $prequote = PreQuote::findOrFail($prequoteId);
         $item = $prequote->items()->where('id', $itemId)->firstOrFail();
+        // La comisión no maneja proveedores (línea propia del requerimiento).
+        if (strtolower(trim((string) ($item->tipo_linea ?? ''))) === 'comision') {
+            abort(422, 'La comisión no maneja proveedores.');
+        }
         return [$prequote, $item];
     }
 

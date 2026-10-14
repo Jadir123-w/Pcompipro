@@ -1,44 +1,55 @@
 <template>
   <div v-loading="loading" class="tab-precotizacion">
 
-    <!-- Totales SIEMPRE arriba (barra fija): mismos valores del Resumen General.
-         Fila 1: indicadores persistidos + Utilidad Real. Fila 2: costo real en vivo + TOTAL. -->
+    <!-- Totales SIEMPRE arriba (barra fija): mismo orden y formato compacto
+         de la referencia (Estado → … → TOTAL). -->
     <div v-if="prequote" class="precot-totals">
-      <el-row :gutter="15">
-        <el-col :span="4">
-          <strong>Estado:</strong>
-          <el-tag :type="estadoTagType(prequote.estado)" size="small">{{ prequote.estado }}</el-tag>
-        </el-col>
-        <el-col :span="5">
-          <strong>Subtotal:</strong> S/ {{ parseFloat(prequote.subtotal).toFixed(2) }}
-        </el-col>
-        <el-col :span="4">
-          <strong>IGV:</strong> S/ {{ parseFloat(prequote.total_igv).toFixed(2) }}
-        </el-col>
-        <el-col :span="6">
-          <strong>Margen Ganancia:</strong> <span style="color:#67C23A;">S/ {{ parseFloat(prequote.ganancia_total || 0).toFixed(2) }}</span>
-        </el-col>
-        <el-col :span="5">
-          <span :title="tituloEnVivo"><strong>Utilidad Real:</strong> <span style="color:#67C23A;">S/ {{ resumenCostoReal.utilidadReal.toFixed(2) }}</span></span>
-        </el-col>
-      </el-row>
-      <el-row :gutter="15" style="margin-top:6px;">
-        <el-col :span="4">
-          <span :title="tituloEnVivo"><strong>Margen Real:</strong> {{ margenRealTotalPct.toFixed(2) }}%</span>
-        </el-col>
-        <el-col :span="5">
-          <span :title="tituloEnVivo"><strong>Movilidad:</strong> S/ {{ resumenCostoReal.movilidad.toFixed(2) }}</span>
-        </el-col>
-        <el-col :span="4">
-          <span :title="tituloEnVivo"><strong>Empaque:</strong> S/ {{ resumenCostoReal.empaque.toFixed(2) }}</span>
-        </el-col>
-        <el-col :span="6">
-          <span :title="tituloEnVivo"><strong>Seguro:</strong> S/ {{ resumenCostoReal.seguro.toFixed(2) }}</span>
-        </el-col>
-        <el-col :span="5">
-          <strong style="font-size:16px;">TOTAL: S/ {{ parseFloat(prequote.total).toFixed(2) }}</strong>
-        </el-col>
-      </el-row>
+      <div class="precot-totals__grid">
+        <div class="precot-total">
+          <span class="precot-total__label">Estado</span>
+          <el-tag :type="estadoTagType(prequote.estado)" size="mini">{{ prequote.estado }}</el-tag>
+        </div>
+        <div class="precot-total">
+          <span class="precot-total__label">Movilidad</span>
+          <span :title="tituloEnVivo">S/ {{ resumenCostoReal.movilidad.toFixed(2) }}</span>
+        </div>
+        <div class="precot-total">
+          <span class="precot-total__label">Empaque</span>
+          <span :title="tituloEnVivo">S/ {{ resumenCostoReal.empaque.toFixed(2) }}</span>
+        </div>
+        <div class="precot-total">
+          <span class="precot-total__label">Seguro</span>
+          <span :title="tituloEnVivo">S/ {{ resumenCostoReal.seguro.toFixed(2) }}</span>
+        </div>
+        <div class="precot-total precot-total--wide">
+          <span class="precot-total__label" title="Promedio simple del Margen % ingresado por ítem.">Prom. margen <i class="el-icon-info"></i></span>
+          <span>{{ promedioMargenIngresado.toFixed(2) }}%</span>
+        </div>
+        <div class="precot-total">
+          <span class="precot-total__label">Margen ganancia</span>
+          <span style="color:#67C23A;">S/ {{ parseFloat(prequote.ganancia_total || 0).toFixed(2) }}</span>
+        </div>
+        <div class="precot-total">
+          <span class="precot-total__label">Utilidad real</span>
+          <span :title="tituloEnVivo" style="color:#67C23A;">S/ {{ resumenCostoReal.utilidadReal.toFixed(2) }}</span>
+        </div>
+        <div class="precot-total">
+          <span class="precot-total__label">Margen real</span>
+          <span :title="tituloEnVivo">{{ margenRealTotalPct.toFixed(2) }}%</span>
+        </div>
+        <div class="precot-total">
+          <span class="precot-total__label">Subtotal</span>
+          <span>S/ {{ parseFloat(prequote.subtotal).toFixed(2) }}</span>
+        </div>
+        <div class="precot-total">
+          <span class="precot-total__label">IGV ({{ igvPct }}%)</span>
+          <span>S/ {{ parseFloat(prequote.total_igv).toFixed(2) }}</span>
+        </div>
+        <div class="precot-total precot-total--total">
+          <span class="precot-total__label">Total</span>
+          <strong>S/ {{ parseFloat(prequote.total).toFixed(2) }}</strong>
+        </div>
+      </div>
     </div>
 
     <!-- ═══ Ingreso: 2 acordeones lado a lado ═══
@@ -90,6 +101,10 @@
               <el-button icon="el-icon-plus" :loading="addingManual"
                          :disabled="addingManual || interpretingItem" @click="addManualItem">
                 {{ addingManual ? 'Agregando…' : 'Ítem manual' }}
+              </el-button>
+              <el-button type="primary" icon="el-icon-plus" :loading="interpretingItem"
+                         :disabled="!referenceMode" @click="interpretItem">
+                {{ interpretingItem ? 'Interpretando…' : 'Interpretar ítem' }}
               </el-button>
             </div>
           </el-collapse-item>
@@ -209,7 +224,7 @@
       </div>
 
       <!-- Tabla de items -->
-      <el-table :data="prequote.items" stripe border size="small" class="mb-2" row-key="id">
+      <el-table :data="prequote.items" stripe border size="small" class="mb-2 items-table" row-key="id">
 
         <!-- Fila expandible: detalles técnicos del ítem con badge "Inferido por IA" -->
         <el-table-column type="expand" width="40">
@@ -229,7 +244,7 @@
 
               <div class="erp-detail-layout">
                 <div class="erp-detail-main">
-                  <div class="erp-tech-grid">
+                  <div class="erp-tech-grid" v-if="!isComision(props.row)">
                     <div class="ai-field">
                       <label class="lbl-help" title="Material del producto. Si lo sugirió la IA, confírmalo con el cliente.">Material <i class="el-icon-info field-tip-icon"></i></label>
                       <el-input v-model="props.row.material" size="mini" :disabled="!isEditable"
@@ -290,13 +305,6 @@
                         </el-tooltip>
                       </el-input>
                     </div>
-                    <div class="ai-field erp-obs">
-                      <label class="lbl-help" title="Notas internas de esta línea; no se muestran al cliente.">Observaciones <i class="el-icon-info field-tip-icon"></i></label>
-                      <el-input v-model="props.row.observaciones" size="mini" :disabled="!isEditable"
-                                type="textarea" :autosize="{minRows: 2, maxRows: 6}"
-                                placeholder="Notas internas para esta línea (opcional)">
-                      </el-input>
-                    </div>
                     <div class="erp-tech-minirow">
                       <div class="ai-field ai-field--with-outside-icon">
                         <label class="lbl-help" title="Cantidad de colores de la impresión (afecta el costo).">Colores <i class="el-icon-info field-tip-icon"></i></label>
@@ -329,13 +337,31 @@
                       </div>
                     </div>
                   </div>
+                  <div class="erp-tech-duo">
+                      <div class="ai-field">
+                        <label class="lbl-help" title="Descripción comercial o especificaciones del producto.">Descripción <i class="el-icon-info field-tip-icon"></i></label>
+                        <el-input v-model="props.row.product_description" size="mini" :disabled="!isEditable"
+                                  type="textarea" :autosize="{minRows: 2, maxRows: 6}"
+                                  placeholder="Descripción comercial o especificaciones del producto..."
+                                  @input="onFieldEdited(props.row, 'product_description')"
+                                  :class="{ 'ai-inferred-input': isInferred(props.row, 'product_description') }">
+                        </el-input>
+                      </div>
+                      <div class="ai-field erp-obs" v-if="!isComision(props.row)">
+                        <label class="lbl-help" title="Notas internas de esta línea; no se muestran al cliente.">Observaciones <i class="el-icon-info field-tip-icon"></i></label>
+                        <el-input v-model="props.row.observaciones" size="mini" :disabled="!isEditable"
+                                  type="textarea" :autosize="{minRows: 2, maxRows: 6}"
+                                  placeholder="Notas internas para esta línea (opcional)">
+                        </el-input>
+                      </div>
+                    </div>
 
               <!-- Agosto 2026 (punto 2) — kits y servicio de armado.
                    Un kit son varios productos agrupados solo para esta cotización
                    y el armado es un servicio puntual: ninguno es un producto del
                    catálogo. Marcado, al convertir NO se le crea un producto propio.
                    La línea de la cotización conserva igual este nombre. -->
-              <el-row :gutter="12" type="flex" style="flex-wrap:wrap; margin-top:4px;">
+              <el-row :gutter="12" type="flex" style="flex-wrap:wrap; margin-top:4px;" v-if="!isComision(props.row)">
                 <el-col :span="24">
                   <el-checkbox v-model="props.row.excluir_catalogo" :disabled="!isEditable">
                     No registrar como producto del catálogo
@@ -348,7 +374,7 @@
               </el-row>
 
               <!-- ───────────── Mi Costeo del ítem (formato mockup) ───────────── -->
-              <div class="costeo-section erp-cost">
+              <div class="costeo-section erp-cost" v-if="!isComision(props.row)">
                 <div class="costeo-section__title">
                   <i class="el-icon-coin"></i> <strong>Mi Costeo del ítem</strong>
                   <span class="costeo-section__hint">Muestra y movilidad se cargan 1 vez por pedido; impresión y empaque pueden ser por unidad. Impresión = costo × colores × lados × millar. El Seguro SCTR normal se mantiene para el Total sin IGV; el Costo Real Total usa una base de costo real propia.</span>
@@ -540,7 +566,7 @@
               <!-- ─────── Comparativa de proveedores (mockup db) ───────
                    N cotizaciones por ítem; el ganador define el Costo Base
                    de la línea. Origen: catálogo (lista de precios) o manual. -->
-              <div class="supplier-quotes-section">
+              <div class="supplier-quotes-section" v-if="!isComision(props.row)">
                 <div class="supplier-quotes__title">▣ Comparativa de proveedores</div>
                 <div class="supplier-quotes__hint">El proveedor ganador define el Costo Base de esta línea. El origen lo asigna el sistema: catálogo si viene de lista de precios, manual si fue cotizado fuera del catálogo.</div>
                 <el-table :data="supplierQuotesOf(props.row)" size="mini" border style="width:100%;">
@@ -619,7 +645,7 @@
               </div>
 
               <!-- ─────── Fase C: Escalones de precio por volumen ─────── -->
-              <div v-if="props.row.precios_volumen_disponibles && props.row.precios_volumen_disponibles.length > 0"
+              <div v-if="!isComision(props.row) && props.row.precios_volumen_disponibles && props.row.precios_volumen_disponibles.length > 0"
                    class="tiers-section">
                 <div class="tiers-section__title">
                   <i class="el-icon-sort"></i> <strong>Precios por volumen del catálogo</strong>
@@ -666,7 +692,8 @@
 
         <el-table-column label="Producto solicitado" min-width="110">
           <template slot-scope="scope">
-            <el-input v-model="scope.row.product_name" size="mini" :disabled="!isEditable"></el-input>
+            <el-input v-if="!isComision(scope.row)" v-model="scope.row.product_name" size="mini" :disabled="!isEditable"></el-input>
+            <span v-else style="font-size:12px;">{{ scope.row.product_name || 'COMISIÓN' }}</span>
           </template>
         </el-table-column>
 
@@ -678,16 +705,15 @@
           <template slot-scope="scope">
             <div class="item-foto-cell">
               <img v-if="itemImageUrl(scope.row)" :src="itemImageUrl(scope.row)" alt="foto"
-                   class="item-foto-thumb"/>
-              <span v-else class="item-foto-empty"><i class="el-icon-picture-outline"></i></span>
+                   class="item-foto-thumb item-foto-click"
+                   :title="isEditable ? 'Click para cambiar la foto' : 'Foto del producto'"
+                   @click="isEditable && triggerItemImageUpload(scope.row)"/>
+              <span v-else class="item-foto-empty item-foto-click"
+                    :title="isEditable ? 'Click para subir la foto' : ''"
+                    @click="isEditable && triggerItemImageUpload(scope.row)"><i class="el-icon-picture-outline"></i></span>
 
-              <div v-if="isEditable" class="item-foto-actions">
-                <el-button size="mini" type="text" icon="el-icon-upload2"
-                           :loading="uploadingItemImageId === scope.row.id"
-                           @click="triggerItemImageUpload(scope.row)">
-                  {{ itemImageUrl(scope.row) ? 'Cambiar' : 'Subir' }}
-                </el-button>
-                <el-button v-if="itemImageUrl(scope.row)" size="mini" type="text" class="item-foto-del"
+              <div v-if="isEditable && itemImageUrl(scope.row)" class="item-foto-actions">
+                <el-button size="mini" type="text" class="item-foto-del"
                            icon="el-icon-delete"
                            @click="deleteItemImage(scope.row)">
                   Quitar
@@ -697,13 +723,27 @@
           </template>
         </el-table-column>
 
+        <!-- Columna sin nombre: tipo de línea (mockup db). Comisión enlaza
+             directo el ítem 271; el backend ajusta match y revisión. -->
+        <el-table-column label="" width="112">
+          <template slot-scope="scope">
+            <el-select v-model="scope.row.tipo_linea" size="mini" :disabled="!isEditable"
+                       title="Tipo de línea" @change="onTipoLineaChange(scope.row)"
+                       style="width:100%;">
+              <el-option label="Producto" value="product"></el-option>
+              <el-option label="Servicio" value="service"></el-option>
+              <el-option label="Comisión" value="comision"></el-option>
+            </el-select>
+          </template>
+        </el-table-column>
+
         <!-- Columna NUEVA: producto del catálogo + badge de matching -->
         <el-table-column label="Producto del catálogo" min-width="150">
           <template slot="header">
             <span class="col-tip" title="Producto del catálogo de Compipro asociado a lo que pidió el cliente (sugerido por la IA).">Producto del catálogo <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
-            <div>
+            <div v-if="!isComision(scope.row)">
               <!-- Estado: alta confianza -->
               <el-tag v-if="matchStatus(scope.row) === 'matched'" size="mini" type="success" effect="plain">
                 <i class="el-icon-success"></i>
@@ -731,13 +771,14 @@
                 Confianza: {{ Math.round((parseFloat(scope.row.product_match_confidence) || 0) * 100) }}%
               </div>
             </div>
+            <el-tag v-else size="mini" type="info" effect="plain">Comisión</el-tag>
           </template>
         </el-table-column>
 
-        <el-table-column label="Cant." width="96">
+        <el-table-column label="Cant." width="88">
           <template slot-scope="scope">
             <el-input-number v-model="scope.row.quantity" size="mini" :min="1" :max="999999"
-                             controls-position="right" :disabled="!isEditable" class="campo-precio"></el-input-number>
+                             controls-position="right" :disabled="!isEditable || isComision(scope.row)" class="campo-precio"></el-input-number>
           </template>
         </el-table-column>
         <el-table-column label="Costo Base" width="118" align="right">
@@ -768,7 +809,7 @@
               :content="minMarginTooltip(scope.row)"
               placement="top" effect="dark">
               <el-input-number v-model="scope.row.margen_porcentaje" size="mini" :precision="1" :step="5"
-                               :min="0" :max="999" controls-position="right" :disabled="!isEditable"
+                               :min="0" :max="999" controls-position="right" :disabled="!isEditable || isComision(scope.row)"
                                class="campo-precio"
                                :class="{ 'campo-margen-bajo': isUnderMinMargin(scope.row) }">
               </el-input-number>
@@ -799,7 +840,7 @@
             <span class="campo-calculado"><strong>S/ {{ parseFloat(scope.row.total_item).toFixed(2) }}</strong></span>
           </template>
         </el-table-column>
-        <el-table-column label="" width="108" align="center">
+        <el-table-column label="" width="100" align="center">
           <template slot-scope="scope">
             <el-button size="mini" type="success" icon="el-icon-check" circle
                        @click="saveItem(scope.row)" :disabled="!isEditable"
@@ -825,10 +866,6 @@
 
       <!-- Acciones -->
       <el-row type="flex" justify="end" class="mt-2">
-        <el-button v-if="isEditable" size="small" icon="el-icon-plus"
-                   @click="addManualItem" :loading="addingManual">
-          Ítem manual
-        </el-button>
         <el-button v-if="isEditable" type="warning" size="small" :disabled="hayProductosSinProveedor"
                    @click="changeStatus('validada')" icon="el-icon-circle-check">
           Validar
@@ -853,7 +890,7 @@
     </div>
 
     <!-- Dialog: Revisar / elegir producto del catálogo -->
-    <el-dialog :title="matchDialogTitle" :visible.sync="matchDialogVisible" width="700px"
+    <el-dialog :title="matchDialogTitle" :visible.sync="matchDialogVisible" width="880px"
                custom-class="product-match-dialog" append-to-body
                @close="onMatchDialogClose">
 
@@ -918,30 +955,44 @@
                   style="margin-bottom:14px;"
                   title="No hay sugerencias automáticas — usa la búsqueda manual abajo."></el-alert>
 
-        <!-- Búsqueda manual -->
+        <!-- Búsqueda manual en tarjetas (mismo endpoint de catálogo) -->
         <div style="margin-bottom:8px;">
           <strong>Buscar otro producto en el catálogo:</strong>
         </div>
-        <el-autocomplete
-          v-model="manualQuery"
-          :fetch-suggestions="fetchManualResults"
-          placeholder="Escribe nombre o descripción para buscar (mínimo 2 caracteres)"
-          style="width:100%;"
-          @select="onManualSelect"
-          :debounce="350"
-          popper-class="product-match-autocomplete">
-          <template slot-scope="{ item }">
-            <div style="line-height:1.3;">
-              <strong>{{ item.name }}</strong>
-              <span style="float:right; font-size:11px; color:#909399;">
-                {{ Math.round((parseFloat(item.score) || 0) * 100) }}% · S/ {{ parseFloat(item.sale_unit_price || 0).toFixed(2) }}
-              </span>
-              <div v-if="item.description" style="font-size:11px; color:#909399;">
-                {{ truncate(item.description, 80) }}
+        <el-input v-model="manualQuery" clearable
+                  placeholder="Escribe nombre o descripción para buscar (mínimo 2 caracteres)"
+                  style="width:100%;" @input="fetchManualResults">
+          <i slot="prefix" class="el-input__icon el-icon-search"></i>
+        </el-input>
+        <div v-loading="manualSearching" class="catalog-cards">
+          <div v-for="r in manualResults" :key="r.item_id" class="catalog-card"
+               @click="onManualSelect(r)" :title="'Elegir: ' + (r.name || '')">
+            <div class="catalog-card__badge">
+              <img v-if="r.image_url_small" :src="r.image_url_small" :alt="r.name"
+                   @error="$event.target.style.display='none'"/>
+              <span v-else>{{ catalogInitials(r) }}</span>
+            </div>
+            <div class="catalog-card__body">
+              <div class="catalog-card__head">
+                <strong>{{ r.name }}</strong>
+                <span class="catalog-card__score">{{ Math.round((parseFloat(r.score) || 0) * 100) }}% coincidencia</span>
+              </div>
+              <div v-if="r.description" class="catalog-card__desc">{{ truncate(r.description, 110) }}</div>
+              <div class="catalog-card__meta">
+                <span v-if="r.item_code">{{ r.item_code }}</span>
+                <span>Desde S/ {{ parseFloat(r.sale_unit_price || 0).toFixed(2) }}</span>
+              </div>
+              <div class="catalog-card__cta">
+                <span v-if="actingSuggestionId === r.item_id"><i class="el-icon-loading"></i> Cargando…</span>
+                <span v-else class="catalog-card__cta-link">Click para cargar en el ítem</span>
               </div>
             </div>
-          </template>
-        </el-autocomplete>
+          </div>
+          <div v-if="!manualSearching && manualQuery.trim().length >= 2 && manualResults.length === 0"
+               class="catalog-cards__empty">
+            Sin resultados — prueba con otras palabras.
+          </div>
+        </div>
       </div>
 
       <div slot="footer" style="display:flex; justify-content:space-between;">
@@ -1027,6 +1078,10 @@ export default {
       matchTarget: null,        // PreQuoteItem actual
       matchSuggestions: [],     // Lista de candidatos del catálogo
       manualQuery: '',
+      manualResults: [],      // Resultados de la búsqueda manual (tarjetas)
+      manualSearching: false,
+      manualSearchTimer: null,
+      manualSearchSeq: 0,     // evita que una respuesta lenta pise una nueva
       actingSuggestionId: null, // ID del item del catálogo que se está aplicando
       rematchLoading: false,
       // S2 — Imagen de referencia
@@ -1091,9 +1146,11 @@ export default {
     },
     // Productos sin proveedor asignado: bloquean Validar/Aprobar.
     // (Requisito para que el requerimiento pueda convertirse luego en proyecto.)
+    // La comisión no lleva proveedor: se excluye del conteo.
     productosSinProveedor() {
       if (!this.prequote || !this.prequote.items) return 0
       return this.prequote.items.filter(function (it) {
+        if (String((it && it.tipo_linea) || '').toLowerCase() === 'comision') return false
         return !it.supplier_id
       }).length
     },
@@ -1152,6 +1209,19 @@ export default {
     margenRealTotalPct() {
       var r = this.resumenCostoReal
       return r.totalSinIgv > 0 ? (r.utilidadReal / r.totalSinIgv) * 100 : 0
+    },
+
+    /**
+     * Promedio simple del Margen % ingresado por ítem (columna "Prom.
+     * margen ingresado" de la barra de totales).
+     */
+    promedioMargenIngresado() {
+      if (!this.prequote || !Array.isArray(this.prequote.items) || !this.prequote.items.length) return 0
+      var sum = 0
+      for (var i = 0; i < this.prequote.items.length; i++) {
+        sum += parseFloat(this.prequote.items[i].margen_porcentaje) || 0
+      }
+      return sum / this.prequote.items.length
     },
 
     /** Aclaración (tooltip) de los 5 indicadores nuevos del encabezado. */
@@ -1328,13 +1398,43 @@ export default {
       }
     },
 
+    /**
+     * Combo tipo de línea (mockup db): normaliza y guarda; el backend enlaza
+     * el ítem 271 si es comisión o suelta el match si es servicio.
+     */
+    onTipoLineaChange(item) {
+      if (!item) return
+      var v = String(item.tipo_linea || 'product').toLowerCase()
+      if (['product', 'service', 'comision'].indexOf(v) === -1) v = 'product'
+      item.tipo_linea = v
+      // Comisión = línea propia con nombre fijo (sin input de solicitado).
+      if (v === 'comision') {
+        item.product_name = 'COMISIÓN'
+        item.quantity = 1
+        item.margen_porcentaje = 0
+      }
+      this.saveItem(item)
+    },
+    // Comisión = costo fijo (solo Costo Base editable).
+    isComision(item) {
+      return String((item && item.tipo_linea) || '').toLowerCase() === 'comision'
+    },
+
     async saveItem(item) {
+      // Nombre obligatorio (espejo del backend): evita el 500 por NOT NULL.
+      if (!String(item.product_name || '').trim()) {
+        this.$message.warning('Ponle un nombre al producto antes de guardar.')
+        return
+      }
       try {
         var response = await this.$http.put(
           '/marketing/quotation/prequotes/' + this.prequote.id + '/item/' + item.id,
           {
             product_name: item.product_name,
+            product_description: item.product_description,
             quantity: item.quantity,
+            // Tipo de línea (combo sin nombre en la tabla; comisión = ítem 271).
+            tipo_linea: item.tipo_linea || 'product',
             personalizacion: item.personalizacion,
             tecnica_impresion: item.tecnica_impresion,
             // Detalles técnicos editables desde la fila expandible (badge "Inferido por IA")
@@ -1485,6 +1585,9 @@ export default {
           pq.items[i].empaque_por_unidad = !!pq.items[i].empaque_por_unidad
           // Agosto 2026 (punto 2): llega como 0/1 desde la BD; el checkbox necesita booleano.
           pq.items[i].excluir_catalogo = !!pq.items[i].excluir_catalogo
+          // Tipo de línea (combo sin nombre): filas viejas vienen null → product.
+          var tl = String(pq.items[i].tipo_linea || 'product').toLowerCase()
+          pq.items[i].tipo_linea = (tl === 'service' || tl === 'comision') ? tl : 'product'
           // SCTR unitario (override por ítem): null = hereda; efectivo = el que aplicó el backend.
           pq.items[i].sctr_porcentaje = this.parseSctrItem(pq.items[i].sctr_porcentaje)
           pq.items[i].sctr_porcentaje_efectivo = this.parseSctrEfectivo(pq.items[i].sctr_porcentaje_efectivo)
@@ -1718,6 +1821,23 @@ export default {
     },
     costeoBreakdown(item) {
       if (!item) return null
+      // Comisión = costo fijo: el costo base es el total directo, sin margen,
+      // SCTR, IGV ni adicionales (espejo del motor backend). El encabezado
+      // (resumenCostoReal) suma este mismo objeto, así que cierra solo.
+      if (String((item && item.tipo_linea) || '').toLowerCase() === 'comision') {
+        var cbc = Math.round((parseFloat(item.costo_base) || 0) * 100) / 100
+        return {
+          productoUnit: cbc, productoTotal: cbc, muestra: 0, movilidad: 0,
+          impresion: 0, imprColores: 1, imprLados: 1, imprMillar: 1,
+          empaque: 0, sctr: 0, sctrPctEfectivo: 0, ganancia: 0,
+          totalSinIgv: cbc, unit: cbc,
+          resultadoMargenUnit: 0, totalProducto: cbc,
+          baseCostoReal: cbc, sctrCostoReal: 0, costoRealTotal: cbc,
+          utilidadReal: 0, margenRealPct: 0,
+          precioNecesario: cbc, cuantoSubir: 0, precioUnitObjetivo: cbc,
+          margenObjetivoPct: MARGEN_REAL_OBJETIVO_PCT, margenRequeridoPct: null,
+        }
+      }
       var q = parseInt(item.quantity) || 1
       if (q < 1) q = 1
       var costoBase = parseFloat(item.costo_base) || 0
@@ -1961,17 +2081,27 @@ export default {
     },
 
     openMatchDialog(item) {
+      // Comisión no usa match manual: ya está enlazada al ítem 271.
+      if (item && String(item.tipo_linea || '').toLowerCase() === 'comision') {
+        this.$message.info('La comisión ya está enlazada al ítem COMISIÓN del catálogo.')
+        return
+      }
       this.matchTarget = item
       this.matchSuggestions = Array.isArray(item.product_suggestions) ? item.product_suggestions : []
-      this.manualQuery = ''
+      // Búsqueda manual arranca con el nombre solicitado (como la referencia)
+      this.manualQuery = item.product_name || ''
+      this.manualResults = []
       this.actingSuggestionId = null
       this.matchDialogVisible = true
+      this.fetchManualResults()
     },
 
     onMatchDialogClose() {
       this.matchTarget = null
       this.matchSuggestions = []
       this.manualQuery = ''
+      this.manualResults = []
+      this.manualSearching = false
     },
 
     /**
@@ -1984,6 +2114,10 @@ export default {
      */
     async applyMatch(catalogItemId) {
       if (!this.matchTarget) return
+      // El nombre solicitado pudo editarse en la tabla sin guardar. El backend
+      // no lo modifica, pero su respuesta trae el nombre viejo y updateLocalItem
+      // lo pisaría (quedaba "tomatodo" con el match de "usb"). Se respalda.
+      var nombreSolicitado = this.matchTarget.product_name
       this.actingSuggestionId = catalogItemId === null ? 'none' : catalogItemId
       try {
         var resp = await this.$http.post(
@@ -1998,6 +2132,13 @@ export default {
           // catálogo), refrescar la prequote local con los nuevos valores.
           if (resp.data.prequote) {
             this.prequote = this.parseNumericFields(resp.data.prequote)
+          }
+
+          // Restaurar lo tipeado SIN autoguardar: queda pendiente hasta el ✓ de
+          // la fila (no pisar lo tipeado, pero tampoco quitarle propósito).
+          if (resp.data.item && resp.data.item.id
+              && String(nombreSolicitado || '') !== String(resp.data.item.product_name || '')) {
+            this.restoreNombreSolicitado(resp.data.item.id, nombreSolicitado)
           }
 
           this.matchDialogVisible = false
@@ -2025,10 +2166,27 @@ export default {
     },
 
     /**
+     * El nombre solicitado puede editarse sin guardar; las respuestas del
+     * backend traen el nombre viejo. Restaura lo tipeado sobre la fila
+     * ya reemplazada y la devuelve (o null si no la encuentra).
+     */
+    restoreNombreSolicitado(itemId, nombre) {
+      if (!this.prequote || !Array.isArray(this.prequote.items)) return null
+      for (var i = 0; i < this.prequote.items.length; i++) {
+        if (parseInt(this.prequote.items[i].id) === parseInt(itemId)) {
+          this.prequote.items[i].product_name = nombre
+          return this.prequote.items[i]
+        }
+      }
+      return null
+    },
+
+    /**
      * Re-ejecutar matching automático (después de editar product_name).
      */
     async rematchWithAI() {
       if (!this.matchTarget) return
+      var nombreSolicitado = this.matchTarget.product_name
       this.rematchLoading = true
       try {
         var resp = await this.$http.post(
@@ -2037,6 +2195,11 @@ export default {
         if (resp.data && resp.data.ok) {
           this.$message.success('Matching re-ejecutado')
           this.updateLocalItem(resp.data.item)
+          // Igual que en applyMatch: no pisar lo tipeado sin guardar.
+          if (resp.data.item && resp.data.item.id
+              && String(nombreSolicitado || '') !== String(resp.data.item.product_name || '')) {
+            this.restoreNombreSolicitado(resp.data.item.id, nombreSolicitado)
+          }
           // Refrescar el dialog con las nuevas sugerencias
           var sugg = resp.data.result && resp.data.result.suggestions ? resp.data.result.suggestions : []
           this.matchSuggestions = sugg
@@ -2051,18 +2214,38 @@ export default {
     },
 
     /**
-     * Búsqueda manual en el catálogo (debounced via el-autocomplete).
+     * Búsqueda manual en el catálogo (mismo endpoint; ahora llena las
+     * tarjetas en vez del autocomplete). Con debounce y anti-carrera.
      */
-    fetchManualResults(query, cb) {
-      query = (query || '').trim()
-      if (query.length < 2) { cb([]); return }
-      this.$http.get('/marketing/quotation/products/search', {
-        params: { q: query, limit: 15 }
-      }).then(function (resp) {
-        cb(resp.data && resp.data.results ? resp.data.results : [])
-      }).catch(function () {
-        cb([])
-      })
+    fetchManualResults() {
+      var self = this
+      if (this.manualSearchTimer) clearTimeout(this.manualSearchTimer)
+      var query = (this.manualQuery || '').trim()
+      if (query.length < 2) { this.manualResults = []; this.manualSearching = false; return }
+      this.manualSearching = true
+      this.manualSearchTimer = setTimeout(function () {
+        var token = ++self.manualSearchSeq
+        self.$http.get('/marketing/quotation/products/search', {
+          params: { q: query, limit: 15 }
+        }).then(function (resp) {
+          if (token !== self.manualSearchSeq) return // llegó algo más nuevo
+          self.manualResults = resp.data && resp.data.results ? resp.data.results : []
+          self.manualSearching = false
+        }).catch(function () {
+          if (token !== self.manualSearchSeq) return
+          self.manualResults = []
+          self.manualSearching = false
+        })
+      }, 350)
+    },
+
+    // Iniciales para el badge de la tarjeta (código o nombre).
+    catalogInitials(r) {
+      var code = String((r && (r.item_code || r.internal_id)) || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+      if (code) return code.substring(0, 4)
+      var words = String((r && r.name) || '').trim().split(/\s+/).filter(Boolean)
+      var ini = words.slice(0, 2).map(function (w) { return w.charAt(0) }).join('').toUpperCase()
+      return ini || '—'
     },
 
     onManualSelect(item) {
@@ -2687,13 +2870,38 @@ export default {
 .product-match-dialog .el-dialog__body { padding-top: 16px; }
 .product-match-autocomplete { max-height: 320px; overflow-y: auto; }
 
-/* Rediseño — barra de totales fija arriba del tab */
+/* Buscador manual en tarjetas (mismo endpoint de catálogo) */
+.catalog-cards { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-top: 10px; max-height: 380px; overflow-y: auto; padding: 2px; }
+.catalog-card { display: flex; gap: 10px; border: 1px solid #ebeef5; border-radius: 8px; padding: 10px; cursor: pointer; background: #fff; min-width: 0; }
+.catalog-card:hover { border-color: #4f46e5; background: #f8f7ff; }
+.catalog-card__badge { width: 64px; height: 64px; flex: 0 0 64px; border-radius: 8px; background: #eef4ff; color: #2b5fc7; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; text-align: center; overflow: hidden; position: relative; }
+.catalog-card__badge img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.catalog-card__body { flex: 1; min-width: 0; }
+.catalog-card__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; font-size: 13px; }
+.catalog-card__score { flex: 0 0 auto; font-size: 11px; color: #909399; white-space: nowrap; }
+.catalog-card__desc { font-size: 12px; color: #606266; margin-top: 2px; }
+.catalog-card__meta { font-size: 11px; color: #909399; margin-top: 4px; display: flex; gap: 8px; flex-wrap: wrap; }
+.catalog-card__cta { margin-top: 6px; font-size: 12px; }
+.catalog-card__cta-link { color: #2b5fc7; font-weight: 700; }
+.catalog-cards__empty { grid-column: 1 / -1; text-align: center; color: #909399; padding: 18px 0; font-size: 13px; }
+@media (max-width: 768px) {
+  .catalog-cards { grid-template-columns: minmax(0,1fr); }
+}
+
+/* Rediseño — barra de totales fija arriba del tab (formato referencia) */
 .precot-totals {
   position: sticky; top: 0; z-index: 20;
   background: #fff; border: 1px solid #ebeef5; border-radius: 6px;
-  padding: 10px 12px; margin-bottom: 12px;
+  padding: 8px 12px; margin-bottom: 12px;
   box-shadow: 0 2px 8px rgba(0,0,0,.04);
 }
+.precot-totals__grid { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.precot-total { flex: 1 1 0; min-width: 86px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+.precot-total--wide { flex: 1.7 1 0; min-width: 112px; }
+.precot-total__label { font-size: 10px; color: #909399; white-space: nowrap; }
+.precot-total > span:last-child, .precot-total .el-tag { font-size: 12px; color: #303133; }
+.precot-total--total { flex: 1.3 1 0; align-items: flex-end; }
+.precot-total--total strong { font-size: 15px; color: #303133; }
 
 /* Rediseño — acordeones de ingreso (IA + kits) */
 .precot-collapse { border: 1px solid #ebeef5; border-radius: 6px; overflow: hidden; }
@@ -2703,11 +2911,14 @@ export default {
 /* Rediseño (formato mockup) — expandible: main + resultado al costado */
 .erp-detail-layout { display: grid; grid-template-columns: minmax(0,1fr) 400px; gap: 18px; align-items: start; }
 .erp-detail-main { min-width: 0; }
-.erp-tech-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 14px 18px; align-items: start; }
-.erp-tech-grid .erp-obs { grid-column: 1 / -1; grid-row: auto; }
-.erp-tech-grid .erp-obs .el-textarea__inner { min-height: 118px; height: 100%; }
-.erp-tech-minirow { grid-column: 1; grid-row: 3; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
-.erp-tech-grid .ai-field label, .erp-costgrid .ai-field label { display: block; margin-bottom: 6px; color: #818897; text-transform: uppercase; font-size: 11px; font-weight: 800; }
+.erp-tech-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px 14px; align-items: start; }
+.erp-tech-duo { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px 14px; margin-top: 10px; }
+.erp-tech-duo > :only-child { grid-column: 1 / -1; }
+.erp-tech-duo .el-textarea__inner { min-height: 64px; }
+.erp-tech-minirow { grid-column: 1 / -1; grid-row: auto; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
+.erp-tech-grid .ai-field { margin-bottom: 0; }
+.erp-tech-grid .ai-field label, .erp-costgrid .ai-field label { display: block; margin-bottom: 4px; color: #818897; text-transform: uppercase; font-size: 10px; font-weight: 800; }
+.erp-tech-grid .el-input__inner, .erp-tech-grid .el-textarea__inner { font-size: 12px; padding: 0 8px; }
 .erp-cost { margin-top: 16px; padding-top: 14px; border-top: 1px dashed #d7dce8; }
 .erp-cost-media-grid { display: grid; grid-template-columns: minmax(0,1fr) 300px; gap: 14px; align-items: stretch; }
 .erp-costgrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; align-content: start; }
@@ -2728,6 +2939,7 @@ export default {
   .erp-tech-grid { grid-template-columns: minmax(0,1fr); }
   .erp-tech-grid .erp-obs { grid-column: 1; grid-row: auto; }
   .erp-tech-minirow { grid-column: 1; grid-row: auto; }
+  .erp-tech-duo { grid-template-columns: minmax(0,1fr); }
 }
 
 /* Rediseño — kits solo-frontales */
@@ -2753,6 +2965,8 @@ export default {
 
 /* Foto por ítem (columna en la tabla de items) */
 .item-foto-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.item-foto-click { cursor: pointer; }
+.item-foto-click:hover { border-color: #4f46e5; }
 .item-foto-thumb {
   width: 48px; height: 48px; object-fit: cover;
   border-radius: 4px; border: 1px solid #ddd; background: #fafafa;
@@ -2783,16 +2997,11 @@ export default {
   padding: 14px 20px;
   background: #fdfaf3;
   border-left: 3px solid #f5c842;
-  /* Sticky: queda pegado al borde izquierdo del viewport visible aunque
-   * la tabla padre tenga scroll horizontal. */
-  position: sticky;
-  left: 12px;
-  /* Ancho controlado: ocupa hasta ~100vw menos el espacio del sidebar
-   * lateral de Bitácora (~360px). Si no hay sidebar visible, el max-width
-   * lo frena en un ancho razonable. min-width asegura legibilidad. */
-  width: calc(100vw - 360px);
-  max-width: 1100px;
-  min-width: 680px;
+  /* Ocupa todo el ancho de la fila expandida (la tabla ya no tiene scroll
+   * horizontal ni sidebar al costado en este tab). */
+  width: 100%;
+  max-width: none;
+  min-width: 0;
   box-sizing: border-box;
 }
 .ai-inferred-details__header {
@@ -2922,6 +3131,11 @@ export default {
   background-color: #ecf5ff;
   border-color: #b3d8ff;
 }
+
+/* Números de la tabla de ítems: Element les da 130px fijos y se desbordan
+ * de la celda, tapando el valor con los botones. Se fuerzan al 100%. */
+.items-table .el-input-number { width: 100%; }
+.items-table .el-input-number .el-input__inner { padding-left: 6px; padding-right: 32px; text-align: right; }
 
 /* ⚪ Descriptivo — detalles técnicos del expandible */
 .campo-descriptivo .el-input__inner,

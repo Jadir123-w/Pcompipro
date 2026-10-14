@@ -30,8 +30,8 @@
         </template>
       </el-alert>
 
-      <!-- Tabla de ítems -->
-      <el-table :data="prequote.items" stripe border size="mini" class="tab-prov-items">
+      <!-- Tabla de ítems (sin líneas de comisión: no llevan proveedor) -->
+      <el-table :data="itemsCotizables" stripe border size="mini" class="tab-prov-items">
         <el-table-column prop="item_order" label="#" width="40" align="center"></el-table-column>
         <el-table-column prop="product_name" label="Producto" min-width="140"></el-table-column>
         <el-table-column label="Cant." width="60" align="center">
@@ -291,6 +291,15 @@ export default {
       manualOptions: [],
       manualSearchLoading: false,
       manualApplying: false
+    }
+  },
+  computed: {
+    // La comisión no maneja proveedores: se excluye de la tabla.
+    itemsCotizables() {
+      if (!this.prequote || !Array.isArray(this.prequote.items)) return []
+      return this.prequote.items.filter(function (it) {
+        return String((it && it.tipo_linea) || '').toLowerCase() !== 'comision'
+      })
     }
   },
   watch: {

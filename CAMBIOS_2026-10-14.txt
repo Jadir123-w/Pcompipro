@@ -72,3 +72,68 @@ Detecta edición en Datos y confirma antes de cambiar de pestaña o cerrar.
   ~1100 migraciones, >5 min) y APP_DEBUG=true + LOG_CHANNEL=daily para ver
   errores reales. Revisar APP_KEY del .env local (cambió sin registro).
 - Migración pendiente de aplicar en tenants existentes.
+
+4) UPDATE — TIPO DE LINEA, BUSCADOR EN TARJETAS, MODAL ANCHO Y TOTALES
+--------------------------------------------------------------------------------
+4.1) Columna tipo_linea sin nombre en la tabla (producto|servicio|comision).
+- Front (TabPreCotizacion.vue): el-select por fila + onTipoLineaChange que
+  normaliza y guarda; filas viejas (null) caen a product.
+- Backend (updateItem): acepta tipo_linea (fillable + editable + validacion).
+  Servicio suelta el match (item_id null) y pide revision. Producto que
+  venia de comision tambien lo suelta. Comisión = linea propia del
+  requerimiento, SIN referencia al item 271: item_id null, sin revision,
+  cantidad 1 y margen 0 fijos, nombre fijo COMISION (se quita el input de
+  solicitado y se muestra tag "Comisión" sin match).
+- Comision = costo fijo: el costo base ES el total directo, sin margen,
+  SCTR, IGV ni adicionales. Bypass en QuotationCalculationEngine::
+  recalculateItem y rama espejo en costeoBreakdown (preview, encabezado y
+  boton Aplicar margen coherentes). Cant. y Margen % bloqueados en comision
+  (isComision); solo Costo Base editable.
+- Expandible en comision queda minimo: solo Descripcion + Mi Resultado del
+  costeo (se ocultan grilla tecnica, kit/catalogo, costeo, tiers,
+  comparativa y observaciones; Descripcion ocupa todo el ancho).
+- Comision fuera de proveedores: excluida del conteo que bloquea
+  Validar/Aprobar, filtrada del tab Proveedores (itemsCotizables) y los 6
+  endpoints de quotes + applySupplier devuelven 422 en items comision.
+- Validacion nombre obligatorio: front avisa y no dispara el PUT; backend
+  422 en vez del 500 por NOT NULL de product_name.
+- Match ya no pisa lo tipeado: applyMatch/rematch restauran el nombre
+  solicitado via restoreNombreSolicitado (sin autoguardado: todo persiste
+  con el check de su fila). Orden corregido para que el refresh de totales
+  no revierta la restauracion.
+- Archivos: TabPreCotizacion.vue, TabProveedores.vue,
+  QuotationPreQuoteController.php, PreQuoteItem.php (fillable tipo_linea),
+  QuotationCalculationEngine.php.
+
+4.2) Buscador manual del dialog de match en tarjetas (sugerencias IA intactas).
+- Input con lupa + grid 2xN (dialog a 880px): badge con foto o iniciales,
+  nombre, % coincidencia, descripcion, codigo + Desde S/, CTA
+  "Click para cargar en el ítem" (reusa onManualSelect/applyMatch con
+  spinner por tarjeta). fetchManualResults mejorado: debounce 350ms,
+  anti-carrera, precarga el nombre solicitado al abrir.
+- Endpoint products/search ahora devuelve image_url_small (miniatura
+  storage/uploads/items, null si placeholder): columna agregada al select
+  y helper catalogImageUrl en ProductMatchingService (embudo unico,
+  tambien lo recibe el matching automatico).
+- Archivos: TabPreCotizacion.vue, ProductMatchingService.php.
+
+4.3) Modal de requerimientos ancho y letra general (index.vue y kanban.vue).
+- Dialog 96% (tope 1760px) en ambas vistas (antes 1340px/1072px), top 3vh,
+  scroll interno en el body (titulo y X siempre visibles), responsive 98%.
+- Letra general del modal a 10.5px (body, tablas, inputs, botones, tags,
+  tabs, checks, alertas, acordeones, formularios).
+- Expandible a todo el ancho (quitado el tope 1100px de .ai-inferred-details,
+  herencia del scroll horizontal + sidebar).
+- Barra de totales reordenada en 1 fila (Estado, Movilidad, Empaque,
+  Seguro, Prom. margen ingresado [nuevo computed: promedio simple del
+  Margen %], Margen ganancia, Utilidad real, Margen real, Subtotal,
+  IGV (18%), TOTAL), letra compacta y Prom. margen con celda ancha para
+  que no se monte.
+- Detalles tecnicos en 3 columnas compactas (labels 10px, inputs 12px);
+  Descripcion + Observaciones mitad-mitad (product_description agregado
+  al payload de saveItem; el endpoint ya lo aceptaba). SCTR a todo el
+  ancho; labels Colores/Lados/Millar cortos.
+- Tabla: numeros al 100% de la celda (Element les da 130px fijos y tapaban
+  el valor), columna Foto sin boton Subir (click en la imagen sube,
+  Quitar solo si hay foto).
+- Archivos: TabPreCotizacion.vue, index.vue, kanban.vue.

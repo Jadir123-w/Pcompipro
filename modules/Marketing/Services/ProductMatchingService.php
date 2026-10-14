@@ -221,7 +221,7 @@ class ProductMatchingService
 
         $q = Item::query()
             ->where('active', true)
-            ->select(['id', 'name', 'second_name', 'description', 'text_filter', 'internal_id', 'item_code', 'sale_unit_price', 'item_type_id', 'unit_type_id']);
+            ->select(['id', 'name', 'second_name', 'description', 'text_filter', 'internal_id', 'item_code', 'sale_unit_price', 'item_type_id', 'unit_type_id', 'image_small']);
 
         // OR cualquiera de los tokens contra cualquiera de los campos textuales
         $q->where(function ($outer) use ($tokens) {
@@ -422,7 +422,23 @@ class ProductMatchingService
             'sale_unit_price' => (float) $item->sale_unit_price,
             'item_type_id'    => $item->item_type_id,
             'unit_type_id'    => $item->unit_type_id,
+            // Miniatura del catálogo para el buscador (null = sin foto).
+            'image_url_small' => $this->catalogImageUrl(isset($item->image_small) ? $item->image_small : null),
         ];
+    }
+
+    /**
+     * URL pública de la miniatura (misma convención que Ecommerce:
+     * storage/uploads/items + placeholder = null).
+     *
+     * @param  string|null  $filename
+     * @return string|null
+     */
+    private function catalogImageUrl($filename)
+    {
+        $filename = trim((string) $filename);
+        if ($filename === '' || $filename === 'imagen-no-disponible.jpg') return null;
+        return asset('storage/uploads/items/' . $filename);
     }
 
     /**

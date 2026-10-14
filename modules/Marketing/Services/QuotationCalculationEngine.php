@@ -149,6 +149,22 @@ class QuotationCalculationEngine
      */
     public function recalculateItem(PreQuoteItem $item)
     {
+        // Comisión = costo fijo: el costo base ES el total directo, sin margen,
+        // SCTR, IGV ni adicionales. Se persiste así para que tabla, totales de
+        // la prequote y PDF cierren con el mismo número.
+        if (strtolower(trim((string) ($item->tipo_linea ?? ''))) === 'comision') {
+            $base = round((float) $item->costo_base, 2);
+            $item->update([
+                'costo_muestra'  => 0,
+                'valor_unitario' => $base,
+                'valor_total'    => $base,
+                'base_igv'       => $base,
+                'igv'            => 0,
+                'total_item'     => $base,
+            ]);
+            return $item->fresh();
+        }
+
         // COM09 — costo de muestra DERIVADO: N° de muestras × precio unitario de
         // la muestra. Sigue siendo un costo FIJO del pedido (no se multiplica por
         // la cantidad). Se persiste el valor derivado porque el PDF y los

@@ -96,8 +96,8 @@
     <!-- ✅ MODAL DETALLE ACTUALIZADO (3 pestañas: Datos, Interacciones, Cotizaciones) -->
     <el-dialog
       :visible.sync="detailDialog.visible"
-      width="1072px"
-      top="14vh"
+      width="96%"
+      top="3vh"
       :close-on-click-modal="false"
       :before-close="beforeDetailDialogClose"
       class="req-dialog"
@@ -878,13 +878,59 @@ export default {
   font-size: 12px;
   color: #e5e7eb;
 }
-.req-dialog-body {
-  min-height: 60vh;
-  max-height: 120vh;
+.req-dialog >>> .el-dialog {
+  max-width: 1760px;
+  margin-top: 3vh;
+  margin-bottom: 3vh;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 6vh);
+}
+.req-dialog >>> .el-dialog__body {
+  padding: 16px 20px;
   overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.req-dialog-body {
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
 }
 .req-dialog-layout {
   margin-top: 0;
+}
+/* Letra general del modal a 10.5px (los tamaños propios de cada
+ * componente, si los fijan, se conservan). */
+.req-dialog >>> .el-dialog__body {
+  font-size: 10.5px;
+}
+.req-dialog >>> .el-table,
+.req-dialog >>> .el-input__inner,
+.req-dialog >>> .el-textarea__inner,
+.req-dialog >>> .el-button,
+.req-dialog >>> .el-tag,
+.req-dialog >>> .el-tabs__item,
+.req-dialog >>> .el-checkbox__label,
+.req-dialog >>> .el-alert__title,
+.req-dialog >>> .el-collapse-item__header,
+.req-dialog >>> .el-form-item__label,
+.req-dialog >>> .el-form-item__content {
+  font-size: 10.5px;
+}
+.req-dialog-layout > .el-col {
+  min-width: 0;
+}
+@media (max-width: 768px) {
+  .req-dialog >>> .el-dialog {
+    width: 98% !important;
+    max-width: none;
+  }
+  .req-dialog >>> .el-dialog__body {
+    padding: 12px;
+  }
 }
 
 /* Sidebar / Bitácora */
