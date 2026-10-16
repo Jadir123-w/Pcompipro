@@ -114,40 +114,29 @@
         <el-collapse v-model="kitCollapseOpen" class="precot-collapse">
           <el-collapse-item name="kit">
             <template slot="title">
-              <span><i class="el-icon-goods" style="color:#e6a23c;"></i> <strong>Crear kits</strong></span>
-              <el-tag size="mini" type="info" effect="plain" style="margin-left:8px;">Solo frontal</el-tag>
+              <span><i class="el-icon-goods" style="color:#e6a23c;"></i> <strong>Agrupación de kits</strong></span>
+              <small style="color:#909399; margin-left:auto; padding-right:8px;">{{ kitSelection.length }} seleccionados</small>
             </template>
-            <div class="kit-front">
-              <p class="kit-front__hint">Agrupa productos de esta precotización en un kit. Por ahora vive solo en pantalla; el guardado en servidor llega después.</p>
-              <el-input v-model="kitDraft.nombre" size="mini" placeholder="Nombre del kit (ej. Kit bienvenida)"
-                        style="margin-bottom:8px;" maxlength="120"></el-input>
-              <el-input v-model="kitDraft.descripcion" size="mini" type="textarea"
-                        :autosize="{minRows:1,maxRows:3}" placeholder="Descripción (opcional)"
-                        style="margin-bottom:8px;"></el-input>
-              <el-select v-model="kitDraft.itemIds" multiple collapse-tags size="mini"
-                         placeholder="Productos del kit" style="width:100%; margin-bottom:8px;"
-                         :disabled="!prequote || !prequote.items || !prequote.items.length">
-                <el-option v-for="it in (prequote && prequote.items ? prequote.items : [])"
-                           :key="it.id || ('tmp-' + it.item_order)"
-                           :label="(it.product_name || ('Ítem ' + it.item_order)) + ' × ' + it.quantity"
-                           :value="it.id || ('tmp-' + it.item_order)"></el-option>
-              </el-select>
-              <div>
-                <el-button size="mini" type="warning" plain icon="el-icon-plus"
-                           @click="addKitLocal" :disabled="!kitDraft.nombre.trim() || (prequote && !isEditable)">
-                  Agregar kit
+            <div class="kit-bar">
+              <div class="kit-bar__row">
+                <span class="kit-bar__label">Acción</span>
+                <el-select v-model="kitAction" size="mini" style="width:130px;">
+                  <el-option label="Nuevo kit" value="new"></el-option>
+                  <el-option v-for="k in savedKits" :key="k.id" :label="'Agregar a: ' + k.nombre" :value="'add:' + k.id"></el-option>
+                </el-select>
+                <span class="kit-bar__label">Nombre del kit</span>
+                <el-input v-model="kitNameInput" size="mini" placeholder="SET REGALOS DÍA DEL PADRE"
+                          style="flex:1;" maxlength="191"></el-input>
+                <el-button size="mini" type="primary" icon="el-icon-plus"
+                           :loading="kitCreating" :disabled="!isEditable"
+                           @click="kitAction === 'new' ? createKitFromSelection() : addSelectionToKit()">
+                  {{ kitAction === 'new' ? 'Crear kit' : 'Agregar' }}
                 </el-button>
               </div>
-              <div v-if="kitsLocal.length" class="kit-front__list">
-                <div v-for="k in kitsLocal" :key="k.id" class="kit-front__row">
-                  <div>
-                    <strong>{{ k.nombre }}</strong>
-                    <span style="color:#909399;">({{ k.itemIds.length }} prod.)</span>
-                    <div v-if="k.descripcion" style="font-size:11px; color:#606266;">{{ k.descripcion }}</div>
-                  </div>
-                  <el-button size="mini" type="text" icon="el-icon-delete"
-                             @click="removeKitLocal(k.id)">Quitar</el-button>
-                </div>
+              <div class="kit-bar__row kit-bar__sub">
+                <span v-if="kitSelection.length">{{ kitSelection.length }} seleccionado(s)</span>
+                <span v-else>Marca 2 o más productos (no comisiones) con el check Kit.</span>
+                <el-button v-if="kitSelection.length" size="mini" type="text" @click="kitSelection = []">Deseleccionar</el-button>
               </div>
             </div>
           </el-collapse-item>
@@ -172,6 +161,9 @@
       <!-- Input file compartido para la imagen POR ÍTEM (mismo patrón que la del requerimiento) -->
       <input ref="itemImageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif"
              style="display:none;" @change="onItemImageSelected"/>
+      <!-- Input file para la foto propia del kit -->
+      <input ref="kitPhotoInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif"
+             style="display:none;" @change="onKitPhotoSelected"/>
 
       <!-- Aviso si hay items que necesitan revisión -->
       <el-alert v-if="itemsNeedingReview > 0" type="warning" show-icon :closable="false"
@@ -224,12 +216,87 @@
       </div>
 
       <!-- Tabla de items -->
-      <el-table :data="prequote.items" stripe border size="small" class="mb-2 items-table" row-key="id">
+      <el-table :data="displayRows()" stripe border size="small" class="mb-2 items-table" row-key="displayId">
 
         <!-- Fila expandible: detalles técnicos del ítem con badge "Inferido por IA" -->
         <el-table-column type="expand" width="40">
           <template slot-scope="props">
-            <div class="ai-inferred-details">
+            <div v-if="props.row._isKit" class="kit-detail">
+              <div class="kit-detail__header">
+                <span class="kit-detail__title">
+                  <i class="el-icon-goods"></i>
+                  <strong>Kit de pre-cotización</strong>
+                </span>
+                <span>
+                  <el-tag v-if="kitIsDirty(props.row.kit)" type="warning" size="mini" effect="plain" style="margin-right:8px;">
+                    Sin guardar
+                  </el-tag>
+                  <el-button v-if="isEditable" size="mini" type="success" icon="el-icon-check"
+                             :loading="!!kitSaving[props.row.kit._kid]"
+                             @click="saveKit(props.row.kit)">Guardar kit</el-button>
+                  <span class="ai-inferred-details__hint" style="margin-left:8px;">Margen % del kit es solo lectura</span>
+                </span>
+              </div>
+
+              <!-- Métricas consolidadas -->
+              <div class="kit-summary">
+                <div class="metric"><span>Subtotal kit</span><strong>S/ {{ kitMetrics(props.row.kit).subtotal.toFixed(2) }}</strong></div>
+                <div class="metric"><span>Costo Real Total (Q+logística)</span><strong>S/ {{ kitMetrics(props.row.kit).costoReal.toFixed(2) }}</strong></div>
+                <div class="metric"><span>Utilidad real</span><strong>S/ {{ kitMetrics(props.row.kit).utilidad.toFixed(2) }}</strong></div>
+                <div class="metric"><span>Margen real</span><strong>{{ kitMetrics(props.row.kit).margenPct.toFixed(2) }}%</strong></div>
+                <div class="metric"><span>Precio para 40%</span><strong>S/ {{ kitMetrics(props.row.kit).precio40.toFixed(2) }}</strong></div>
+                <div class="metric"><span>Cuánto subir</span><strong>S/ {{ kitMetrics(props.row.kit).subir.toFixed(2) }}</strong></div>
+                <div class="metric"><span>Unitario 40%</span><strong>S/ {{ kitMetrics(props.row.kit).unitario40.toFixed(2) }} / u</strong></div>
+              </div>
+
+              <div class="kit-detail__grid">
+                <div class="ai-field">
+                  <label class="lbl-help">Nombre comercial del kit</label>
+                  <el-input v-model="props.row.kit.nombre" size="mini" :disabled="!isEditable" maxlength="191"></el-input>
+                </div>
+                <div class="ai-field">
+                  <label class="lbl-help" title="Al guardar se aplica a todos los componentes.">Cantidad del kit</label>
+                  <el-input-number v-model="props.row.kit.cantidad" size="mini" :min="1" :max="999999"
+                                   controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
+                </div>
+                <div class="ai-field">
+                  <label class="lbl-help">Empaque / Presentación del kit</label>
+                  <el-input v-model="props.row.kit.presentacion" size="mini" :disabled="!isEditable"
+                            placeholder="Ej: Caja individual, caja grupal..." maxlength="191"></el-input>
+                </div>
+                <div class="ai-field">
+                  <label class="lbl-help">Descripción general</label>
+                  <el-input v-model="props.row.kit.descripcion" size="mini" type="textarea"
+                            :autosize="{minRows:2,maxRows:4}" :disabled="!isEditable"></el-input>
+                </div>
+              </div>
+
+              <!-- Foto propia del kit -->
+              <div class="kit-detail__photo">
+                <img v-if="kitPhotoUrl(props.row.kit)" :src="kitPhotoUrl(props.row.kit)" alt="foto kit"
+                     class="kit-photo-thumb"/>
+                <span v-else class="item-foto-empty"><i class="el-icon-picture-outline"></i></span>
+                <div>
+                  <el-button v-if="isEditable && !props.row.kit._isNew" size="mini" icon="el-icon-upload2"
+                             :loading="uploadingKitPhotoId === props.row.kit.id"
+                             @click="triggerKitPhotoUpload(props.row.kit)">
+                    {{ kitPhotoUrl(props.row.kit) ? 'Cambiar foto' : 'Subir foto' }}
+                  </el-button>
+                  <small v-if="isEditable && props.row.kit._isNew" style="color:#909399;">Guarda el kit para subirle foto.</small>
+                </div>
+              </div>
+
+              <!-- Componentes -->
+              <div class="kit-detail__subtitle"><strong>Componentes del kit</strong></div>
+              <el-table row-key="id" :data="kitMemberItems(props.row.kit)" size="mini" border style="width:100%;">
+                <el-table-column type="expand" width="40">
+                  <template slot-scope="mscope">
+                    <!-- MANTIENE SINCRONÍA: copia del detalle del ítem (ai-inferred-details).
+                         memberDetailScope devuelve SIEMPRE el mismo envoltorio por
+                         ítem (cacheado): con un literal inline el alias se recreaba
+                         en cada render y los inputs perdían el foco al tipear. -->
+                    <template v-for="props in memberDetailScope(mscope.row)">
+            <div class="ai-inferred-details" :key="'kd-' + mscope.row.id">
               <div class="ai-inferred-details__header">
                 <span class="ai-inferred-details__title">
                   <i class="el-icon-document-copy"></i>
@@ -359,19 +426,521 @@
               <!-- Agosto 2026 (punto 2) — kits y servicio de armado.
                    Un kit son varios productos agrupados solo para esta cotización
                    y el armado es un servicio puntual: ninguno es un producto del
-                   catálogo. Marcado, al convertir NO se le crea un producto propio.
-                   La línea de la cotización conserva igual este nombre. -->
-              <el-row :gutter="12" type="flex" style="flex-wrap:wrap; margin-top:4px;" v-if="!isComision(props.row)">
-                <el-col :span="24">
-                  <el-checkbox v-model="props.row.excluir_catalogo" :disabled="!isEditable">
-                    No registrar como producto del catálogo
-                  </el-checkbox>
-                  <el-tooltip placement="top"
-                              content="Márcalo en kits y en servicios como el armado: son varios productos o un servicio que existen solo para esta cotización. Así no se crea un producto nuevo en el catálogo. El nombre se sigue mostrando igual en la propuesta.">
-                    <i class="el-icon-info field-tip-icon" style="margin-left:4px;"></i>
-                  </el-tooltip>
-                </el-col>
-              </el-row>
+                   catálogo. El check "No registrar..." se retiró: esa función vive
+                   ahora en el combo Tipo = Servicio (al convertir NO se le crea
+                   un producto propio). La línea conserva igual este nombre. -->
+
+              <!-- ───────────── Mi Costeo del ítem (formato mockup) ───────────── -->
+              <div class="costeo-section erp-cost" v-if="!isComision(props.row)">
+                <div class="costeo-section__title">
+                  <i class="el-icon-coin"></i> <strong>Mi Costeo del ítem</strong>
+                  <span class="costeo-section__hint">Muestra y movilidad se cargan 1 vez por pedido; impresión y empaque pueden ser por unidad. Impresión = costo × colores × lados × millar. El Seguro SCTR normal se mantiene para el Total sin IGV; el Costo Real Total usa una base de costo real propia.</span>
+                </div>
+
+                <div class="erp-cost-media-grid">
+                  <div class="erp-costgrid">
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Cantidad de muestras físicas. El costo de muestra se calcula como N° de muestras × precio de la muestra.">N° de muestras <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input-number v-model="props.row.numero_muestras" size="mini" :precision="0" :step="1" :min="0"
+                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
+
+                      <!-- Agosto 2026 (punto 4) — El precio de la muestra no siempre
+                           es el costo base: una muestra suelta suele salir más cara
+                           que una unidad de una tirada larga. Marcado, se habilita el
+                           campo y el Costo Muestra pasa a N° muestras × Precio x Muestra. -->
+                      <el-checkbox v-model="props.row._precio_muestra_distinto" :disabled="!isEditable"
+                                   style="margin-top:6px;"
+                                   @change="onPrecioMuestraToggle(props.row)">
+                        <span style="font-size:11px;">Precio distinto al costo base</span>
+                      </el-checkbox>
+                      <el-tooltip placement="top" content="Marca si el precio de la muestra es diferente al costo base.">
+                        <i class="el-icon-info field-tip-icon" style="margin-left:4px;"></i>
+                      </el-tooltip>
+
+                      <div v-if="props.row._precio_muestra_distinto" style="margin-top:4px;">
+                        <label class="lbl-help" style="font-size:11px;" title="Precio unitario de la muestra. Déjalo en 0 si las muestras son gratis.">Precio x Muestra (S/)</label>
+                        <el-input-number v-model="props.row.precio_muestra" size="mini" :precision="2" :step="1" :min="0"
+                                         controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
+                      </div>
+
+                      <div style="font-size:11px; color:#909399; margin-top:2px; line-height:1.2;">Costo muestra: S/ {{ costoMuestraDerivado(props.row).toFixed(2) }}</div>
+                    </div>
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Costo de movilidad o envío. Se carga una sola vez por pedido.">Costo movilidad (S/) <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input-number v-model="props.row.costo_movilidad" size="mini" :precision="2" :step="1" :min="0"
+                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
+                    </div>
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Costo de impresión. El Costo Total de Impresión = costo × cant. colores × cant. lados × cantidad por millar. Marca «por unidad» si ese total se cobra por cada unidad del pedido en lugar de una sola vez.">Costo impresión (S/) <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input-number v-model="props.row.costo_impresion" size="mini" :precision="2" :step="0.5" :min="0"
+                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
+                      <!-- COM-02: el factor "Cant. Millar" se edita arriba, en Detalles técnicos, junto a colores y lados. -->
+                      <!-- Agosto 2026 (punto 3): mismo comportamiento que su par de empaque. -->
+                      <el-checkbox v-model="props.row.impresion_por_unidad" :disabled="!isEditable"
+                                   style="margin-top:2px;">por unidad (× cant.)</el-checkbox>
+                    </div>
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Costo de empaque. Puede ser fijo o por unidad.">Costo empaque (S/) <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input-number v-model="props.row.costo_empaque" size="mini" :precision="2" :step="0.5" :min="0"
+                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
+                      <el-checkbox v-model="props.row.empaque_por_unidad" :disabled="!isEditable"
+                                   style="margin-top:2px;">por unidad (× cant.)</el-checkbox>
+                    </div>
+                    <div class="ai-field erp-span2">
+                      <label class="lbl-help" title="Seguro SCTR de este producto. Si lo dejas vacío, hereda el % de la cotización.">Seguro SCTR % <i class="el-icon-info field-tip-icon"></i></label>
+                      <!-- el-input (no el-input-number): permite dejarlo vacío = heredar.
+                           el-input-number coacciona el null a 0 al renderizar. -->
+                      <el-input v-model="props.row.sctr_porcentaje" size="mini" :disabled="!isEditable"
+                                :placeholder="'Hereda ' + sctrPct + '%'" clearable
+                                @change="onSctrItemChange(props.row)" style="width:100%;"></el-input>
+                      <div style="font-size:11px; color:#909399; margin-top:2px; line-height:1.2;">
+                        Efectivo: {{ sctrEfectivo(props.row) }}%<template v-if="!tieneOverrideSctr(props.row)"> (heredado)</template>
+                        <el-button v-if="tieneOverrideSctr(props.row)" type="text" size="mini" style="padding:0; margin-left:6px;" :disabled="!isEditable" @click="heredarSctr(props.row)">heredar</el-button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="detail-photo-drop"
+                       @click="triggerItemImageUpload(props.row)"
+                       @dragover.prevent @drop.prevent="onItemImageDrop(props.row, $event)"
+                       v-loading="uploadingItemImageId === props.row.id"
+                       role="button" tabindex="0" title="Click o arrastra una imagen">
+                    <button v-if="itemImageUrl(props.row)" class="detail-photo-remove" type="button"
+                            title="Quitar imagen" @click.stop="deleteItemImage(props.row)">×</button>
+                    <img v-if="itemImageUrl(props.row)" :src="itemImageUrl(props.row)" alt="Foto del producto"/>
+                    <div v-else class="detail-photo-copy"><strong>Click o arrastra imagen</strong><span>para cargar la foto del producto</span></div>
+                  </div>
+                </div>
+              </div>
+
+                </div><!-- /.erp-detail-main -->
+                <div class="erp-costcard">
+                  <div class="costtitle">▣ Mi Resultado del costeo</div>
+                  <!-- Desglose en vivo: el v-for calcula el desglose UNA sola vez
+                       y lo expone como `bd` (truco de Vue 2 para variable local). -->
+                  <template v-for="bd in [costeoBreakdown(props.row)]">
+                    <div class="costeo-breakdown" :key="'bd-' + props.row.id">
+                    <!-- ── Cadena de VENTA (lo que se le cobra al cliente) ── -->
+                    <div class="costeo-breakdown__row">
+                      <span>Resultado margen unitario</span>
+                      <span class="costeo-breakdown__val">S/ {{ bd.resultadoMargenUnit.toFixed(2) }}</span>
+                    </div>
+                    <div class="costeo-breakdown__row costeo-breakdown__margen">
+                      <span>Margen Ganancia <small>(ya incluido en Producto)</small></span>
+                      <span class="costeo-breakdown__val">S/ {{ bd.ganancia.toFixed(2) }}</span>
+                    </div>
+                    <div class="costeo-breakdown__row">
+                      <span>Total (S/) = Costo Base + Resultado</span>
+                      <span class="costeo-breakdown__val">S/ {{ bd.productoUnit.toFixed(2) }}</span>
+                    </div>
+                    <div class="costeo-breakdown__row">
+                      <span>Costo muestra</span><span class="costeo-breakdown__val">S/ {{ bd.muestra.toFixed(2) }}</span>
+                    </div>
+                    <div class="costeo-breakdown__row">
+                      <span>Total Producto <small>(incluye muestra y movilidad)</small></span>
+                      <span class="costeo-breakdown__val">S/ {{ bd.totalProducto.toFixed(2) }}</span>
+                    </div>
+                    <div class="costeo-breakdown__row">
+                      <span>Total Costo Impresión
+                        <small v-if="bd.imprColores > 1 || bd.imprLados > 1 || bd.imprMillar !== 1">(× {{ bd.imprColores }} col × {{ bd.imprLados }} lad × {{ bd.imprMillar }} millar)</small>
+                      </span>
+                      <span class="costeo-breakdown__val">S/ {{ bd.impresion.toFixed(2) }}</span>
+                    </div>
+                    <div class="costeo-breakdown__row">
+                      <span>Costo empaque <small v-if="props.row.empaque_por_unidad">(× {{ props.row.quantity }})</small></span>
+                      <span class="costeo-breakdown__val">S/ {{ bd.empaque.toFixed(2) }}</span>
+                    </div>
+                    <div class="costeo-breakdown__row">
+                      <span>+ Seguro SCTR ({{ bd.sctrPctEfectivo }}%)</span><span class="costeo-breakdown__val">S/ {{ bd.sctr.toFixed(2) }}</span>
+                    </div>
+                    <div class="costeo-breakdown__row costeo-breakdown__total">
+                      <span>= Total sin IGV</span><span class="costeo-breakdown__val">S/ {{ bd.totalSinIgv.toFixed(2) }}</span>
+                    </div>
+                    <div class="costeo-breakdown__row costeo-breakdown__unit">
+                      <span>Costo unitario (sin IGV)</span><span class="costeo-breakdown__val">S/ {{ bd.unit.toFixed(2) }} / u</span>
+                    </div>
+
+                    <!-- ── Cadena de COSTO REAL (lo que de verdad cuesta el pedido) ──
+                         Solo lectura, derivado en vivo. No altera nada de la cadena de venta. -->
+                    <div class="costeo-breakdown__row">
+                      <span>Base de costo real</span><span class="costeo-breakdown__val">S/ {{ bd.baseCostoReal.toFixed(2) }}</span>
+                    </div>
+                    <div class="costeo-breakdown__row">
+                      <span>Seguro SCTR para Costo Real ({{ bd.sctrPctEfectivo }}%)</span>
+                      <span class="costeo-breakdown__val">S/ {{ bd.sctrCostoReal.toFixed(2) }}</span>
+                    </div>
+                    <div class="costeo-breakdown__row costeo-breakdown__total">
+                      <span>Costo Real Total (Q+logística)</span>
+                      <span class="costeo-breakdown__val">S/ {{ bd.costoRealTotal.toFixed(2) }}</span>
+                    </div>
+                    <div class="costeo-breakdown__row costeo-breakdown__margen">
+                      <span>Utilidad Real</span><span class="costeo-breakdown__val">S/ {{ bd.utilidadReal.toFixed(2) }}</span>
+                    </div>
+                    <div class="costeo-breakdown__row costeo-breakdown__margen">
+                      <span>Margen Real %</span><span class="costeo-breakdown__val">{{ bd.margenRealPct.toFixed(2) }}%</span>
+                    </div>
+                    <div class="costeo-breakdown__row">
+                      <span>Precio Necesario para {{ bd.margenObjetivoPct }}%</span>
+                      <span class="costeo-breakdown__val">S/ {{ bd.precioNecesario.toFixed(2) }}</span>
+                    </div>
+                    <div class="costeo-breakdown__row">
+                      <span>Cuánto subir (S/.)</span><span class="costeo-breakdown__val">S/ {{ bd.cuantoSubir.toFixed(2) }}</span>
+                    </div>
+                    <div class="costeo-breakdown__row costeo-breakdown__unit">
+                      <span>Precio Unitario a Vender (p/{{ bd.margenObjetivoPct }}%)</span>
+                      <span class="costeo-breakdown__val">S/ {{ bd.precioUnitObjetivo.toFixed(2) }} / u</span>
+                    </div>
+                    <!-- Agosto 2026 (punto 7): el margen que hay que cargar sobre el
+                         producto para que el margen REAL llegue al objetivo, más el
+                         botón que lo aplica. Es mayor que el objetivo porque los
+                         costos de muestra, movilidad, impresión y empaque entran al
+                         precio sin markup. -->
+                    <div class="costeo-breakdown__row costeo-breakdown__margen">
+                      <span>Margen requerido para {{ bd.margenObjetivoPct }}%</span>
+                      <span class="costeo-breakdown__val">
+                        {{ bd.margenRequeridoPct === null ? '—' : bd.margenRequeridoPct.toFixed(2) + '%' }}
+                      </span>
+                    </div>
+                    <div v-if="isEditable && bd.margenRequeridoPct !== null" class="costeo-breakdown__accion">
+                      <el-button size="mini" type="primary" plain icon="el-icon-magic-stick"
+                                 @click="aplicarMargenObjetivo(props.row)">
+                        Aplicar margen
+                      </el-button>
+                      <el-tooltip placement="top"
+                                  content="Coloca ese porcentaje en Margen % y guarda el producto. El precio se redondea después, así que el margen real queda igual o apenas por encima del objetivo.">
+                        <i class="el-icon-info field-tip-icon" style="margin-left:6px;"></i>
+                      </el-tooltip>
+                    </div>
+
+                    <div class="costeo-breakdown__note">
+                      Vista previa con IGV {{ igvPct }}% y SCTR {{ bd.sctrPctEfectivo }}%. El valor definitivo se recalcula al guardar.
+                      El precio unitario se redondea hacia arriba a terminación 0, 5 o 9.
+                    </div>
+                    </div>
+                  </template>
+                </div><!-- /.erp-costcard -->
+              </div><!-- /.erp-detail-layout -->
+
+              <!-- ─────── Comparativa de proveedores (mockup db) ───────
+                   N cotizaciones por ítem; el ganador define el Costo Base
+                   de la línea. Origen: catálogo (lista de precios) o manual. -->
+              <div class="supplier-quotes-section" v-if="!isComision(props.row)">
+                <div class="supplier-quotes__title">▣ Comparativa de proveedores</div>
+                <div class="supplier-quotes__hint">El proveedor ganador define el Costo Base de esta línea. El origen lo asigna el sistema: catálogo si viene de lista de precios, manual si fue cotizado fuera del catálogo.</div>
+                <el-table :data="supplierQuotesOf(props.row)" size="mini" border style="width:100%;">
+                  <el-table-column label="Ganador" width="70" align="center">
+                    <template slot-scope="qscope">
+                      <input type="radio" :name="'supplierWinner-' + props.row.id" :value="qscope.row.id"
+                             :checked="!!qscope.row.es_ganador" :disabled="!isEditable"
+                             @change="setWinnerQuote(props.row, qscope.row)"
+                             title="Proveedor ganador: define el Costo Base"/>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Proveedor" min-width="170">
+                    <template slot-scope="qscope">
+                      <el-select :value="qscope.row.supplier_id || 0" size="mini" filterable remote reserve-keyword
+                                 placeholder="Proveedor por definir" :remote-method="searchSuppliers"
+                                 :loading="supplierSearching" :disabled="!isEditable" style="width:100%;"
+                                 @change="function (val) { saveSupplierQuote(props.row, qscope.row, { supplier_id: val || null }) }">
+                        <el-option :key="0" :label="'Proveedor por definir'" :value="0"></el-option>
+                        <el-option v-for="s in supplierOptionsFor(qscope.row)" :key="s.id"
+                                   :label="s.nombre_comercial || s.razon_social" :value="s.id"></el-option>
+                      </el-select>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Origen" width="90" align="center">
+                    <template slot-scope="qscope">
+                      <el-tag size="mini" :type="qscope.row.source === 'catalog' ? 'success' : ''" effect="plain">
+                        {{ qscope.row.source === 'catalog' ? 'Catálogo' : 'Manual' }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Producto / referencia cotizada" min-width="200">
+                    <template slot-scope="qscope">
+                      <div style="display:flex; gap:6px; align-items:center;">
+                        <el-input :value="qscope.row.product_reference" size="mini"
+                                  placeholder="Referencia manual cotizada" :disabled="!isEditable" style="flex:1;"
+                                  @change="function (val) { saveSupplierQuote(props.row, qscope.row, { product_reference: val }) }"></el-input>
+                        <el-button v-if="isEditable" size="mini" @click="openQuoteRefSearch(props.row, qscope.row)">Buscar</el-button>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Costo Base" width="110" align="right">
+                    <template slot-scope="qscope">
+                      <el-input-number :value="parseFloat(qscope.row.costo_base || 0)" size="mini" :precision="2" :step="1" :min="0"
+                                       controls-position="right" :disabled="!isEditable" style="width:100%;"
+                                       @change="function (val) { saveSupplierQuote(props.row, qscope.row, { costo_base: val }) }"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Tiempo entrega" width="130">
+                    <template slot-scope="qscope">
+                      <el-input :value="qscope.row.tiempo_entrega" size="mini" placeholder="Ej: 15 días útiles"
+                                :disabled="!isEditable"
+                                @change="function (val) { saveSupplierQuote(props.row, qscope.row, { tiempo_entrega: val }) }"></el-input>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Observación" min-width="150">
+                    <template slot-scope="qscope">
+                      <el-input :value="qscope.row.observacion" size="mini" placeholder="Observación"
+                                :disabled="!isEditable"
+                                @change="function (val) { saveSupplierQuote(props.row, qscope.row, { observacion: val }) }"></el-input>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Acción" width="150" align="center">
+                    <template slot-scope="qscope">
+                      <el-button v-if="qscope.row.source !== 'catalog' && isEditable" size="mini"
+                                 @click="toCatalogQuote(props.row, qscope.row)">Agregar catálogo</el-button>
+                      <el-tag v-else-if="qscope.row.source === 'catalog'" size="mini" type="success" effect="plain">Ya está en catálogo</el-tag>
+                      <el-button v-if="isEditable" size="mini" type="danger" plain
+                                 :disabled="supplierQuotesOf(props.row).length <= 1"
+                                 @click="removeSupplierQuote(props.row, qscope.row)">Quitar</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <div style="margin-top:8px;">
+                  <el-button v-if="isEditable" size="mini" icon="el-icon-plus" @click="addSupplierQuote(props.row)">+ proveedor</el-button>
+                </div>
+              </div>
+
+              <!-- ─────── Fase C: Escalones de precio por volumen ─────── -->
+              <div v-if="!isComision(props.row) && props.row.precios_volumen_disponibles && props.row.precios_volumen_disponibles.length > 0"
+                   class="tiers-section">
+                <div class="tiers-section__title">
+                  <i class="el-icon-sort"></i> <strong>Precios por volumen del catálogo</strong>
+                  <span class="tiers-section__hint">
+                    Al cambiar la cantidad, el sistema aplica automáticamente el escalón mayorista alcanzado (último ≤ cantidad).
+                  </span>
+                </div>
+                <el-table :data="props.row.precios_volumen_disponibles" border size="mini"
+                          row-key="id"
+                          :row-class-name="(row) => tierRowClass(row, props.row)"
+                          style="max-width:480px;">
+                  <el-table-column label="Desde" prop="quantity_unit" width="80" align="right">
+                    <template slot-scope="t">{{ formatTierQty(t.row.quantity_unit) }} u</template>
+                  </el-table-column>
+                  <el-table-column label="Precio unitario" width="130" align="right">
+                    <template slot-scope="t">S/ {{ t.row.price1.toFixed(2) }}</template>
+                  </el-table-column>
+                  <el-table-column label="Descripción" prop="description"></el-table-column>
+                  <el-table-column label="" width="50" align="center">
+                    <template slot-scope="t">
+                      <i v-if="props.row.tier_aplicado && props.row.tier_aplicado.id === t.row.id"
+                         class="el-icon-check" style="color:#67c23a; font-weight:bold;"
+                         title="Escalón aplicado"></i>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+
+              <div class="ai-inferred-details__footer">
+                <el-button v-if="isEditable" size="mini" type="success" icon="el-icon-check"
+                           @click="saveItem(props.row)">
+                  Guardar detalles
+                </el-button>
+                <span class="ai-inferred-details__hint">
+                  <i class="el-icon-magic-stick"></i>
+                  = campo sugerido por la IA. Al editarlo, la marca desaparece.
+                </span>
+              </div>
+            </div>
+                    </template>
+                  </template>
+                </el-table-column>
+                <el-table-column label="Kit" width="70" align="center">
+                  <template slot-scope="mscope">
+                    <el-button v-if="isEditable" size="mini" type="danger" plain
+                               @click="removeKitMember(props.row.kit, mscope.row)">Quitar</el-button>
+                  </template>
+                </el-table-column>
+                <el-table-column label="#" width="40" align="center">
+                  <template slot-scope="mscope">{{ mscope.$index + 1 }}</template>
+                </el-table-column>
+                <el-table-column label="Producto solicitado" min-width="140">
+                  <template slot-scope="mscope">{{ mscope.row.product_name }}</template>
+                </el-table-column>
+                <el-table-column label="Foto" width="60" align="center">
+                  <template slot-scope="mscope">
+                    <img v-if="itemImageUrl(mscope.row)" :src="itemImageUrl(mscope.row)" alt="foto"
+                         class="item-foto-thumb"/>
+                    <span v-else class="item-foto-empty"><i class="el-icon-picture-outline"></i></span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="Tipo" width="90" align="center">
+                  <template slot-scope="mscope">
+                    <span style="font-size:11px;">{{ isComision(mscope.row) ? 'Comisión' : (String(mscope.row.tipo_linea || '').toLowerCase() === 'service' ? 'Servicio' : 'Producto') }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="Producto del catálogo" min-width="150">
+                  <template slot-scope="mscope">
+                    <div v-if="!isComision(mscope.row)">
+                      <el-tag v-if="matchStatus(mscope.row) === 'matched'" size="mini" type="success" effect="plain">
+                        <i class="el-icon-success"></i>
+                        {{ mscope.row.catalog_item ? mscope.row.catalog_item.name : ('ID ' + mscope.row.item_id) }}
+                      </el-tag>
+                      <el-tag v-else-if="matchStatus(mscope.row) === 'review'" size="mini" type="warning" effect="dark"
+                              style="cursor:pointer;" @click="openMatchDialog(mscope.row)">
+                        <i class="el-icon-warning-outline"></i> Revisar producto
+                      </el-tag>
+                      <el-tag v-else size="mini" type="info" effect="plain"
+                              style="cursor:pointer;" @click="openMatchDialog(mscope.row)">
+                        <i class="el-icon-search"></i> Sin match — buscar
+                      </el-tag>
+                    </div>
+                    <el-tag v-else size="mini" type="info" effect="plain">Comisión</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="Cant." width="80" align="center">
+                  <template slot-scope="mscope">{{ mscope.row.quantity }}</template>
+                </el-table-column>
+                <el-table-column label="Costo Base" width="110" align="right">
+                  <template slot-scope="mscope">S/ {{ parseFloat(mscope.row.costo_base || 0).toFixed(2) }}</template>
+                </el-table-column>
+                <el-table-column label="Margen %" width="90" align="right">
+                  <template slot-scope="mscope">{{ parseFloat(mscope.row.margen_porcentaje || 0).toFixed(1) }}%</template>
+                </el-table-column>
+                <el-table-column label="Margen S/" width="96" align="right">
+                  <template slot-scope="mscope">S/ {{ parseFloat(mscope.row.ganancia_absoluta || 0).toFixed(2) }}</template>
+                </el-table-column>
+                <el-table-column label="V. Unit." width="86" align="right">
+                  <template slot-scope="mscope">S/ {{ parseFloat(mscope.row.valor_unitario || 0).toFixed(2) }}</template>
+                </el-table-column>
+                <el-table-column label="Total" width="110" align="right">
+                  <template slot-scope="mscope"><strong>S/ {{ parseFloat(mscope.row.total_item || 0).toFixed(2) }}</strong></template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <div v-else class="ai-inferred-details">
+              <div class="ai-inferred-details__header">
+                <span class="ai-inferred-details__title">
+                  <i class="el-icon-document-copy"></i>
+                  <strong>Detalles técnicos del producto</strong>
+                </span>
+                <span v-if="inferredFields(props.row).length > 0"
+                      class="ai-inferred-details__warning">
+                  <i class="el-icon-warning-outline"></i>
+                  {{ inferredFields(props.row).length }} campo(s) inferido(s) por la IA — confirma con el cliente antes de emitir
+                </span>
+              </div>
+
+              <div class="erp-detail-layout">
+                <div class="erp-detail-main">
+                  <div class="erp-tech-grid" v-if="!isComision(props.row)">
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Material del producto. Si lo sugirió la IA, confírmalo con el cliente.">Material <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input v-model="props.row.material" size="mini" :disabled="!isEditable"
+                                placeholder="Ej: algodón, dry fit, plástico..."
+                                @input="onFieldEdited(props.row, 'material')"
+                                :class="{ 'ai-inferred-input': isInferred(props.row, 'material') }">
+                        <el-tooltip v-if="isInferred(props.row, 'material')" slot="suffix"
+                                    content="Inferido por IA — confirma con el cliente" placement="top">
+                          <i class="el-icon-magic-stick ai-inferred-icon"></i>
+                        </el-tooltip>
+                      </el-input>
+                    </div>
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Medida o tamaño del producto.">Medida / Tamaño <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input v-model="props.row.medida" size="mini" :disabled="!isEditable"
+                                placeholder="Ej: 500ml, A5, 30x40cm..."
+                                @input="onFieldEdited(props.row, 'medida')"
+                                :class="{ 'ai-inferred-input': isInferred(props.row, 'medida') }">
+                        <el-tooltip v-if="isInferred(props.row, 'medida')" slot="suffix"
+                                    content="Inferido por IA — confirma con el cliente" placement="top">
+                          <i class="el-icon-magic-stick ai-inferred-icon"></i>
+                        </el-tooltip>
+                      </el-input>
+                    </div>
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Detalle de la personalización solicitada (texto, logo, color, etc.).">Personalización <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input v-model="props.row.personalizacion" size="mini" :disabled="!isEditable"
+                                placeholder="Ej: logo bordado, texto..."
+                                @input="onFieldEdited(props.row, 'personalizacion')"
+                                :class="{ 'ai-inferred-input': isInferred(props.row, 'personalizacion') }">
+                        <el-tooltip v-if="isInferred(props.row, 'personalizacion')" slot="suffix"
+                                    content="Inferido por IA — confirma con el cliente" placement="top">
+                          <i class="el-icon-magic-stick ai-inferred-icon"></i>
+                        </el-tooltip>
+                      </el-input>
+                    </div>
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Técnica de impresión o aplicación (serigrafía, bordado, sublimado, etc.).">Técnica <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input v-model="props.row.tecnica_impresion" size="mini" :disabled="!isEditable"
+                                placeholder="Ej: serigrafía, bordado, sublimado..."
+                                @input="onFieldEdited(props.row, 'tecnica_impresion')"
+                                :class="{ 'ai-inferred-input': isInferred(props.row, 'tecnica_impresion') }">
+                        <el-tooltip v-if="isInferred(props.row, 'tecnica_impresion')" slot="suffix"
+                                    content="Inferido por IA — confirma con el cliente" placement="top">
+                          <i class="el-icon-magic-stick ai-inferred-icon"></i>
+                        </el-tooltip>
+                      </el-input>
+                    </div>
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Forma de empaque o presentación del producto.">Empaque / Presentación <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input v-model="props.row.empaque" size="mini" :disabled="!isEditable"
+                                placeholder="Ej: bolsa individual, caja..."
+                                @input="onFieldEdited(props.row, 'empaque')"
+                                :class="{ 'ai-inferred-input': isInferred(props.row, 'empaque') }">
+                        <el-tooltip v-if="isInferred(props.row, 'empaque')" slot="suffix"
+                                    content="Inferido por IA — confirma con el cliente" placement="top">
+                          <i class="el-icon-magic-stick ai-inferred-icon"></i>
+                        </el-tooltip>
+                      </el-input>
+                    </div>
+                    <div class="erp-tech-minirow">
+                      <div class="ai-field ai-field--with-outside-icon">
+                        <label class="lbl-help" title="Cantidad de colores de la impresión (afecta el costo).">Colores <i class="el-icon-info field-tip-icon"></i></label>
+                        <el-input-number v-model="props.row.cantidad_colores" size="mini" :min="1" :max="20"
+                                         controls-position="right" :disabled="!isEditable"
+                                         @change="onFieldEdited(props.row, 'cantidad_colores')"
+                                         :class="{ 'ai-inferred-input': isInferred(props.row, 'cantidad_colores') }">
+                        </el-input-number>
+                        <el-tooltip v-if="isInferred(props.row, 'cantidad_colores')"
+                                    content="Inferido por IA — confirma con el cliente" placement="top">
+                          <i class="el-icon-magic-stick ai-inferred-icon ai-inferred-icon--outside"></i>
+                        </el-tooltip>
+                      </div>
+                      <div class="ai-field ai-field--with-outside-icon">
+                        <label class="lbl-help" title="Cantidad de lados o caras a personalizar.">Lados <i class="el-icon-info field-tip-icon"></i></label>
+                        <el-input-number v-model="props.row.cantidad_lados" size="mini" :min="1" :max="6"
+                                         controls-position="right" :disabled="!isEditable"
+                                         @change="onFieldEdited(props.row, 'cantidad_lados')"
+                                         :class="{ 'ai-inferred-input': isInferred(props.row, 'cantidad_lados') }">
+                        </el-input-number>
+                        <el-tooltip v-if="isInferred(props.row, 'cantidad_lados')"
+                                    content="Inferido por IA — confirma con el cliente" placement="top">
+                          <i class="el-icon-magic-stick ai-inferred-icon ai-inferred-icon--outside"></i>
+                        </el-tooltip>
+                      </div>
+                      <div class="ai-field">
+                        <label class="lbl-help" title="Factor manual de la impresión (millares). Multiplica el Costo Total de Impresión: costo × colores × lados × millar. Por defecto 1.">Millar <i class="el-icon-info field-tip-icon"></i></label>
+                        <el-input-number v-model="props.row.cantidad_millar" size="mini" :precision="2" :step="1" :min="0"
+                                         controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="erp-tech-duo">
+                      <div class="ai-field">
+                        <label class="lbl-help" title="Descripción comercial o especificaciones del producto.">Descripción <i class="el-icon-info field-tip-icon"></i></label>
+                        <el-input v-model="props.row.product_description" size="mini" :disabled="!isEditable"
+                                  type="textarea" :autosize="{minRows: 2, maxRows: 6}"
+                                  placeholder="Descripción comercial o especificaciones del producto..."
+                                  @input="onFieldEdited(props.row, 'product_description')"
+                                  :class="{ 'ai-inferred-input': isInferred(props.row, 'product_description') }">
+                        </el-input>
+                      </div>
+                      <div class="ai-field erp-obs" v-if="!isComision(props.row)">
+                        <label class="lbl-help" title="Notas internas de esta línea; no se muestran al cliente.">Observaciones <i class="el-icon-info field-tip-icon"></i></label>
+                        <el-input v-model="props.row.observaciones" size="mini" :disabled="!isEditable"
+                                  type="textarea" :autosize="{minRows: 2, maxRows: 6}"
+                                  placeholder="Notas internas para esta línea (opcional)">
+                        </el-input>
+                      </div>
+                    </div>
+
+              <!-- Agosto 2026 (punto 2) — kits y servicio de armado.
+                   Un kit son varios productos agrupados solo para esta cotización
+                   y el armado es un servicio puntual: ninguno es un producto del
+                   catálogo. El check "No registrar..." se retiró: esa función vive
+                   ahora en el combo Tipo = Servicio (al convertir NO se le crea
+                   un producto propio). La línea conserva igual este nombre. -->
 
               <!-- ───────────── Mi Costeo del ítem (formato mockup) ───────────── -->
               <div class="costeo-section erp-cost" v-if="!isComision(props.row)">
@@ -688,12 +1257,32 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="item_order" label="#" width="40" align="center"></el-table-column>
+        <!-- Kit: check para agrupar (no en comisiones ni en filas kit) -->
+        <el-table-column label="Kit" width="118" align="center">
+          <template slot="header">
+            <span class="col-tip" title="Marca 2 o más productos para crear un kit. La comisión no entra a kits.">Kit <i class="el-icon-info"></i></span>
+          </template>
+          <template slot-scope="scope">
+            <el-checkbox v-if="!scope.row._isKit && !isComision(scope.row)"
+                         :value="kitSelection.indexOf(scope.row.id) !== -1"
+                         :disabled="!isEditable"
+                         @change="toggleKitSelected(scope.row)"></el-checkbox>
+            <template v-if="scope.row._isKit">
+              <el-button size="mini" type="danger" plain
+                         :disabled="!isEditable" @click="askDissolveKit(scope.row.kit)">Disolver</el-button>
+            </template>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="item_order" label="#" width="40" align="center">
+          <template slot-scope="scope">{{ scope.row._isKit ? scope.row._displayNum : scope.row.item_order }}</template>
+        </el-table-column>
 
         <el-table-column label="Producto solicitado" min-width="110">
           <template slot-scope="scope">
-            <el-input v-if="!isComision(scope.row)" v-model="scope.row.product_name" size="mini" :disabled="!isEditable"></el-input>
-            <span v-else style="font-size:12px;">{{ scope.row.product_name || 'COMISIÓN' }}</span>
+            <el-input v-if="!scope.row._isKit && !isComision(scope.row)" v-model="scope.row.product_name" size="mini" :disabled="!isEditable"></el-input>
+            <span v-else-if="!scope.row._isKit" style="font-size:12px;">{{ scope.row.product_name || 'COMISIÓN' }}</span>
+            <el-input v-else v-model="scope.row.kit.nombre" size="mini" :disabled="!isEditable" maxlength="191"></el-input>
           </template>
         </el-table-column>
 
@@ -703,7 +1292,7 @@
             <span class="col-tip" title="Imagen de referencia de este producto. La IA puede usarla para inferir mejor material, técnica y medidas.">Foto <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
-            <div class="item-foto-cell">
+            <div v-if="!scope.row._isKit" class="item-foto-cell">
               <img v-if="itemImageUrl(scope.row)" :src="itemImageUrl(scope.row)" alt="foto"
                    class="item-foto-thumb item-foto-click"
                    :title="isEditable ? 'Click para cambiar la foto' : 'Foto del producto'"
@@ -720,19 +1309,31 @@
                 </el-button>
               </div>
             </div>
+            <div v-else class="item-foto-cell">
+              <img v-if="kitPhotoUrl(scope.row.kit)" :src="kitPhotoUrl(scope.row.kit)" alt="foto kit"
+                   class="item-foto-thumb"/>
+              <span v-else class="item-foto-empty" title="Sin foto"><i class="el-icon-picture-outline"></i></span>
+              <div v-if="isEditable && !scope.row.kit._isNew" class="item-foto-actions">
+                <el-button size="mini" type="text" icon="el-icon-upload2"
+                           :loading="uploadingKitPhotoId === scope.row.kit.id"
+                           @click="triggerKitPhotoUpload(scope.row.kit)">
+                  {{ kitPhotoUrl(scope.row.kit) ? 'Cambiar' : 'Subir' }}
+                </el-button>
+              </div>
+            </div>
           </template>
         </el-table-column>
 
-        <!-- Columna sin nombre: tipo de línea (mockup db). Comisión enlaza
-             directo el ítem 271; el backend ajusta match y revisión. -->
+        <!-- Columna sin nombre: tipo de línea (mockup db). En kit solo
+             producto/servicio (la comisión no entra a kits). -->
         <el-table-column label="" width="112">
           <template slot-scope="scope">
-            <el-select v-model="scope.row.tipo_linea" size="mini" :disabled="!isEditable"
+            <el-select v-if="!scope.row._isKit" v-model="scope.row.tipo_linea" size="mini" :disabled="!isEditable"
                        title="Tipo de línea" @change="onTipoLineaChange(scope.row)"
                        style="width:100%;">
               <el-option label="Producto" value="product"></el-option>
               <el-option label="Servicio" value="service"></el-option>
-              <el-option label="Comisión" value="comision"></el-option>
+              <el-option label="Comisión" value="comision" :disabled="itemInKit(scope.row)"></el-option>
             </el-select>
           </template>
         </el-table-column>
@@ -743,7 +1344,7 @@
             <span class="col-tip" title="Producto del catálogo de Compipro asociado a lo que pidió el cliente (sugerido por la IA).">Producto del catálogo <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
-            <div v-if="!isComision(scope.row)">
+            <div v-if="!scope.row._isKit && !isComision(scope.row)">
               <!-- Estado: alta confianza -->
               <el-tag v-if="matchStatus(scope.row) === 'matched'" size="mini" type="success" effect="plain">
                 <i class="el-icon-success"></i>
@@ -771,14 +1372,21 @@
                 Confianza: {{ Math.round((parseFloat(scope.row.product_match_confidence) || 0) * 100) }}%
               </div>
             </div>
+            <el-tag v-else-if="scope.row._isKit" size="mini" type="warning" effect="plain">Kit compuesto</el-tag>
             <el-tag v-else size="mini" type="info" effect="plain">Comisión</el-tag>
+            <div v-if="scope.row._isKit" style="margin-top:2px; font-size:10px; color:#909399;">
+              {{ kitMemberCount(scope.row.kit) }} componentes · Margen real {{ kitRealMarginPct(scope.row.kit).toFixed(2) }}%
+            </div>
           </template>
         </el-table-column>
 
         <el-table-column label="Cant." width="88">
           <template slot-scope="scope">
-            <el-input-number v-model="scope.row.quantity" size="mini" :min="1" :max="999999"
+            <el-input-number v-if="!scope.row._isKit" v-model="scope.row.quantity" size="mini" :min="1" :max="999999"
                              controls-position="right" :disabled="!isEditable || isComision(scope.row)" class="campo-precio"></el-input-number>
+            <el-input-number v-else v-model="scope.row.kit.cantidad" size="mini" :min="1" :max="999999"
+                             controls-position="right" :disabled="!isEditable" class="campo-precio"
+                             title="Al guardar se aplica a todo el kit"></el-input-number>
           </template>
         </el-table-column>
         <el-table-column label="Costo Base" width="118" align="right">
@@ -786,6 +1394,7 @@
             <span class="col-tip" title="Costo unitario base del producto, antes de aplicar el margen.">Costo Base <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
+            <template v-if="!scope.row._isKit">
             <el-input-number v-model="scope.row.costo_base" size="mini" :precision="2" :step="0.5"
                              controls-position="right" :disabled="!isEditable" class="campo-precio"></el-input-number>
             <!-- Fase C — Badge "Escalón aplicado" cuando el costo viene de item_unit_types -->
@@ -797,6 +1406,8 @@
                 <span><i class="el-icon-collection-tag"></i> ≥{{ formatTierQty(scope.row.tier_aplicado.quantity_unit) }} u → S/ {{ scope.row.tier_aplicado.price1.toFixed(2) }}</span>
               </el-tooltip>
             </div>
+            </template>
+            <span v-else class="campo-calculado">S/ {{ kitRowTotals(scope.row.kit).costo.toFixed(2) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="Margen %" width="108" align="right">
@@ -804,7 +1415,7 @@
             <span class="col-tip" title="Porcentaje de ganancia aplicado sobre el costo base.">Margen % <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
-            <el-tooltip
+            <el-tooltip v-if="!scope.row._isKit"
               :disabled="!isUnderMinMargin(scope.row)"
               :content="minMarginTooltip(scope.row)"
               placement="top" effect="dark">
@@ -814,7 +1425,8 @@
                                :class="{ 'campo-margen-bajo': isUnderMinMargin(scope.row) }">
               </el-input-number>
             </el-tooltip>
-            <div v-if="isUnderMinMargin(scope.row)" class="campo-margen-bajo__hint">
+            <span v-else class="campo-calculado">{{ kitRowTotals(scope.row.kit).margenPct.toFixed(2) }}%</span>
+            <div v-if="!scope.row._isKit && isUnderMinMargin(scope.row)" class="campo-margen-bajo__hint">
               <i class="el-icon-warning"></i> Bajo el mínimo ({{ scope.row.min_margin_aplicable }}%)
             </div>
           </template>
@@ -824,7 +1436,8 @@
             <span class="col-tip" title="Ganancia en soles del ítem (markup sobre el costo × cantidad). Solo lectura.">Margen (S/) <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
-            <span class="campo-calculado campo-margen-soles">S/ {{ parseFloat(scope.row.ganancia_absoluta || 0).toFixed(2) }}</span>
+            <span v-if="!scope.row._isKit" class="campo-calculado campo-margen-soles">S/ {{ parseFloat(scope.row.ganancia_absoluta || 0).toFixed(2) }}</span>
+            <span v-else class="campo-calculado campo-margen-soles">S/ {{ kitRowTotals(scope.row.kit).margenS.toFixed(2) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="V. Unit." width="86" align="right">
@@ -832,16 +1445,23 @@
             <span class="col-tip" title="Valor unitario de venta (costo base + margen), sin IGV.">V. Unit. <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
-            <span class="campo-calculado">S/ {{ parseFloat(scope.row.valor_unitario).toFixed(2) }}</span>
+            <span v-if="!scope.row._isKit" class="campo-calculado">S/ {{ parseFloat(scope.row.valor_unitario).toFixed(2) }}</span>
+            <span v-else class="campo-calculado">S/ {{ kitRowTotals(scope.row.kit).vunit.toFixed(2) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="Total" width="92" align="right">
           <template slot-scope="scope">
-            <span class="campo-calculado"><strong>S/ {{ parseFloat(scope.row.total_item).toFixed(2) }}</strong></span>
+            <span v-if="!scope.row._isKit" class="campo-calculado"><strong>S/ {{ parseFloat(scope.row.total_item).toFixed(2) }}</strong></span>
+            <span v-else class="campo-calculado"><strong>S/ {{ kitRowTotals(scope.row.kit).total.toFixed(2) }}</strong></span>
           </template>
         </el-table-column>
         <el-table-column label="" width="100" align="center">
           <template slot-scope="scope">
+            <el-button v-if="scope.row._isKit" size="mini" type="success" icon="el-icon-check" circle
+                       :loading="!!kitSaving[scope.row.kit._kid]"
+                       :disabled="!isEditable" @click="saveKit(scope.row.kit)"
+                       title="Guardar kit"></el-button>
+            <template v-if="!scope.row._isKit">
             <el-button size="mini" type="success" icon="el-icon-check" circle
                        @click="saveItem(scope.row)" :disabled="!isEditable"
                        title="Guardar cambios del producto"></el-button>
@@ -854,6 +1474,7 @@
             <el-button size="mini" type="danger" icon="el-icon-delete" circle
                        @click="deleteItem(scope.row)" :disabled="!isEditable"
                        title="Eliminar producto"></el-button>
+            </template>
           </template>
         </el-table-column>
       </el-table>
@@ -1109,8 +1730,17 @@ export default {
       // + kits solo-frontales (el backend llega después).
       iaCollapseOpen: ['ia'],
       kitCollapseOpen: [],
-      kitDraft: { nombre: '', descripcion: '', itemIds: [] },
-      kitsLocal: [],
+      // Kits/paquetes (backend): selección + borradores + estado por kit.
+      kitSelection: [],       // ids de ítems sueltos marcados con el check Kit
+      kitAction: 'new',       // 'new' o 'add:<kitId>'
+      kitNameInput: '',
+      kits: [],               // kits del servidor (+ borradores locales _isNew)
+      kitsLoadedFor: null,    // prequote.id ya cargado
+      kitSaving: {},          // _kid -> true
+      kitDraftSeq: 1,
+      uploadingKitPhotoId: null,
+      kitPhotoVersion: 0,
+      pendingKitPhotoId: null,
       // Comparativa de proveedores por ítem (mockup db)
       supplierQuotesMap: {},     // itemId -> [quotes]
       supplierQuotesLoaded: {},  // itemId -> true (ya cargadas)
@@ -1242,15 +1872,21 @@ export default {
         if (newId) this.loadPrequoteById(newId)
       }
     },
-    // Comparativa: al cambiar la precotización, cargar cotizaciones de
-    // los ítems aún no cargados (una sola vez por ítem).
+    // Comparativa + kits: al cambiar la precotización, cargar cotizaciones de
+    // los ítems aún no cargados (una sola vez por ítem) y los kits.
     prequote: {
       handler(pq) {
         var self = this
-        if (!pq || !Array.isArray(pq.items)) return
+        if (!pq || !Array.isArray(pq.items)) {
+          this.kits = []
+          this.kitsLoadedFor = null
+          this.kitSelection = []
+          return
+        }
         pq.items.forEach(function (it) {
           if (it && it.id && !self.supplierQuotesLoaded[it.id]) self.loadSupplierQuotes(it)
         })
+        this.loadKits()
       }
     }
   },
@@ -1401,6 +2037,8 @@ export default {
     /**
      * Combo tipo de línea (mockup db): normaliza y guarda; el backend enlaza
      * el ítem 271 si es comisión o suelta el match si es servicio.
+     * Servicio ⇒ excluir_catalogo (vive solo en esta cotización; al
+     * convertir no crea producto). El check manual se retiró.
      */
     onTipoLineaChange(item) {
       if (!item) return
@@ -1412,6 +2050,9 @@ export default {
         item.product_name = 'COMISIÓN'
         item.quantity = 1
         item.margen_porcentaje = 0
+      }
+      if (v === 'service') {
+        item.excluir_catalogo = true
       }
       this.saveItem(item)
     },
@@ -2662,37 +3303,529 @@ export default {
       this.quoteRefDialogVisible = false
       this.quoteRefTarget = null
     },
-    /**
-     * Kits SOLO FRONTALES (el backend llega después): agrupa productos de la
-     * pantalla en un kit local. No toca endpoints ni el prequote.
-     */
-    addKitLocal() {
-      var nombre = (this.kitDraft.nombre || '').trim()
-      if (!nombre) {
-        this.$message.warning('Ponle un nombre al kit.')
+    /* ──────────────────────────────────────────────────────────
+     * Kits/paquetes comerciales (backend, mockup db).
+     * Los kits se arman en pre-cotización y se persisten con su propio
+     * botón Guardar (ahí se asegura el borrador 1:1). Disolver borra de
+     * BD de inmediato; los productos sueltos quedan intactos.
+     * ────────────────────────────────────────────────────────── */
+    kitsBaseUrl() {
+      return '/marketing/quotation/prequotes/' + this.prequote.id + '/kits'
+    },
+    savedKits() {
+      var self = this
+      return (this.kits || []).filter(function (k) { return !k._isNew })
+    },
+    kitById(kitId) {
+      var found = null
+      ;(this.kits || []).forEach(function (k) {
+        if (String(k._kid) === String(kitId)) found = k
+      })
+      return found
+    },
+    kitMemberIds(kit) {
+      return ((kit && kit.members) || []).map(function (m) { return Number(m.id) })
+    },
+    kitMemberItems(kit) {
+      // Array ESTABLE por kit: si se devolviera un filter() nuevo en cada
+      // render, la tabla de componentes se re-pintaría al tipear y los
+      // inputs perderían el foco. Se recalcula solo si cambia la prequote
+      // o la membresía de algún kit.
+      var items = (this.prequote && this.prequote.items) || []
+      var self = this
+      var hash = (this.kits || []).map(function (k) {
+        return k._kid + ':' + self.kitMemberIds(k).join(',')
+      }).join('|')
+      var cache = this._kitMembersCache
+      if (!cache || cache.pq !== this.prequote || cache.hash !== hash) {
+        var map = {}
+        ;(this.kits || []).forEach(function (k) {
+          var ids = {}
+          self.kitMemberIds(k).forEach(function (id) { ids[id] = true })
+          map[k._kid] = items.filter(function (it) { return ids[Number(it.id)] })
+        })
+        cache = { pq: this.prequote, hash: hash, map: map }
+        this._kitMembersCache = cache
+      }
+      return (cache.map[kit._kid]) || []
+    },
+    kitMemberCount(kit) {
+      return this.kitMemberIds(kit).length
+    },
+    // Envoltorio estable { row } para el detalle expandido de un componente.
+    // (Ver comentario en el template: el literal inline rompía la edición.)
+    memberDetailScope(item) {
+      if (!this._detailScopeCache) this._detailScopeCache = {}
+      var key = 'm' + (item && item.id)
+      var cached = this._detailScopeCache[key]
+      if (!cached || cached.row !== item) {
+        cached = { row: item }
+        this._detailScopeCache[key] = cached
+      }
+      return [cached]
+    },
+    itemInKit(item) {
+      if (!item || !item.id) return null
+      var found = null
+      var self = this
+      ;(this.kits || []).forEach(function (k) {
+        if (self.kitMemberIds(k).indexOf(Number(item.id)) !== -1) found = k
+      })
+      return found
+    },
+    isKitSelected(item) {
+      return !!item && !!item.id && this.kitSelection.indexOf(item.id) !== -1
+    },
+    toggleKitSelected(item) {
+      if (!item || !item.id || !this.isEditable) return
+      if (this.itemInKit(item)) {
+        this.$message.warning('Ese producto ya está en un kit.')
         return
       }
-      this.kitsLocal.push({
-        id: Date.now(),
-        nombre: nombre,
-        descripcion: (this.kitDraft.descripcion || '').trim(),
-        itemIds: (this.kitDraft.itemIds || []).slice(),
-      })
-      this.kitDraft = { nombre: '', descripcion: '', itemIds: [] }
-      this.$message.success('Kit agregado (solo frontal, aún no se guarda).')
+      var ix = this.kitSelection.indexOf(item.id)
+      if (ix === -1) this.kitSelection.push(item.id)
+      else this.kitSelection.splice(ix, 1)
     },
-    async removeKitLocal(id) {
+    findItemById(itemId) {
+      var found = null
+      ;((this.prequote && this.prequote.items) || []).forEach(function (it) {
+        if (Number(it.id) === Number(itemId)) found = it
+      })
+      return found
+    },
+    stampKitServer(kit) {
+      kit._server = JSON.stringify({
+        nombre: kit.nombre || '',
+        descripcion: kit.descripcion || '',
+        presentacion: kit.presentacion || '',
+        cantidad: Number(kit.cantidad) || 0,
+      })
+      return kit
+    },
+    kitIsDirty(kit) {
+      if (!kit || kit._isNew) return true
+      if (!kit._server) return false
       try {
-        await this.$confirm(
-          'Se quitará el kit de la lista (solo frontal).',
-          'Quitar kit',
-          { confirmButtonText: 'Quitar', cancelButtonText: 'Cancelar', type: 'warning' }
-        )
+        return JSON.stringify({
+          nombre: kit.nombre || '',
+          descripcion: kit.descripcion || '',
+          presentacion: kit.presentacion || '',
+          cantidad: Number(kit.cantidad) || 0,
+        }) !== kit._server
       } catch (e) {
-        return // el usuario canceló
+        return false
       }
-      var ix = this.kitsLocal.findIndex(function (k) { return k.id === id })
-      if (ix >= 0) this.kitsLocal.splice(ix, 1)
+    },
+    async loadKits(force) {
+      if (!this.prequote || !this.prequote.id) {
+        this.kits = []
+        this.kitsLoadedFor = null
+        return
+      }
+      if (!force && this.kitsLoadedFor === this.prequote.id) return
+      try {
+        var resp = await this.$http.get(this.kitsBaseUrl())
+        var rows = (resp.data && resp.data.kits) || []
+        var self = this
+        rows.forEach(function (k) {
+          k._kid = 'db-' + k.id
+          self.stampKitServer(k)
+        })
+        this.kits = rows
+        this.kitsLoadedFor = this.prequote.id
+        // Limpiar selección de ítems que ya entraron a un kit.
+        this.kitSelection = this.kitSelection.filter(function (id) { return !self.itemInKit({ id: id }) })
+      } catch (e) {
+        // Silencioso: sin kits hasta el próximo intento.
+      }
+    },
+    // Filas de la tabla: sueltos + filas kit intercaladas en la posición
+    // de su primer componente. Los envoltorios de kit se reutilizan
+    // (cacheados por _kid): si fueran objetos nuevos en cada render, los
+    // inputs de la fila perderían el foco al tipear.
+    displayRows() {
+      var self = this
+      var items = (this.prequote && this.prequote.items) || []
+      if (!this._kitRowCache) this._kitRowCache = {}
+      var rows = []
+      var inserted = {}
+      var num = 0
+      var kitRow = function (kit) {
+        var w = self._kitRowCache[kit._kid] || (self._kitRowCache[kit._kid] = { _isKit: true })
+        w.displayId = 'row-' + kit._kid
+        w._displayNum = num
+        w.kit = kit
+        return w
+      }
+      items.forEach(function (it) {
+        it.displayId = 'item-' + it.id
+        var kit = self.itemInKit(it)
+        if (kit) {
+          if (!inserted[kit._kid]) {
+            inserted[kit._kid] = true
+            num++
+            rows.push(kitRow(kit))
+          }
+        } else {
+          num++
+          it._displayNum = num
+          rows.push(it)
+        }
+      })
+      // Borradores sin miembros visibles igual se muestran al final.
+      ;(this.kits || []).forEach(function (k) {
+        if (!inserted[k._kid]) {
+          num++
+          rows.push(kitRow(k))
+        }
+      })
+      return rows
+    },
+    kitRowTotals(kit) {
+      var members = this.kitMemberItems(kit)
+      var costo = 0
+      var margenS = 0
+      members.forEach(function (it) {
+        var q = parseFloat(it.quantity) || 0
+        var cb = parseFloat(it.costo_base) || 0
+        var mp = parseFloat(it.margen_porcentaje) || 0
+        costo += q * cb
+        margenS += q * cb * (mp / 100)
+      }, this)
+      var qty = Math.max(1, Number(kit.cantidad) || 0)
+      var total = costo + margenS
+      return {
+        costo: costo,
+        margenS: margenS,
+        margenPct: costo > 0 ? (margenS / costo) * 100 : 0,
+        vunit: total / qty,
+        total: total,
+      }
+    },
+    kitMetrics(kit) {
+      var self = this
+      var members = this.kitMemberItems(kit)
+      var subtotal = 0
+      var costoReal = 0
+      var utilidad = 0
+      members.forEach(function (it) {
+        var bd = self.costeoBreakdown(it)
+        if (!bd) return
+        subtotal += bd.totalSinIgv || 0
+        costoReal += bd.costoRealTotal || 0
+        utilidad += bd.utilidadReal || 0
+      })
+      var margenPct = subtotal > 0 ? (utilidad / subtotal) * 100 : 0
+      var g = 0.4
+      var precio40 = costoReal > 0 ? costoReal / (1 - g) : 0
+      var r2 = function (n) { return Math.round(n * 100) / 100 }
+      return {
+        subtotal: r2(subtotal),
+        costoReal: r2(costoReal),
+        utilidad: r2(utilidad),
+        margenPct: r2(margenPct),
+        precio40: r2(precio40),
+        subir: r2(precio40 - subtotal),
+        unitario40: r2(precio40 / Math.max(1, Number(kit.cantidad) || 0)),
+      }
+    },
+    kitRealMarginPct(kit) {
+      return this.kitMetrics(kit).margenPct
+    },
+    kitPhotoUrl(kit) {
+      if (!kit || kit._isNew || !kit.imagen) return ''
+      return '/marketing/quotation/prequotes/' + this.prequote.id + '/kits/' + kit.id + '/photo?v=' + this.kitPhotoVersion
+    },
+    triggerKitPhotoUpload(kit) {
+      if (!kit || kit._isNew || !this.isEditable) return
+      this.pendingKitPhotoId = kit.id
+      if (this.$refs.kitPhotoInput) this.$refs.kitPhotoInput.click()
+    },
+    async onKitPhotoSelected(event) {
+      var files = event.target.files
+      if (!files || files.length === 0) { this.pendingKitPhotoId = null; return }
+      var kitId = this.pendingKitPhotoId
+      var kit = this.kitById('db-' + kitId)
+      if (this.$refs.kitPhotoInput) this.$refs.kitPhotoInput.value = ''
+      if (!kit) { this.pendingKitPhotoId = null; return }
+      var file = files[0]
+      var allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+      if (allowed.indexOf(file.type) === -1) {
+        this.$message.error('Tipo de imagen no permitido. Solo JPG, PNG, WEBP o GIF.')
+        this.pendingKitPhotoId = null
+        return
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        this.$message.error('La imagen excede 5 MB.')
+        this.pendingKitPhotoId = null
+        return
+      }
+      this.$set(this.kitSaving, kit._kid, true)
+      try {
+        var fd = new FormData()
+        fd.append('image', file)
+        var resp = await this.$http.post(
+          this.kitsBaseUrl() + '/' + kit.id + '/photo', fd,
+          { headers: { 'Content-Type': 'multipart/form-data' } }
+        )
+        if (resp.data && resp.data.ok) {
+          kit.imagen = (resp.data.kit && resp.data.kit.imagen) || resp.data.imagen || kit.imagen
+          this.stampKitServer(kit)
+          this.kitPhotoVersion++
+          this.$message.success('Foto del kit guardada')
+        } else {
+          this.$message.error((resp.data && resp.data.message) || 'No se pudo subir la foto')
+        }
+      } catch (e) {
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error subiendo la foto'
+        this.$message.error(msg)
+      } finally {
+        this.$set(this.kitSaving, kit._kid, false)
+        this.pendingKitPhotoId = null
+      }
+    },
+    kitQtyMismatchAlert(items, expected) {
+      var detail = items
+        .filter(function (it) { return Number(it.quantity) !== Number(expected) })
+        .map(function (it) { return '<li>' + (it.product_name || ('Ítem ' + it.id)) + ': ' + it.quantity + '</li>' })
+        .join('')
+      this.$alert(
+        'No se puede agrupar como kit porque las cantidades no coinciden.<br><br><strong>Cantidad esperada:</strong> ' +
+        expected + '<br><br><ul>' + detail + '</ul><br>Corrige la cantidad y vuelve a intentarlo.',
+        'Cantidades distintas',
+        { confirmButtonText: 'Entendido', dangerouslyUseHTMLString: true }
+      )
+    },
+    selectedLooseItems() {
+      var self = this
+      return this.kitSelection
+        .map(function (id) { return self.findItemById(id) })
+        .filter(function (it) { return it && !self.itemInKit(it) })
+    },
+    async createKitFromSelection() {
+      var nombre = (this.kitNameInput || '').trim()
+      if (!nombre) {
+        this.$message.warning('Escribe el nombre del kit.')
+        return
+      }
+      var selected = this.selectedLooseItems()
+      if (selected.length < 2) {
+        this.$message.error('Selecciona 2 o más productos sueltos para crear un kit.')
+        return
+      }
+      var expected = Number(selected[0].quantity)
+      var bad = selected.filter(function (it) { return Number(it.quantity) !== expected })
+      if (bad.length) {
+        this.kitQtyMismatchAlert(selected, expected)
+        return
+      }
+      // Borrador local: se persiste con su propio botón Guardar.
+      var localId = 'new-' + (this.kitDraftSeq++)
+      var kit = {
+        _isNew: true,
+        _kid: localId,
+        id: null,
+        nombre: nombre,
+        descripcion: 'compuesto por ' + selected.map(function (it) { return it.product_name }).join(', '),
+        presentacion: '',
+        cantidad: expected,
+        imagen: null,
+        _draftItemIds: selected.map(function (it) { return it.id }),
+        members: selected.map(function (it) { return { id: it.id } }),
+      }
+      this.kits.push(kit)
+      this.kitSelection = []
+      this.kitNameInput = ''
+      this.$message.success('Kit "' + nombre + '" creado en pantalla. Guárdalo con su botón ✓.')
+    },
+    async addSelectionToKit() {
+      var target = this.kitAction
+      if (!target || target.indexOf('add:') !== 0) return
+      var kit = this.kitById(target.replace('add:', ''))
+      if (!kit) return
+      var selected = this.selectedLooseItems()
+      if (!selected.length) {
+        this.$message.error('Selecciona uno o más productos sueltos.')
+        return
+      }
+      var expected = Number(kit.cantidad)
+      var bad = selected.filter(function (it) { return Number(it.quantity) !== expected })
+      if (bad.length) {
+        this.kitQtyMismatchAlert(selected, expected)
+        return
+      }
+      if (kit._isNew) {
+        var self = this
+        selected.forEach(function (it) {
+          if (kit._draftItemIds.indexOf(it.id) === -1) {
+            kit._draftItemIds.push(it.id)
+            kit.members.push({ id: it.id })
+          }
+        })
+        kit.descripcion = 'compuesto por ' + kit._draftItemIds.map(function (id) {
+          var it = self.findItemById(id)
+          return it ? it.product_name : ''
+        }).filter(Boolean).join(', ')
+        this.kitSelection = []
+        this.$message.success(selected.length + ' producto(s) agregado(s) al borrador. Guárdalo con su botón ✓.')
+        return
+      }
+      try {
+        var resp = await this.$http.post(this.kitsBaseUrl() + '/' + kit.id + '/members', {
+          item_ids: selected.map(function (it) { return it.id }),
+        })
+        if (resp.data && resp.data.ok) {
+          this.replaceKitFromServer(resp.data.kit)
+          this.kitSelection = []
+          this.$message.success('Producto(s) agregado(s) a ' + kit.nombre + '.')
+        } else {
+          this.$message.error((resp.data && resp.data.message) || 'No se pudo agregar al kit.')
+        }
+      } catch (e) {
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error agregando al kit.'
+        this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+      }
+    },
+    replaceKitFromServer(serverKit, draftKid) {
+      if (!serverKit) return null
+      var self = this
+      serverKit._kid = 'db-' + serverKit.id
+      this.stampKitServer(serverKit)
+      var ix = -1
+      this.kits.forEach(function (k, i) {
+        if (ix !== -1) return
+        if (String(k._kid) === String(serverKit._kid)) ix = i
+        else if (draftKid && String(k._kid) === String(draftKid)) ix = i
+      })
+      if (ix >= 0) this.kits.splice(ix, 1, serverKit)
+      else this.kits.push(serverKit)
+      this.kitSelection = this.kitSelection.filter(function (id) { return !self.itemInKit({ id: id }) })
+      return serverKit
+    },
+    async saveKit(kit) {
+      if (!kit || !this.isEditable) return
+      if (kit._isNew) {
+        var nombre = (kit.nombre || '').trim()
+        if (!nombre) {
+          this.$message.warning('Ponle un nombre al kit antes de guardarlo.')
+          return
+        }
+        if (!kit._draftItemIds || kit._draftItemIds.length < 2) {
+          this.$message.error('El kit necesita al menos 2 productos.')
+          return
+        }
+        this.$set(this.kitSaving, kit._kid, true)
+        try {
+          var resp = await this.$http.post(this.kitsBaseUrl(), {
+            nombre: nombre,
+            descripcion: kit.descripcion,
+            presentacion: kit.presentacion,
+            item_ids: kit._draftItemIds,
+          })
+          if (resp.data && resp.data.ok) {
+            this.replaceKitFromServer(resp.data.kit, kit._kid)
+            this.$message.success('Kit guardado.')
+          } else {
+            this.$message.error((resp.data && resp.data.message) || 'No se pudo guardar el kit.')
+          }
+        } catch (e) {
+          var msg = (e.response && e.response.data && e.response.data.message) || 'Error guardando el kit.'
+          this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+        } finally {
+          this.$set(this.kitSaving, kit._kid, false)
+        }
+        return
+      }
+      this.$set(this.kitSaving, kit._kid, true)
+      try {
+        var resp2 = await this.$http.put(this.kitsBaseUrl() + '/' + kit.id, {
+          nombre: kit.nombre,
+          descripcion: kit.descripcion,
+          presentacion: kit.presentacion,
+          cantidad: kit.cantidad,
+        })
+        if (resp2.data && resp2.data.ok) {
+          this.replaceKitFromServer(resp2.data.kit)
+          await this.loadPrequoteById(this.prequote.id)
+          this.$message.success('Kit actualizado.')
+        } else {
+          this.$message.error((resp2.data && resp2.data.message) || 'No se pudo actualizar el kit.')
+        }
+      } catch (e2) {
+        var msg2 = (e2.response && e2.response.data && e2.response.data.message) || 'Error actualizando el kit.'
+        this.$message({ message: msg2, type: 'error', duration: 8000, showClose: true })
+      } finally {
+        this.$set(this.kitSaving, kit._kid, false)
+      }
+    },
+    async removeKitMember(kit, item) {
+      if (!kit || !item || !this.isEditable) return
+      if (kit._isNew) {
+        kit._draftItemIds = kit._draftItemIds.filter(function (id) { return Number(id) !== Number(item.id) })
+        kit.members = kit.members.filter(function (m) { return Number(m.id) !== Number(item.id) })
+        if (kit._draftItemIds.length < 2) {
+          this.$message.warning('Al kit le queda menos de 2 productos: disuélvelo o agrégale más.')
+        }
+        return
+      }
+      try {
+        var resp = await this.$http.delete(this.kitsBaseUrl() + '/' + kit.id + '/members/' + item.id)
+        if (resp.data && resp.data.ok) {
+          this.replaceKitFromServer(resp.data.kit)
+          this.$message.success('Producto suelto.')
+        } else if (resp.data && resp.data.must_dissolve) {
+          this.askDissolveKit(kit, item.id)
+        } else {
+          this.$message.error((resp.data && resp.data.message) || 'No se pudo quitar del kit.')
+        }
+      } catch (e) {
+        if (e.response && e.response.data && e.response.data.must_dissolve) {
+          this.askDissolveKit(kit, item.id)
+        } else {
+          var msg = (e.response && e.response.data && e.response.data.message) || 'Error quitando del kit.'
+          this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+        }
+      }
+    },
+    askDissolveKit(kit, onlyItemId) {
+      var self = this
+      if (!kit || !this.isEditable) return
+      if (kit._isNew) {
+        var ix = -1
+        this.kits.forEach(function (k, i) { if (String(k._kid) === String(kit._kid)) ix = i })
+        if (ix >= 0) this.kits.splice(ix, 1)
+        this.$message.success('Borrador disuelto. Sus componentes vuelven a productos sueltos.')
+        return
+      }
+      this.$prompt(
+        'Si disuelves el kit "' + kit.nombre + '" se borrará de la base de datos (los productos sueltos quedan intactos). Para confirmar, escribe el nombre del kit.',
+        'Disolver kit',
+        {
+          confirmButtonText: 'Disolver',
+          cancelButtonText: 'Cancelar',
+          inputPlaceholder: kit.nombre,
+          inputValidator: function (val) {
+            return val === kit.nombre ? true : 'Escribe exactamente: ' + kit.nombre
+          },
+        }
+      ).then(async function () {
+        try {
+          // Al disolver se borra el kit de BD con sus enlaces (los productos
+          // quedan intactos como sueltos). Incluye el miembro pendiente.
+          var resp = await self.$http.delete(self.kitsBaseUrl() + '/' + kit.id)
+          if (resp.data && resp.data.ok) {
+            var ix2 = -1
+            self.kits.forEach(function (k, i) { if (String(k._kid) === String(kit._kid)) ix2 = i })
+            if (ix2 >= 0) self.kits.splice(ix2, 1)
+            self.$message.success('Kit disuelto. Sus componentes vuelven a productos sueltos.')
+          } else {
+            self.$message.error((resp.data && resp.data.message) || 'No se pudo disolver el kit.')
+          }
+        } catch (e) {
+          var msg = (e.response && e.response.data && e.response.data.message) || 'Error disolviendo el kit.'
+          self.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+        }
+      }).catch(function () {})
     },
 
     openImagePreview() {
@@ -3036,9 +4169,9 @@ export default {
 }
 .ai-field--with-outside-icon { padding-right: 22px; }
 .ai-inferred-input .el-input__inner,
-.ai-inferred-input.el-input-number .el-input__inner {
-  background-color: #fffbf0 !important;
-  border-color: #f5c842 !important;
+.ai-inferred-input.el-input-number .el-input__inner,
+.ai-inferred-input .el-textarea__inner {
+  background-color: #fff !important;
 }
 .ai-inferred-icon {
   color: #f5c842;
@@ -3207,6 +4340,23 @@ export default {
 }
 .supplier-quotes__title { font-size: 13px; color: #606266; font-weight: 800; margin-bottom: 2px; }
 .supplier-quotes__hint { font-size: 11px; color: #909399; margin-bottom: 8px; }
+/* Kits/paquetes (mockup db) */
+.kit-bar { padding: 4px 2px; }
+.kit-bar__row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+.kit-bar__label { font-size: 11px; color: #818897; text-transform: uppercase; font-weight: 800; }
+.kit-bar__sub { font-size: 11px; color: #909399; }
+.kit-detail { border: 1px solid #ebeef5; border-radius: 6px; padding: 12px; background: #fffdf6; }
+.kit-detail__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
+.kit-detail__title { font-size: 13px; color: #606266; }
+.kit-detail__title i { color: #e6a23c; margin-right: 4px; }
+.kit-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.kit-summary .metric { background: #fff; border: 1px solid #ebeef5; border-radius: 6px; padding: 8px 10px; }
+.kit-summary .metric span { display: block; font-size: 10px; color: #909399; text-transform: uppercase; font-weight: 800; }
+.kit-summary .metric strong { font-size: 14px; color: #303133; }
+.kit-detail__grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px 14px; margin-bottom: 10px; }
+.kit-detail__photo { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.kit-photo-thumb { width: 110px; height: 82px; object-fit: cover; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; }
+.kit-detail__subtitle { font-size: 13px; color: #606266; margin: 6px 0 8px; }
 .tiers-section__title { font-size: 13px; color: #606266; margin-bottom: 8px; }
 .tiers-section__title i { color: #67c23a; margin-right: 4px; }
 .tiers-section__hint {

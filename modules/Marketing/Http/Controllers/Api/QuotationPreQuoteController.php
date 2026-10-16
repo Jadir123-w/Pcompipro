@@ -1392,7 +1392,15 @@ class QuotationPreQuoteController extends Controller
                 // los marcó como "no es un producto del catálogo". No se les crea
                 // un ítem propio; más abajo, al armar las líneas de la cotización,
                 // se los apunta al genérico compartido.
-                if ($it->excluir_catalogo) {
+                //
+                // Tipo Servicio/Comisión (combo tipo_linea): viven SOLO dentro de
+                // esta cotización, igual que el check. Aunque el check esté
+                // desmarcado, nunca se les crea producto (el servicio es mano de
+                // obra/intangible y la comisión es línea propia de costo fijo).
+                $tipoLineaConvert = strtolower(trim((string) ($it->tipo_linea ?? 'product')));
+                if ($it->excluir_catalogo
+                    || $tipoLineaConvert === 'service'
+                    || $tipoLineaConvert === 'comision') {
                     continue;
                 }
 

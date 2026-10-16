@@ -83,6 +83,26 @@ class QuotationProposalController extends Controller
     }
 
     /**
+     * Asegurar propuesta en borrador 1:1 del prequote (mockup db).
+     *
+     * La usa el flujo de kits: el kit se arma en pre-cotización, donde aún
+     * no hay propuesta, y al guardar el kit se necesita el proposal_id.
+     * Si ya existe (creada por kits o por Cotización Final) se reutiliza;
+     * si no, se crea con el mismo constructor con IA de show().
+     *
+     * @param  PreQuote $prequote
+     * @return QuotationProposal
+     */
+    public function ensureDraftProposal(PreQuote $prequote)
+    {
+        $proposal = QuotationProposal::where('prequote_id', $prequote->id)->first();
+        if (!$proposal) {
+            $proposal = $this->createProposalWithAI($prequote);
+        }
+        return $proposal;
+    }
+
+    /**
      * Cargar cuentas bancarias activas del tenant (para el select del footer).
      * @return array
      */

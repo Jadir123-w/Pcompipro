@@ -243,6 +243,39 @@ Route::middleware(['auth', 'redirect.module', 'locked.tenant', 'check.email.veri
             [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'toCatalogSupplierQuote'])
             ->name('quotation.prequotes.items.quotes.to-catalog');
 
+        // ── Kits/paquetes comerciales (mockup db) ──
+        Route::get('/quotation/prequotes/{id}/kits',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'index'])
+            ->name('quotation.prequotes.kits.index');
+
+        Route::post('/quotation/prequotes/{id}/kits',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'store'])
+            ->name('quotation.prequotes.kits.store');
+
+        Route::put('/quotation/prequotes/{id}/kits/{kitId}',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'update'])
+            ->name('quotation.prequotes.kits.update');
+
+        Route::delete('/quotation/prequotes/{id}/kits/{kitId}',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'destroy'])
+            ->name('quotation.prequotes.kits.destroy');
+
+        Route::post('/quotation/prequotes/{id}/kits/{kitId}/members',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'addMembers'])
+            ->name('quotation.prequotes.kits.members.store');
+
+        Route::delete('/quotation/prequotes/{id}/kits/{kitId}/members/{itemId}',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'removeMember'])
+            ->name('quotation.prequotes.kits.members.destroy');
+
+        Route::post('/quotation/prequotes/{id}/kits/{kitId}/photo',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'photo'])
+            ->name('quotation.prequotes.kits.photo.store');
+
+        Route::get('/quotation/prequotes/{id}/kits/{kitId}/photo',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'showPhoto'])
+            ->name('quotation.prequotes.kits.photo.show');
+
         Route::post('/quotation/prequotes/{id}/convert', [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'convert'])
             ->name('quotation.prequotes.convert');
 
