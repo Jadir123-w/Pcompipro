@@ -383,7 +383,7 @@
                             </el-tab-pane>
                         </el-tabs>
                     </div>
-                    <div class="form-actions text-right mt-4">
+                    <div class="form-actions form-acciones-fijas text-right">
                         <el-button class="second-buton" @click.prevent="handleCloseDialog()">Cancelar</el-button>
                         <el-button :loading="loading_submit"
                                    native-type="submit"
@@ -867,6 +867,17 @@ export default {
     padding: 20px;
     overflow-y: auto;
     max-height: 70vh;
+}
+
+/* Cancelar / Guardar siempre visibles al pie del área con scroll */
+.form-acciones-fijas {
+    position: sticky;
+    bottom: -20px;
+    z-index: 3;
+    margin: 16px -20px -20px;
+    padding: 12px 20px;
+    background: #fff;
+    border-top: 1px solid #ebeef5;
 }
 
 .section-title {

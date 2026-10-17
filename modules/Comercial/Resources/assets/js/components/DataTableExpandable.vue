@@ -4,8 +4,14 @@
       :resource="resource"
       :apply-filter="applyFilter"
       :product-type="productType"
+      :extra-params="extraParams"
       ref="dataTable"
     >
+      <!-- Filtros adicionales de la vista (junto al buscador) -->
+      <template v-slot:filters>
+        <slot name="filters"></slot>
+      </template>
+
       <!-- Pasar el slot de heading -->
       <template v-slot:heading>
         <slot name="heading"></slot>
@@ -58,6 +64,10 @@ export default {
     colspanCount: {
       type: Number,
       required: true
+    },
+    extraParams: {
+      type: Object,
+      default: () => ({})
     }
   },
   data() {

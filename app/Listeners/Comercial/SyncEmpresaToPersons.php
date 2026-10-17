@@ -3,6 +3,9 @@
 namespace App\Listeners\Comercial;
 
 use App\Events\Comercial\EmpresaSyncRequested;
+use App\Models\Tenant\Catalogs\Department;
+use App\Models\Tenant\Catalogs\District;
+use App\Models\Tenant\Catalogs\Province;
 use App\Models\Tenant\Person;
 use Illuminate\Support\Facades\Log;
 use Modules\Comercial\Models\Empresa;
@@ -69,6 +72,8 @@ class SyncEmpresaToPersons
             return $person;
         }
 
+        $ubicacion = $this->ubicacionValida($empresa);
+
         // Prepare data for Person
         $personData = [
             'type' => 'customers',
@@ -79,9 +84,9 @@ class SyncEmpresaToPersons
             'email' => $empresa->email,
             'telephone' => $empresa->telefono ?? $empresa->celular,
             'address' => $empresa->direccion,
-            'department_id' => $empresa->department_id,
-            'province_id' => $empresa->province_id,
-            'district_id' => $empresa->district_id,
+            'department_id' => $ubicacion['department_id'],
+            'province_id' => $ubicacion['province_id'],
+            'district_id' => $ubicacion['district_id'],
             'website' => $empresa->website,
             'state' => $empresa->estado_contribuyente,
             'condition' => $empresa->condicion_contribuyente,
@@ -113,6 +118,24 @@ class SyncEmpresaToPersons
         }
 
         return $person;
+    }
+
+    /**
+     * Ubicación de la empresa solo si los tres códigos existen en el catálogo; si no (p. ej. "-"
+     * de SUNAT), el cliente se crea sin ubicación en lugar de fallar por la llave foránea.
+     */
+    protected function ubicacionValida(Empresa $empresa)
+    {
+        $valida = $empresa->department_id && $empresa->province_id && $empresa->district_id
+            && Department::query()->whereKey($empresa->department_id)->exists()
+            && Province::query()->whereKey($empresa->province_id)->exists()
+            && District::query()->whereKey($empresa->district_id)->exists();
+
+        return [
+            'department_id' => $valida ? $empresa->department_id : null,
+            'province_id'   => $valida ? $empresa->province_id : null,
+            'district_id'   => $valida ? $empresa->district_id : null,
+        ];
     }
 
     /**

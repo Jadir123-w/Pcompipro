@@ -58,48 +58,59 @@
           :resource="resource"
           ref="dataTable"
           :colspan-count="getColspanCount()"
+          :extra-params="rangeParams"
         >
+          <template v-slot:filters>
+            <div class="col-12 col-lg-auto pb-2">
+              <div class="d-flex align-items-center filtro-trabajadores">
+                <span class="mr-2 text-nowrap">Nro. Trabajadores</span>
+                <el-input
+                  placeholder="Desde"
+                  :value="trabajadores.desde"
+                  @input="v => onlyDigits('desde', v)"
+                  @keyup.enter.native="applyRange"
+                  class="mr-2"
+                ></el-input>
+                <el-input
+                  placeholder="Hasta"
+                  :value="trabajadores.hasta"
+                  @input="v => onlyDigits('hasta', v)"
+                  @keyup.enter.native="applyRange"
+                ></el-input>
+                <el-tooltip v-if="rangeApplied()" content="Quitar filtro" placement="top">
+                  <el-button
+                    type="text"
+                    class="ml-2 btn-quitar-filtro"
+                    aria-label="Quitar filtro"
+                    @click="clearRange"
+                  >
+                    <!-- Embudo con X (Font Awesome 5): quitar filtro -->
+                    <span class="icono-quitar-filtro" aria-hidden="true">
+                      <i class="fas fa-filter"></i>
+                      <i class="fas fa-times"></i>
+                    </span>
+                  </el-button>
+                </el-tooltip>
+              </div>
+            </div>
+          </template>
           <template v-slot:heading>
             <tr>
               <th>RUC</th>
-              <th>Razon Social</th>
-              <th>Razon Comercial</th>
+              <th>Razón social</th>
+              <th>Nombre comercial</th>
               <th>Nro. Trabajadores</th>
-              <th
-                v-if="columns.rubro.visible === true"
-                class="text-center"
-              >
-                Rubro
-              </th>
-              <th
-                v-if="columns.telefono.visible === true"
-                class="text-left"
-              >
-                Telefono
-              </th>
-              <th
-                v-if="columns.celular.visible === true"
-                class="text-left"
-              >
-                Celular
-              </th>
-              <th
-                v-if="columns.email.visible === true"
-                class="text-left"
-              >
-                Email
-              </th>
-              <th
-                v-if="columns.aniversario.visible === true"
-                class="text-right"
-              >
-                Aniversario
-              </th>
+              <th class="text-center">Rubro</th>
+              <th class="text-left">Teléfono</th>
+              <th class="text-left">Celular</th>
+              <th class="text-left">Email</th>
+              <th class="text-right">Aniversario</th>
+              <th class="text-left">Tipo de empresa</th>
               <th
                 v-if="columns.direccion.visible === true"
                 class="text-left"
               >
-                Direccion
+                Dirección
               </th>
               <th
                 v-if="columns.referencia.visible === true"
@@ -112,12 +123,6 @@
                 class="text-right"
               >
                 WebSite
-              </th>
-              <th
-                v-if="columns.tipo_empresa.visible === true"
-                class="text-left"
-              >
-                Tipo Empresa
               </th>
               <th
                 v-if="columns.provincia.visible === true"
@@ -133,47 +138,24 @@
                 Distrito
               </th>
               <!-- 👇 NUEVA COLUMNA AGREGADA -->
-              <th class="text-left">Usuario (última actualización)</th>
-              <th>Acciones</th>
+              <th class="text-left"><el-tooltip content="Usuario que hizo la última modificación" placement="top"><span>Modificado por</span></el-tooltip></th>
+              <th><el-tooltip content="Fecha de la última modificación" placement="top"><span>Últ. modificación</span></el-tooltip></th>
+              <th class="col-acciones-fija">Acciones</th>
 
             </tr>
           </template>
 
           <template v-slot:row="{ row, index }">
             <td>{{ row.ruc }}</td>
-            <td>{{ row.razon_social }}</td>
-            <td>{{ row.nombre_comercial }}</td>
+            <td><el-tooltip :disabled="!esLargo(row.razon_social)" :content="row.razon_social" placement="top"><span>{{ recortar(row.razon_social) }}</span></el-tooltip></td>
+            <td><el-tooltip :disabled="!esLargo(row.nombre_comercial)" :content="row.nombre_comercial" placement="top"><span>{{ recortar(row.nombre_comercial) }}</span></el-tooltip></td>
             <td>{{ row.nro_trabajadores }}</td>
-            <td
-              v-if="columns.rubro.visible === true"
-              class="text-left"
-            >
-              {{ row.rubro }}
-            </td>
-            <td
-              v-if="columns.telefono.visible === true"
-              class="text-left"
-            >
-              {{ row.telefono }}
-            </td>
-            <td
-              v-if="columns.celular.visible === true"
-              class="text-left"
-            >
-              {{ row.celular }}
-            </td>
-            <td
-              v-if="columns.email.visible === true"
-              class="text-left"
-            >
-              {{ row.email }}
-            </td>
-            <td
-              v-if="columns.aniversario.visible === true"
-              class="text-right"
-            >
-              {{ row.aniversario }}
-            </td>
+            <td class="text-left">{{ row.rubro }}</td>
+            <td class="text-left">{{ row.telefono }}</td>
+            <td class="text-left">{{ row.celular }}</td>
+            <td class="text-left"><el-tooltip :disabled="!esLargo(row.email)" :content="row.email" placement="top"><span>{{ recortar(row.email) }}</span></el-tooltip></td>
+            <td class="text-right">{{ row.aniversario }}</td>
+            <td class="text-left">{{ row.tipo_empresa }}</td>
             <td
               v-if="columns.direccion.visible === true"
               class="text-left"
@@ -193,12 +175,6 @@
               {{ row.website }}
             </td>
             <td
-              v-if="columns.tipo_empresa.visible === true"
-              class="text-left"
-            >
-              {{ row.tipo_empresa }}
-            </td>
-            <td
               v-if="columns.provincia.visible === true"
               class="text-left"
             >
@@ -212,51 +188,30 @@
               {{ row.distrito }}
             </td>
 
-            <!-- 👇 NUEVA CELDA AGREGADA -->
             <td class="text-left">
               <div v-if="getUserName(row)" style="font-size: 12px;">
-                <div style="margin-bottom: 2px;">
-                  <i class="fa fa-user" style="color: #666; margin-right: 4px;"></i>
-                  <strong>{{ getUserName(row) }}</strong>
-                </div>
-                <div style="color: #999; font-size: 11px;">
-                  <i class="fa fa-clock-o" style="margin-right: 4px;"></i>
-                  {{ getUserDate(row) }}
-                </div>
+                <i class="fa fa-user" style="color: #666; margin-right: 4px;"></i>
+                <strong>{{ getUserName(row) }}</strong>
               </div>
               <div v-else style="color: #999; font-size: 12px;">
                 <i class="fa fa-question-circle"></i> Sin información
               </div>
             </td>
+            <td>{{ getUserDate(row) }}</td>
 
-            <td class="text-right">
-              <button
-                type="button"
-                class="btn waves-effect waves-light btn-xs btn-info"
-                @click.prevent="clickViewContacts(row.id)"
-                :disabled="loadingContacts[row.id]"
-              >
-                <span v-if="loadingContacts[row.id]">
-                  <i class="fa fa-spinner fa-spin"></i> Cargando...
-                </span>
-                <span v-else>
-                  {{ isRowExpanded(row.id) ? 'Ocultar' : 'Ver' }} Contactos
-                </span>
-              </button>
-              <button
-                type="button"
-                class="btn waves-effect waves-light btn-xs btn-info"
-                @click.prevent="clickCreate(row.id)"
-              >
-                Editar
-              </button>
-              <button
-                type="button"
-                class="btn waves-effect waves-light btn-xs btn-danger"
-                @click.prevent="clickDelete(row.id)"
-              >
-                Eliminar
-              </button>
+            <td class="col-acciones-fija">
+              <el-tooltip :content="isRowExpanded(row.id) ? 'Ocultar contactos' : 'Ver contactos'" placement="top">
+                <button
+                  type="button"
+                  class="btn waves-effect waves-light btn-xs btn-info"
+                  @click.prevent="clickViewContacts(row.id)"
+                  :disabled="loadingContacts[row.id]"
+                >
+                  <i :class="loadingContacts[row.id] ? 'fa fa-spinner fa-spin' : 'fas fa-address-book'"></i>
+                </button>
+              </el-tooltip>
+              <el-tooltip content="Editar" placement="top"><button type="button" class="btn waves-effect waves-light btn-xs btn-info" @click.prevent="clickCreate(row.id)"><i class="fas fa-edit"></i></button></el-tooltip>
+              <el-tooltip content="Eliminar" placement="top"><button type="button" class="btn waves-effect waves-light btn-xs btn-danger" @click.prevent="clickDelete(row.id)"><i class="fas fa-trash-alt"></i></button></el-tooltip>
             </td>
           </template>
 
@@ -412,12 +367,50 @@
   margin-right: 4px;
 }
 
+.filtro-trabajadores .el-input {
+  max-width: 110px;
+}
+
+.filtro-trabajadores .btn-quitar-filtro {
+  padding: 0;
+  color: #909399;
+}
+
+.filtro-trabajadores .btn-quitar-filtro:hover {
+  color: #f56c6c;
+}
+
+.icono-quitar-filtro {
+  position: relative;
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+}
+
+.icono-quitar-filtro .fa-filter {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  font-size: 16px;
+}
+
+.icono-quitar-filtro .fa-times {
+  position: absolute;
+  right: -3px;
+  bottom: -1px;
+  font-size: 10px;
+  background: #fff;
+  border-radius: 50%;
+  padding: 0 1px;
+}
+
 </style>
 
 <script>
 import EmpresasForm from "../../components/Empresasform.vue";
 import ContactosForm from "../../components/Contactosform.vue";
 import DataTableExpandable from "../../components/DataTableExpandable.vue";
+import { esLargo, recortar } from '../../helpers/texto'
 import queryString from 'query-string'
 import { deletable } from '../../../../../../../resources/js/mixins/deletable'
 
@@ -444,29 +437,13 @@ export default {
       currentEmpresaId: null,
       selectedEmpresa: null,
       editContext: 'empresas',
+      // Filtro por rango de trabajadores: lo escrito y lo ya aplicado (al dar Enter).
+      trabajadores: { desde: '', hasta: '' },
+      rangeParams: {},
+      // Columnas fijas (RUC ... Tipo de empresa) van siempre; aquí solo las opcionales.
       columns: {
-        rubro: {
-          title: "Rubro",
-          visible: false
-        },
-        telefono: {
-          title: "Telefono",
-          visible: false
-        },
-        celular: {
-          title: "Celular",
-          visible: false
-        },
-        email: {
-          title: "Email",
-          visible: false
-        },
-        aniversario: {
-          title: "Aniversario",
-          visible: false
-        },
         direccion: {
-          title: "Direccion",
+          title: "Dirección",
           visible: false
         },
         referencia: {
@@ -475,10 +452,6 @@ export default {
         },
         website: {
           title: "WebSite",
-          visible: false
-        },
-        tipo_empresa: {
-          title: "Tipo Empresa",
           visible: false
         },
         provincia: {
@@ -493,6 +466,8 @@ export default {
     }
   },
   methods: {
+      esLargo,
+      recortar,
     isRowExpanded(rowId) {
       return this.$refs.dataTable.expandedRows.includes(rowId);
     },
@@ -552,7 +527,8 @@ export default {
       // Preparar datos de la empresa
       const empresaData = {
         id: row.id,
-        razon_social: row.razon_social || row.nombre_comercial
+        razon_social: row.razon_social,
+        nombre_comercial: row.nombre_comercial
       };
 
       // Asignar datos
@@ -597,12 +573,34 @@ export default {
       }
     },
     getColspanCount() {
-      let count = 4;
+      // 10 columnas fijas + opcionales visibles + Usuario + Fecha + Acciones.
+      let count = 10;
       Object.keys(this.columns).forEach(key => {
         if (this.columns[key].visible) count++;
       });
-      count++;
-      return count;
+      return count + 3;
+    },
+    onlyDigits(field, value) {
+      this.trabajadores[field] = String(value || '').replace(/\D/g, '');
+    },
+    applyRange() {
+      const { desde, hasta } = this.trabajadores;
+      if (desde === '' && hasta === '') {
+        this.clearRange();
+        return;
+      }
+      if (desde !== '' && hasta !== '' && Number(desde) > Number(hasta)) {
+        this.$message.warning('"Desde" no puede ser mayor que "Hasta".');
+        return;
+      }
+      this.rangeParams = { trabajadores_desde: desde, trabajadores_hasta: hasta };
+    },
+    clearRange() {
+      this.trabajadores = { desde: '', hasta: '' };
+      if (this.rangeApplied()) this.rangeParams = {};
+    },
+    rangeApplied() {
+      return Object.keys(this.rangeParams).length > 0;
     },
     clickCreate(recordId = null) {
       this.recordId = recordId;
@@ -728,3 +726,16 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+/* Acciones fija a la derecha: siempre visible aunque la tabla se desplace */
+.col-acciones-fija {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    background: #fff;
+    box-shadow: -6px 0 8px -6px rgba(0, 0, 0, 0.15);
+    white-space: nowrap;
+    text-align: center;
+}
+</style>

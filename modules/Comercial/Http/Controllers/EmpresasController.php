@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Modules\Comercial\Http\Controllers\Traits\BusquedaPorPalabra;
 use Modules\Comercial\Http\Resources\EmpresaResource;
 use Modules\Comercial\Http\Resources\EmpresasCollection;
 use Modules\Comercial\Models\Contacto;
@@ -25,6 +26,8 @@ use Modules\Comercial\Models\Empresa;
 
 class EmpresasController extends BaseController
 {
+  use BusquedaPorPalabra;
+
   public function index(Request $request)
   {
     $api_service_token = Configuration::getApiServiceToken();
@@ -37,11 +40,12 @@ class EmpresasController extends BaseController
 
   public function columns()
   {
+    // El primero es el filtro por defecto. Nro. de trabajadores va aparte (rango desde/hasta).
     return [
+      'todos' => 'Todos',
       'ruc' => 'RUC',
-      'razon_social' => 'Razon Social',
-      'nombre_comercial' => 'Razon Comercial',
-      'n_trabajadores' => 'Nro. Tranbajadores',
+      'razon_social' => 'Razón social',
+      'nombre_comercial' => 'Nombre comercial',
     ];
   }
 
@@ -60,20 +64,25 @@ class EmpresasController extends BaseController
       ->orderBy('empresa.updated_at', 'desc')
       ->orderBy('empresa.id', 'desc');
 
-    if ($request->get('column') && $request->get('value')) {
-      $column = $request->get('column');
-      // Limpiamos y preparamos el valor de búsqueda, añadiendo el comodín *
-      $value = $request->get('value') . '*';
+    $searchFields = [
+      'todos' => ['empresa.ruc', 'empresa.razon_social', 'empresa.nombre_comercial'],
+      'ruc' => ['empresa.ruc'],
+      'razon_social' => ['empresa.razon_social'],
+      'nombre_comercial' => ['empresa.nombre_comercial'],
+    ];
+    $column = $request->get('column');
+    if (isset($searchFields[$column])) {
+      $this->applyWordSearch($records, $searchFields[$column], (string) $request->get('value'));
+    }
 
-      if ($column === 'ruc') {
-        // RUC sigue siendo búsqueda LIKE normal si lo prefieres
-        $records->where('empresa.ruc', 'like', '%' . $request->get('value') . '%');
-      } elseif (in_array($column, ['razon_social', 'nombre_comercial'])) {
-        // Usamos el valor modificado con * en la búsqueda FULLTEXT
-        $records->whereRaw("MATCH(empresa.$column) AGAINST (? IN BOOLEAN MODE)", [$value]);
-      } elseif ($column === 'n_trabajadores') {
-        $records->where('empresa.n_trabajadores', '=', $request->get('value'));
-      }
+    // Rango de trabajadores: sin dato registrado cuenta como 0.
+    $desde = (string) $request->get('trabajadores_desde');
+    $hasta = (string) $request->get('trabajadores_hasta');
+    if (ctype_digit($desde)) {
+      $records->whereRaw('COALESCE(empresa.n_trabajadores, 0) >= ?', [(int) $desde]);
+    }
+    if (ctype_digit($hasta)) {
+      $records->whereRaw('COALESCE(empresa.n_trabajadores, 0) <= ?', [(int) $hasta]);
     }
 
     return new EmpresasCollection($records->paginate(config('tenant.items_per_page')));

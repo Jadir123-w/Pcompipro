@@ -28,7 +28,7 @@ class EmpresasCollection extends ResourceCollection
             'ruc' => $row->ruc,
             'razon_social' => $row->razon_social,
             'nombre_comercial' => $row->nombre_comercial,
-            'nro_trabajadores' => $row->n_trabajadores,
+            'nro_trabajadores' => (int) $row->n_trabajadores, // sin dato registrado = 0
             'rubro' => $row->rubro,
             'telefono' => $row->telefono,
             'celular' => $row->celular,
@@ -45,7 +45,8 @@ class EmpresasCollection extends ResourceCollection
             'estado' => ($row->estado === 1),
             'usuario_nombre' => $row->usuario_nombre ?? null,
             'usuario_email' => $row->usuario_email ?? null,
-            'updated_at' => $row->updated_at,
+            // Como texto: el objeto de fecha llegaba vacío ([]) a la pantalla.
+            'updated_at' => $row->updated_at ? $row->updated_at->format('Y-m-d H:i:s') : null,
           ];
         });
     }

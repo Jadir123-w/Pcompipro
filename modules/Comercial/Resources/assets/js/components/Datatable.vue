@@ -13,14 +13,15 @@
                     </el-button>
                 </div>
                 <div class="row" v-if="applyFilter && isVisible">
-                    <div class="col-lg-4 col-md-4 col-sm-12 pb-2">
+                    <div class="col-12 col-md-auto pb-2">
                         <div class="d-flex">
-                            <div class="d-flex align-items-center" style="width:100px">
+                            <div class="d-flex align-items-center text-nowrap mr-2">
                                 Filtrar por:
                             </div>
                             <el-select
                                 v-model="search.column"
                                 placeholder="Select"
+                                :style="{ width: selectWidth }"
                                 @change="changeClearInput"
                             >
                                 <el-option
@@ -32,7 +33,7 @@
                             </el-select>
                         </div>
                     </div>
-                    <div class="col-lg-3 col-md-4 col-sm-12 pb-2">
+                    <div class="col-lg-2 col-md-4 col-sm-12 pb-2">
                         <template
                             v-if="
                                 search.column === 'periodo'
@@ -44,7 +45,7 @@
                                 style="width: 100%;"
                                 placeholder="Buscar"
                                 value-format="yyyy-MM"
-                                @change="getRecords"
+                                @change="searchNow"
                             >
                             </el-date-picker>
                         </template>
@@ -54,11 +55,13 @@
                                 v-model="search.value"
                                 style="width: 100%;"
                                 prefix-icon="el-icon-search"
-                                @input="getRecords"
+                                @input="searchDebounced"
                             >
                             </el-input>
                         </template>
                     </div>
+                    <!-- Filtros adicionales que aporta cada vista -->
+                    <slot name="filters"></slot>
                 </div>
             </div>
 
@@ -110,6 +113,26 @@ export default {
             default: true,
             required: false
         },
+        // Parámetros extra del listado (p. ej. rangos); al cambiar se busca desde la página 1.
+        extraParams: {
+            type: Object,
+            default: () => ({})
+        },
+    },
+    computed: {
+        // Ancho del selector acorde a su opción más larga (sin estirarse a toda la columna).
+        selectWidth() {
+            const longest = Math.max(0, ...Object.values(this.columns || {}).map(l => String(l).length));
+            return Math.min(260, Math.max(130, longest * 8 + 50)) + "px";
+        }
+    },
+    watch: {
+        extraParams: {
+            deep: true,
+            handler() {
+                this.searchNow();
+            }
+        }
     },
     data() {
         return {
@@ -127,6 +150,9 @@ export default {
         };
     },
     created() {
+        // Espera 300 ms tras la última tecla antes de consultar.
+        this.searchDebounced = _.debounce(this.searchNow, 300);
+        this.requestSeq = 0;
         this.$eventHub.$on("reloadData", () => {
             this.getRecords();
         });
@@ -170,32 +196,45 @@ export default {
                 1
             );
         },
+        // Nueva búsqueda: vuelve a la página 1 y consulta de inmediato.
+        searchNow() {
+            this.searchDebounced.cancel();
+            this.$set(this.pagination, "current_page", 1);
+            return this.getRecords();
+        },
         getRecords() {
             this.loading_submit = true;
+            // Solo la última consulta pinta la tabla: una respuesta vieja no pisa a la nueva.
+            const seq = ++this.requestSeq;
             return this.$http
                 .get(`/${this.resource}/records?${this.getQueryParameters()}`)
                 .then(response => {
+                    if (seq !== this.requestSeq) return;
                     this.records = response.data.data;
                     this.pagination = response.data.meta;
                     this.pagination.per_page = parseInt(
                         response.data.meta.per_page
                     );
                 })
-                .catch(error => {})
+                .catch(error => {
+                    if (seq !== this.requestSeq) return;
+                    this.$message.error("No se pudo cargar el listado. Intenta de nuevo.");
+                })
                 .then(() => {
-                    this.loading_submit = false;
+                    if (seq === this.requestSeq) this.loading_submit = false;
                 });
         },
         getQueryParameters() {
             return queryString.stringify({
                 page: this.pagination.current_page,
                 limit: this.limit,
-                ...this.search
+                ...this.search,
+                ...this.extraParams
             });
         },
         changeClearInput() {
             this.search.value = "";
-            this.getRecords();
+            this.searchNow();
         },
         getSearch() {
             return this.search;

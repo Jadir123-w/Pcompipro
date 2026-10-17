@@ -43,4 +43,15 @@ class Empresa extends ModelTenant implements Auditable
     {
         return $this->hasMany(Contacto::class, 'empresa_id');
     }
+
+    /**
+     * Nombre con el que se muestra la empresa: el comercial (así la conocen los usuarios);
+     * la razón social solo si el nombre comercial está vacío o es "-".
+     */
+    public function nombreVisible()
+    {
+        $comercial = trim((string) $this->nombre_comercial);
+
+        return preg_match('/^[\s\-]*$/', $comercial) ? $this->razon_social : $comercial;
+    }
 }

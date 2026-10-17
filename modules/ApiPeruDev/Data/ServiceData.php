@@ -105,6 +105,11 @@ class ServiceData
         $res_data = [];
         if ($response['success']) {
             $data = $response['data'];
+            // Sin domicilio fiscal SUNAT devuelve "-": se trata como sin ubicación ni dirección.
+            $data['ubigeo'] = $this->ubigeoValido($data['ubigeo'] ?? null);
+            if (isset($data['direccion']) && trim((string) $data['direccion'], ' -') === '') {
+                $data['direccion'] = '';
+            }
             if ($type === 'dni') {
                 $department_id = '';
                 $province_id = null;
@@ -112,15 +117,15 @@ class ServiceData
                 $address = null;
                 if (key_exists('source', $response) && $response['source'] === 'apiperu.dev') {
                     if (strlen($data['ubigeo_sunat'])) {
-                        $department_id = $data['ubigeo'][0];
-                        $province_id = $data['ubigeo'][1];
-                        $district_id = $data['ubigeo'][2];
+                        $department_id = $data['ubigeo'][0] ?? null;
+                        $province_id = $data['ubigeo'][1] ?? null;
+                        $district_id = $data['ubigeo'][2] ?? null;
                         $address = $data['direccion'];
                     }
                 } else {
-                    $department_id = $data['ubigeo'][0];
-                    $province_id = $data['ubigeo'][1];
-                    $district_id = $data['ubigeo'][2];
+                    $department_id = $data['ubigeo'][0] ?? null;
+                    $province_id = $data['ubigeo'][1] ?? null;
+                    $district_id = $data['ubigeo'][2] ?? null;
                     $address = $data['direccion'];
                 }
 
@@ -148,15 +153,15 @@ class ServiceData
                 $district_id = null;
                 if (key_exists('source', $response) && $response['source'] === 'apiperu.dev') {
                     if (strlen($data['ubigeo_sunat'])) {
-                        $department_id = $data['ubigeo'][0];
-                        $province_id = $data['ubigeo'][1];
-                        $district_id = $data['ubigeo'][2];
+                        $department_id = $data['ubigeo'][0] ?? null;
+                        $province_id = $data['ubigeo'][1] ?? null;
+                        $district_id = $data['ubigeo'][2] ?? null;
                         $address = $data['direccion'];
                     }
                 } else {
-                    $department_id = $data['ubigeo'][0];
-                    $province_id = $data['ubigeo'][1];
-                    $district_id = $data['ubigeo'][2];
+                    $department_id = $data['ubigeo'][0] ?? null;
+                    $province_id = $data['ubigeo'][1] ?? null;
+                    $district_id = $data['ubigeo'][2] ?? null;
                     $address = $data['direccion'];
                 }
 
@@ -189,6 +194,22 @@ class ServiceData
 
         return json_decode($res->getBody()->getContents(), true);
     }
+    /**
+     * Ubigeo [departamento, provincia, distrito] solo si los tres son códigos; si no, vacío.
+     */
+    private function ubigeoValido($ubigeo)
+    {
+        if (!is_array($ubigeo) || count($ubigeo) !== 3) {
+            return [];
+        }
+        foreach ($ubigeo as $codigo) {
+            if (!preg_match('/^\d+$/', (string) $codigo)) {
+                return [];
+            }
+        }
+        return array_values($ubigeo);
+    }
+
     private function getAgentRetention($response, $data)
     {
         $is_agent_retention = false;
