@@ -125,7 +125,7 @@
                   <el-option v-for="k in savedKits" :key="k.id" :label="'Agregar a: ' + k.nombre" :value="'add:' + k.id"></el-option>
                 </el-select>
                 <span class="kit-bar__label">Nombre del kit</span>
-                <el-input v-model="kitNameInput" size="mini" placeholder="SET REGALOS DÍA DEL PADRE"
+                <el-input v-model="kitNameInput" size="mini" placeholder=""
                           style="flex:1;" maxlength="191"></el-input>
                 <el-button size="mini" type="primary" icon="el-icon-plus"
                            :loading="kitCreating" :disabled="!isEditable"
@@ -311,7 +311,7 @@
 
               <div class="erp-detail-layout">
                 <div class="erp-detail-main">
-                  <div class="erp-tech-grid" v-if="!isComision(props.row)">
+                  <div class="erp-tech-grid" v-if="!isComision(props.row) && !isService(props.row)">
                     <div class="ai-field">
                       <label class="lbl-help" title="Material del producto. Si lo sugirió la IA, confírmalo con el cliente.">Material <i class="el-icon-info field-tip-icon"></i></label>
                       <el-input v-model="props.row.material" size="mini" :disabled="!isEditable"
@@ -431,7 +431,8 @@
                    un producto propio). La línea conserva igual este nombre. -->
 
               <!-- ───────────── Mi Costeo del ítem (formato mockup) ───────────── -->
-              <div class="costeo-section erp-cost" v-if="!isComision(props.row)">
+              <!-- Producto: costeo completo. Servicio: solo Costo Base, Cantidad y Margen. -->
+              <div class="costeo-section erp-cost" v-if="props.row.tipo_linea === 'product'">
                 <div class="costeo-section__title">
                   <i class="el-icon-coin"></i> <strong>Mi Costeo del ítem</strong>
                   <span class="costeo-section__hint">Muestra y movilidad se cargan 1 vez por pedido; impresión y empaque pueden ser por unidad. Impresión = costo × colores × lados × millar. El Seguro SCTR normal se mantiene para el Total sin IGV; el Costo Real Total usa una base de costo real propia.</span>
@@ -509,6 +510,61 @@
                     <img v-if="itemImageUrl(props.row)" :src="itemImageUrl(props.row)" alt="Foto del producto"/>
                     <div v-else class="detail-photo-copy"><strong>Click o arrastra imagen</strong><span>para cargar la foto del producto</span></div>
                   </div>
+                </div>
+              </div>
+
+              <!-- Servicio: solo Costo Base, Cantidad y Margen editables -->
+              <div class="costeo-section erp-cost" v-if="props.row.tipo_linea === 'service'">
+                <div class="costeo-section__title">
+                  <i class="el-icon-coin"></i> <strong>Mi Costeo del ítem (Servicio)</strong>
+                  <span class="costeo-section__hint">Costo base fijo sin IGV ni SCTR. Solo se editan Costo Base, Cantidad y Margen.</span>
+                </div>
+                <div class="erp-cost-media-grid">
+                  <div class="erp-costgrid">
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Costo unitario base del servicio.">Costo Base (S/) <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input-number v-model="props.row.costo_base" size="mini" :precision="2" :step="0.5" :min="0"
+                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
+                    </div>
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Cantidad de unidades del servicio.">Cantidad <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input-number v-model="props.row.quantity" size="mini" :precision="0" :step="1" :min="1"
+                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
+                    </div>
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Porcentaje de margen sobre el costo base.">Margen % <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input-number v-model="props.row.margen_porcentaje" size="mini" :precision="1" :step="5" :min="0" :max="999"
+                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
+                    </div>
+                  </div>
+                  <div class="detail-photo-drop" style="display:none;"></div>
+                </div>
+                <div class="erp-costcard">
+                  <div class="costtitle">▣ Mi Resultado del costeo (Servicio)</div>
+                  <template v-for="bd in [costeoBreakdown(props.row)]">
+                    <div class="costeo-breakdown" :key="'bd-' + props.row.id">
+                      <div class="costeo-breakdown__row">
+                        <span>Resultado margen unitario</span>
+                        <span class="costeo-breakdown__val">S/ {{ bd.resultadoMargenUnit.toFixed(2) }}</span>
+                      </div>
+                      <div class="costeo-breakdown__row costeo-breakdown__margen">
+                        <span>Margen Ganancia</span>
+                        <span class="costeo-breakdown__val">S/ {{ bd.ganancia.toFixed(2) }}</span>
+                      </div>
+                      <div class="costeo-breakdown__row">
+                        <span>Total (S/) = Costo Base + Resultado</span>
+                        <span class="costeo-breakdown__val">S/ {{ bd.productoUnit.toFixed(2) }}</span>
+                      </div>
+                      <div class="costeo-breakdown__row costeo-breakdown__unit">
+                        <span>Costo unitario (sin IGV)</span>
+                        <span class="costeo-breakdown__val">S/ {{ bd.unit.toFixed(2) }} / u</span>
+                      </div>
+                      <div class="costeo-breakdown__row costeo-breakdown__total">
+                        <span>Total sin IGV</span>
+                        <span class="costeo-breakdown__val">S/ {{ bd.totalSinIgv.toFixed(2) }}</span>
+                      </div>
+                    </div>
+                  </template>
                 </div>
               </div>
 
@@ -823,7 +879,7 @@
 
               <div class="erp-detail-layout">
                 <div class="erp-detail-main">
-                  <div class="erp-tech-grid" v-if="!isComision(props.row)">
+                  <div class="erp-tech-grid" v-if="!isComision(props.row) && !isService(props.row)">
                     <div class="ai-field">
                       <label class="lbl-help" title="Material del producto. Si lo sugirió la IA, confírmalo con el cliente.">Material <i class="el-icon-info field-tip-icon"></i></label>
                       <el-input v-model="props.row.material" size="mini" :disabled="!isEditable"
@@ -943,7 +999,8 @@
                    un producto propio). La línea conserva igual este nombre. -->
 
               <!-- ───────────── Mi Costeo del ítem (formato mockup) ───────────── -->
-              <div class="costeo-section erp-cost" v-if="!isComision(props.row)">
+              <!-- Producto: costeo completo. Servicio: solo Costo Base, Cantidad y Margen. -->
+              <div class="costeo-section erp-cost" v-if="props.row.tipo_linea === 'product'">
                 <div class="costeo-section__title">
                   <i class="el-icon-coin"></i> <strong>Mi Costeo del ítem</strong>
                   <span class="costeo-section__hint">Muestra y movilidad se cargan 1 vez por pedido; impresión y empaque pueden ser por unidad. Impresión = costo × colores × lados × millar. El Seguro SCTR normal se mantiene para el Total sin IGV; el Costo Real Total usa una base de costo real propia.</span>
@@ -1021,6 +1078,61 @@
                     <img v-if="itemImageUrl(props.row)" :src="itemImageUrl(props.row)" alt="Foto del producto"/>
                     <div v-else class="detail-photo-copy"><strong>Click o arrastra imagen</strong><span>para cargar la foto del producto</span></div>
                   </div>
+                </div>
+              </div>
+
+              <!-- Servicio: solo Costo Base, Cantidad y Margen editables -->
+              <div class="costeo-section erp-cost" v-if="props.row.tipo_linea === 'service'">
+                <div class="costeo-section__title">
+                  <i class="el-icon-coin"></i> <strong>Mi Costeo del ítem (Servicio)</strong>
+                  <span class="costeo-section__hint">Costo base fijo sin IGV ni SCTR. Solo se editan Costo Base, Cantidad y Margen.</span>
+                </div>
+                <div class="erp-cost-media-grid">
+                  <div class="erp-costgrid">
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Costo unitario base del servicio.">Costo Base (S/) <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input-number v-model="props.row.costo_base" size="mini" :precision="2" :step="0.5" :min="0"
+                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
+                    </div>
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Cantidad de unidades del servicio.">Cantidad <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input-number v-model="props.row.quantity" size="mini" :precision="0" :step="1" :min="1"
+                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
+                    </div>
+                    <div class="ai-field">
+                      <label class="lbl-help" title="Porcentaje de margen sobre el costo base.">Margen % <i class="el-icon-info field-tip-icon"></i></label>
+                      <el-input-number v-model="props.row.margen_porcentaje" size="mini" :precision="1" :step="5" :min="0" :max="999"
+                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
+                    </div>
+                  </div>
+                  <div class="detail-photo-drop" style="display:none;"></div>
+                </div>
+                <div class="erp-costcard">
+                  <div class="costtitle">▣ Mi Resultado del costeo (Servicio)</div>
+                  <template v-for="bd in [costeoBreakdown(props.row)]">
+                    <div class="costeo-breakdown" :key="'bd-' + props.row.id">
+                      <div class="costeo-breakdown__row">
+                        <span>Resultado margen unitario</span>
+                        <span class="costeo-breakdown__val">S/ {{ bd.resultadoMargenUnit.toFixed(2) }}</span>
+                      </div>
+                      <div class="costeo-breakdown__row costeo-breakdown__margen">
+                        <span>Margen Ganancia</span>
+                        <span class="costeo-breakdown__val">S/ {{ bd.ganancia.toFixed(2) }}</span>
+                      </div>
+                      <div class="costeo-breakdown__row">
+                        <span>Total (S/) = Costo Base + Resultado</span>
+                        <span class="costeo-breakdown__val">S/ {{ bd.productoUnit.toFixed(2) }}</span>
+                      </div>
+                      <div class="costeo-breakdown__row costeo-breakdown__unit">
+                        <span>Costo unitario (sin IGV)</span>
+                        <span class="costeo-breakdown__val">S/ {{ bd.unit.toFixed(2) }} / u</span>
+                      </div>
+                      <div class="costeo-breakdown__row costeo-breakdown__total">
+                        <span>Total sin IGV</span>
+                        <span class="costeo-breakdown__val">S/ {{ bd.totalSinIgv.toFixed(2) }}</span>
+                      </div>
+                    </div>
+                  </template>
                 </div>
               </div>
 
@@ -1263,7 +1375,7 @@
             <span class="col-tip" title="Marca 2 o más productos para crear un kit. La comisión no entra a kits.">Kit <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
-            <el-checkbox v-if="!scope.row._isKit && !isComision(scope.row)"
+            <el-checkbox v-if="!scope.row._isKit && !isComision(scope.row) && !isService(scope.row)"
                          :value="kitSelection.indexOf(scope.row.id) !== -1"
                          :disabled="!isEditable"
                          @change="toggleKitSelected(scope.row)"></el-checkbox>
@@ -1280,7 +1392,8 @@
 
         <el-table-column label="Producto solicitado" min-width="110">
           <template slot-scope="scope">
-            <el-input v-if="!scope.row._isKit && !isComision(scope.row)" v-model="scope.row.product_name" size="mini" :disabled="!isEditable"></el-input>
+            <el-input v-if="!scope.row._isKit && !isComision(scope.row) && !isService(scope.row)" v-model="scope.row.product_name" size="mini" :disabled="!isEditable"></el-input>
+            <span v-if="!scope.row._isKit && isService(scope.row)" style="font-size:12px;">{{ scope.row.product_name || 'Servicio' }}</span>
             <span v-else-if="!scope.row._isKit" style="font-size:12px;">{{ scope.row.product_name || 'COMISIÓN' }}</span>
             <el-input v-else v-model="scope.row.kit.nombre" size="mini" :disabled="!isEditable" maxlength="191"></el-input>
           </template>
@@ -1344,7 +1457,7 @@
             <span class="col-tip" title="Producto del catálogo de Compipro asociado a lo que pidió el cliente (sugerido por la IA).">Producto del catálogo <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
-            <div v-if="!scope.row._isKit && !isComision(scope.row)">
+            <div v-if="!scope.row._isKit && !isComision(scope.row) && !isService(scope.row)">
               <!-- Estado: alta confianza -->
               <el-tag v-if="matchStatus(scope.row) === 'matched'" size="mini" type="success" effect="plain">
                 <i class="el-icon-success"></i>
@@ -1358,7 +1471,7 @@
               <!-- Estado: sin match -->
               <el-tag v-else size="mini" type="info" effect="plain"
                       style="cursor:pointer;" @click="openMatchDialog(scope.row)">
-                <i class="el-icon-search"></i> Sin match — buscar
+                <i class="el-icon-search"></i> {{ isService(scope.row) ? 'Sin catálogo' : 'Sin match — buscar' }}
               </el-tag>
 
               <!-- Botón pequeño para abrir el dialog -->
@@ -1373,6 +1486,7 @@
               </div>
             </div>
             <el-tag v-else-if="scope.row._isKit" size="mini" type="warning" effect="plain">Kit compuesto</el-tag>
+            <el-tag v-else-if="isService(scope.row)" size="mini" type="info" effect="plain">Sin catálogo</el-tag>
             <el-tag v-else size="mini" type="info" effect="plain">Comisión</el-tag>
             <div v-if="scope.row._isKit" style="margin-top:2px; font-size:10px; color:#909399;">
               {{ kitMemberCount(scope.row.kit) }} componentes · Margen real {{ kitRealMarginPct(scope.row.kit).toFixed(2) }}%
@@ -1694,6 +1808,8 @@ export default {
       // Agosto 2026 (punto 5): id del ítem que se está duplicando, para el spinner
       // del botón. Null = ninguno en curso.
       duplicandoItemId: null,
+      // Kit creando (spinner del botón de kit en la tabla de requerimientos)
+      kitCreating: false,
       // Match dialog
       matchDialogVisible: false,
       matchTarget: null,        // PreQuoteItem actual
@@ -2053,12 +2169,35 @@ export default {
       }
       if (v === 'service') {
         item.excluir_catalogo = true
+        // Servicio: solo Costo Base, Cantidad y Margen editables. Todo lo demás en 0.
+        item.cantidad_colores = 1
+        item.cantidad_lados = 1
+        item.cantidad_millar = 1
+        item.numero_muestras = 0
+        item.precio_muestra = null
+        item.costo_movilidad = 0
+        item.costo_impresion = 0
+        item.costo_empaque = 0
+        item.impresion_por_unidad = 0
+        item.empaque_por_unidad = 0
+        item.sctr_porcentaje = null
+        item.material = ''
+        item.medida = ''
+        item.empaque = ''
+        item.personalizacion = ''
+        item.tecnica_impresion = ''
+        item.observaciones = ''
       }
       this.saveItem(item)
     },
     // Comisión = costo fijo (solo Costo Base editable).
     isComision(item) {
       return String((item && item.tipo_linea) || '').toLowerCase() === 'comision'
+    },
+    // Servicio = línea propia del requerimiento: solo Descripción, Costo Base,
+    // Cantidad y Margen editables. Sin match, sin proveedores, sin catálogo.
+    isService(item) {
+      return String((item && item.tipo_linea) || '').toLowerCase() === 'service'
     },
 
     async saveItem(item) {
@@ -2068,42 +2207,66 @@ export default {
         return
       }
       try {
+        var payload = {
+          product_name: item.product_name,
+          product_description: item.product_description,
+          quantity: item.quantity,
+          // Tipo de línea (combo sin nombre en la tabla; comisión = ítem 271).
+          tipo_linea: item.tipo_linea || 'product',
+          personalizacion: item.personalizacion,
+          tecnica_impresion: item.tecnica_impresion,
+          // Detalles técnicos editables desde la fila expandible (badge "Inferido por IA")
+          material: item.material,
+          medida: item.medida,
+          empaque: item.empaque,
+          cantidad_colores: item.cantidad_colores,
+          cantidad_lados: item.cantidad_lados,
+          observaciones: item.observaciones,
+          costo_base: item.costo_base,
+          margen_porcentaje: item.margen_porcentaje,
+          // Componentes de costo (Fase A — motor de costeo ampliado)
+          numero_muestras: item.numero_muestras,
+          // Agosto 2026 (punto 4): null cuando el checkbox está desmarcado, así
+          // el backend vuelve a usar el costo base.
+          precio_muestra: item._precio_muestra_distinto ? (item.precio_muestra !== '' ? item.precio_muestra : 0) : null,
+          costo_movilidad: item.costo_movilidad,
+          costo_impresion: item.costo_impresion,
+          // COM-02 #2: factor manual de la impresión (Costo Total = costo × colores × lados × millar).
+          cantidad_millar: item.cantidad_millar,
+          costo_empaque: item.costo_empaque,
+          impresion_por_unidad: item.impresion_por_unidad ? 1 : 0,
+          empaque_por_unidad: item.empaque_por_unidad ? 1 : 0,
+          // Agosto 2026 (punto 2): kit o servicio → no se le crea producto propio.
+          excluir_catalogo: item.excluir_catalogo ? 1 : 0,
+          // SCTR unitario (override por ítem; null = hereda el % de la cotización).
+          sctr_porcentaje: (item.sctr_porcentaje === '' || item.sctr_porcentaje === undefined) ? null : item.sctr_porcentaje,
+        }
+
+        // Servicio = línea propia del requerimiento. Solo Costo Base, Cantidad y Margen.
+        // Todo lo demás va en 0 para que el backend no los sume en el costo.
+        if (String((item.tipo_linea || '').toLowerCase()) === 'service') {
+          payload.personalizacion = ''
+          payload.tecnica_impresion = ''
+          payload.material = ''
+          payload.medida = ''
+          payload.empaque = ''
+          payload.cantidad_colores = 1
+          payload.cantidad_lados = 1
+          payload.observaciones = ''
+          payload.numero_muestras = 0
+          payload.precio_muestra = null
+          payload.costo_movilidad = 0
+          payload.costo_impresion = 0
+          payload.cantidad_millar = 1
+          payload.costo_empaque = 0
+          payload.impresion_por_unidad = 0
+          payload.empaque_por_unidad = 0
+          payload.sctr_porcentaje = null
+        }
+
         var response = await this.$http.put(
           '/marketing/quotation/prequotes/' + this.prequote.id + '/item/' + item.id,
-          {
-            product_name: item.product_name,
-            product_description: item.product_description,
-            quantity: item.quantity,
-            // Tipo de línea (combo sin nombre en la tabla; comisión = ítem 271).
-            tipo_linea: item.tipo_linea || 'product',
-            personalizacion: item.personalizacion,
-            tecnica_impresion: item.tecnica_impresion,
-            // Detalles técnicos editables desde la fila expandible (badge "Inferido por IA")
-            material: item.material,
-            medida: item.medida,
-            empaque: item.empaque,
-            cantidad_colores: item.cantidad_colores,
-            cantidad_lados: item.cantidad_lados,
-            observaciones: item.observaciones,
-            costo_base: item.costo_base,
-            margen_porcentaje: item.margen_porcentaje,
-            // Componentes de costo (Fase A — motor de costeo ampliado)
-            numero_muestras: item.numero_muestras,
-            // Agosto 2026 (punto 4): null cuando el checkbox está desmarcado, así
-            // el backend vuelve a usar el costo base.
-            precio_muestra: item._precio_muestra_distinto ? (item.precio_muestra !== '' ? item.precio_muestra : 0) : null,
-            costo_movilidad: item.costo_movilidad,
-            costo_impresion: item.costo_impresion,
-            // COM-02 #2: factor manual de la impresión (Costo Total = costo × colores × lados × millar).
-            cantidad_millar: item.cantidad_millar,
-            costo_empaque: item.costo_empaque,
-            impresion_por_unidad: item.impresion_por_unidad ? 1 : 0,
-            empaque_por_unidad: item.empaque_por_unidad ? 1 : 0,
-            // Agosto 2026 (punto 2): kit o servicio → no se le crea producto propio.
-            excluir_catalogo: item.excluir_catalogo ? 1 : 0,
-            // SCTR unitario (override por ítem; null = hereda el % de la cotización).
-            sctr_porcentaje: (item.sctr_porcentaje === '' || item.sctr_porcentaje === undefined) ? null : item.sctr_porcentaje,
-          }
+          payload
         )
         var pq = response.data.prequote
         this.prequote.subtotal = pq.subtotal
@@ -2476,6 +2639,27 @@ export default {
           baseCostoReal: cbc, sctrCostoReal: 0, costoRealTotal: cbc,
           utilidadReal: 0, margenRealPct: 0,
           precioNecesario: cbc, cuantoSubir: 0, precioUnitObjetivo: cbc,
+          margenObjetivoPct: MARGEN_REAL_OBJETIVO_PCT, margenRequeridoPct: null,
+        }
+      }
+      // Servicio = costo fijo: costo base × cantidad × (1 + margen).
+      // Todo lo demás en 0. Sin IGV, sin SCTR, sin muestra, sin impresión, sin empaque.
+      if (String((item && item.tipo_linea) || '').toLowerCase() === 'service') {
+        var costoBase = parseFloat(item.costo_base) || 0
+        var markup    = parseFloat(item.margen_porcentaje) || 0
+        var q         = parseInt(item.quantity) || 1
+        if (q < 1) q = 1
+        var T = costoBase * (1 + markup / 100)
+        var totalSinIgv = T * q
+        return {
+          productoUnit: Math.round(T * 100) / 100, productoTotal: Math.round(totalSinIgv * 100) / 100,
+          muestra: 0, movilidad: 0, impresion: 0, imprColores: 1, imprLados: 1, imprMillar: 1,
+          empaque: 0, sctr: 0, sctrPctEfectivo: 0, ganancia: 0,
+          totalSinIgv: totalSinIgv, unit: Math.round(T * 100) / 100,
+          resultadoMargenUnit: 0, totalProducto: totalSinIgv,
+          baseCostoReal: totalSinIgv, sctrCostoReal: 0, costoRealTotal: totalSinIgv,
+          utilidadReal: 0, margenRealPct: 0,
+          precioNecesario: totalSinIgv, cuantoSubir: 0, precioUnitObjetivo: Math.round(T * 100) / 100,
           margenObjetivoPct: MARGEN_REAL_OBJETIVO_PCT, margenRequeridoPct: null,
         }
       }

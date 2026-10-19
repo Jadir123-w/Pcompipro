@@ -139,36 +139,108 @@ Detecta ediciÃ³n en Datos y confirma antes de cambiar de pestaÃ±a o cerrar.
 - Archivos: TabPreCotizacion.vue, index.vue, kanban.vue.
 
 ====================================================================================
-ACTUALIZACIÓN 2026-10-16 — Kits/paquetes con backend + tipo Servicio sin catálogo
+ACTUALIZACIï¿½N 2026-10-16 ï¿½ Kits/paquetes con backend + tipo Servicio sin catï¿½logo
 ====================================================================================
 
-1) TIPO SERVICIO/COMISIÓN SIN PRODUCTO EN CATÁLOGO
-- QuotationPreQuoteController::convert: se salta la creación de producto si
-  excluir_catalogo o tipo_linea es service/comision (la línea va al genérico
+1) TIPO SERVICIO/COMISIï¿½N SIN PRODUCTO EN CATï¿½LOGO
+- QuotationPreQuoteController::convert: se salta la creaciï¿½n de producto si
+  excluir_catalogo o tipo_linea es service/comision (la lï¿½nea va al genï¿½rico
   COM02-GENERICO con su nombre real). Antes solo respetaba el check.
 - TabPreCotizacion.vue: retirado el checkbox "No registrar como producto"
-  (su función pasó al combo Tipo=Servicio, que auto-marca excluir).
+  (su funciï¿½n pasï¿½ al combo Tipo=Servicio, que auto-marca excluir).
 
 2) KITS CON BACKEND (mockup db, tablas quotation_proposal_kits/_items)
-- Nuevos: migración 2026_10_15, modelos ProposalKit/ProposalKitItem,
+- Nuevos: migraciï¿½n 2026_10_15, modelos ProposalKit/ProposalKitItem,
   ProposalKitController (8 endpoints: listar, guardar, editar con
-  propagación de cantidad + recálculo, agregar/quitar miembros con
-  validación de cantidades, disolver con borrado en BD, foto propia y
-  servir foto), relación kits() en QuotationProposal,
+  propagaciï¿½n de cantidad + recï¿½lculo, agregar/quitar miembros con
+  validaciï¿½n de cantidades, disolver con borrado en BD, foto propia y
+  servir foto), relaciï¿½n kits() en QuotationProposal,
   ensureDraftProposal() en QuotationProposalController (reutiliza el
   constructor con IA; el kit asegura el borrador 1:1 al guardarse) y
   8 rutas en Marketing/Routes/web.php.
 - TabPreCotizacion.vue: columna Kit con check (no en comisiones), toolbar
   (Nombre + Crear kit + Agregar a kit + conteo), filas kit intercaladas
   (nombre/cantidad editables, resto consolidado, Guardar a la derecha y
-  Disolver), acordeón con métricas, campos, foto, componentes (todas las
+  Disolver), acordeï¿½n con mï¿½tricas, campos, foto, componentes (todas las
   columnas en solo lectura + Quitar + detalle expandible completo por
-  componente), validaciones (2+ ítems, misma cantidad con popup, sin
-  comisión, disolver con escribir-nombre si está en BD). Combo tipo sin
-  Comisión para miembros. Detalle de componente reutiliza el mismo bloque
+  componente), validaciones (2+ ï¿½tems, misma cantidad con popup, sin
+  comisiï¿½n, disolver con escribir-nombre si estï¿½ en BD). Combo tipo sin
+  Comisiï¿½n para miembros. Detalle de componente reutiliza el mismo bloque
   (alias + caches para no perder el foco al tipear).
 - Archivos: TabPreCotizacion.vue, QuotationPreQuoteController.php,
   QuotationProposalController.php, QuotationProposal.php,
-  Marketing/Routes/web.php + 4 nuevos (migración, 2 modelos, controlador).
-- Migración ya marcada como aplicada en tenancy_prueba (tablas existían).
-- Nota: kits aún no viajan al proyecto ni salen en el PDF (siguiente fase).
+  Marketing/Routes/web.php + 4 nuevos (migraciï¿½n, 2 modelos, controlador).
+- Migraciï¿½n ya marcada como aplicada en tenancy_prueba (tablas existï¿½an).
+- Nota: kits aï¿½n no viajan al proyecto ni salen en el PDF (siguiente fase).
+
+====================================================================================
+ACTUALIZACIï¿½N 2026-10-16 ï¿½ Tipo de lï¿½nea de servicio sin catï¿½logo + modal ancho + totales
+====================================================================================
+
+1) TIPO DE Lï¿½NEA SERVICIO / COMISIï¿½N SIN PRODUCTO EN CATï¿½LOGO (estado: selecciï¿½n
+de lï¿½nea de servicio INCOMPLETA)
+- TabPreCotizacion.vue: combo tipo_lï¿½nea por fila (producto|servicio|comision).
+  Comisiï¿½n = lï¿½nea propia del requerimiento, SIN referencia al item 271:
+  item_id null, sin revisiï¿½n, cantidad 1 y margen 0 fijos, nombre fijo "COMISIï¿½N"
+  (se quita el input de solicitado y se muestra tag "Comisiï¿½n" sin match).
+- Servicio = lï¿½nea propia del requerimiento: solo Descripciï¿½n visible (sin
+  inputs de tï¿½cnica, personalizaciï¿½n, medida, empaque, colores, lados, millar
+  ni observaciones). En el expandible solo queda Descripciï¿½n.
+- Costo de servicio = costo base directo: solo Costo Base, Cantidad y Margen
+  editables; todo lo demas (muestra, movilidad, impresiï¿½n, empaque, SCTR) en 0.
+  Backend (QuotationCalculationEngine::recalculateItem): si tipo_linea=service,
+  valor_unitario = costo_base y total_item = costo_base; sin IGV, sin SCTR, sin
+  descuentos.
+- Backend (updateItem): acepta tipo_linea (fillable + editable + validacion).
+  Servicio suelta el match (item_id null) y pide revisiï¿½n.
+- Comision = costo fijo: el costo base ES el total directo, sin margen, SCTR,
+  IGV ni adicionales. Cant. y Margen % bloqueados en comision (solo Costo Base
+  editable).
+- Comision fuera de proveedores: excluida del conteo que bloquea Validar/Aprobar,
+  filtrada del tab Proveedores (itemsCotizables) y los 6 endpoints de quotes +
+  applySupplier devuelven 422 en items comision/servicio.
+- Validacion nombre obligatorio: front avisa y no dispara el PUT; backend
+  422 en vez del 500 por NOT NULL de product_name.
+- Match ya no pisa lo tipeado: applyMatch/rematch restauran el nombre
+  solicitado via restoreNombreSolicitado (sin autoguardado: todo persiste
+  con el check de su fila).
+- Archivos: TabPreCotizacion.vue, TabProveedores.vue,
+  QuotationPreQuoteController.php, PreQuoteItem.php (fillable tipo_linea),
+  QuotationCalculationEngine.php.
+
+2) BUSCADOR MANUAL DEL DIALOG DE MATCH EN TARJETAS (sugerencias IA intactas).
+- Input con lupa + grid 2xN (dialog a 880px): badge con foto o iniciales,
+  nombre, % coincidencia, descripcion, codigo + Desde S/, CTA
+  "Click para cargar en el Ã­tem" (reusa onManualSelect/applyMatch con
+  spinner por tarjeta). fetchManualResults mejorado: debounce 350ms,
+  anti-carrera, precarga el nombre solicitado al abrir.
+- Endpoint products/search ahora devuelve image_url_small (miniatura
+  storage/uploads/items, null si placeholder): columna agregada al select
+  y helper catalogImageUrl en ProductMatchingService (embudo unico,
+  tambien lo recibe el matching automatico).
+- Archivos: TabPreCotizacion.vue, ProductMatchingService.php.
+
+3) MODAL DE REQUERIMIENTOS ANCHO Y LETRA GENERAL (index.vue y kanban.vue).
+- Dialog 96% (tope 1760px) en ambas vistas (antes 1340px/1072px), top 3vh,
+  scroll interno en el body (titulo y X siempre visibles), responsive 98%.
+- Letra general del modal a 10.5px (body, tablas, inputs, botones, tags,
+  tabs, checks, alertas, acordeones, formularios).
+- Barra de totales reordenada en 1 fila (Estado, Movilidad, Empaque,
+  Seguro, Prom. margen ingresado, Margen ganancia, Utilidad real, Margen real,
+  Subtotal, IGV (18%), TOTAL), letra compacta y Prom. margen con celda ancha.
+- Detalles tecnicos en 3 columnas compactas (labels 10px, inputs 12px);
+  Descripcion + Observaciones mitad-mitad (product_description agregado
+  al payload de saveItem; el endpoint ya lo aceptaba). SCTR a todo el
+  ancho; labels Colores/Lados/Millar cortos.
+- Tabla: numeros al 100% de la celda (Element les da 130px fijos y tapaban
+  el valor), columna Foto sin boton Subir (click en la imagen sube,
+  Quitar solo si hay foto).
+- Archivos: TabPreCotizacion.vue, index.vue, kanban.vue.
+
+3) NOTAS DE ENTORNO (no van en el commit, solo informativo)
+--------------------------------------------------------------------------------
+- public/js/app.js recompilado con npm run development (gitignored, no se sube).
+- En local hizo falta FcgidBusyTimeout 3600 en Apache (crear tenant corre
+  ~1100 migraciones, >5 min) y APP_DEBUG=true + LOG_CHANNEL=daily para ver
+  errores reales. Revisar APP_KEY del .env local (cambiï¿½ sin registro).
+- Migraciï¿½n pendiente de aplicar en tenants existentes.
