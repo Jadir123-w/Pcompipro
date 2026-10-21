@@ -868,19 +868,27 @@ class ProyectosController extends Controller
      */
     public function searchProveedores(Request $request)
     {
+        // [NUEVO FLUJO 2026-10-20] q vacío = precarga de TODOS los proveedores
+        // (la comparativa de pre-cotización carga el dropdown al abrir el acordeón).
+        // Con texto se comporta igual que antes (mínimo 2 caracteres).
         $q = trim((string) $request->get('q', ''));
-        if ($q === '' || mb_strlen($q) < 2) {
+        if ($q !== '' && mb_strlen($q) < 2) {
             return response()->json(['ok' => true, 'data' => []]);
         }
 
-        $rows = \App\Models\Tenant\Person::where('type', 'suppliers')
-            ->where(function ($w) use ($q) {
+        $query = \App\Models\Tenant\Person::where('type', 'suppliers');
+        if ($q !== '') {
+            $query->where(function ($w) use ($q) {
                 $w->where('name', 'LIKE', "%{$q}%")
                   ->orWhere('number', 'LIKE', "%{$q}%")
                   ->orWhere('trade_name', 'LIKE', "%{$q}%");
-            })
+            });
+        }
+        $rows = $query
             ->orderBy('name')
-            ->limit(20)
+            // [FIX 2026-10-21] La precarga (q vacío) sube a 500: el combo de la
+            // comparativa filtra en el navegador y necesita la lista completa.
+            ->limit($q === '' ? 500 : 20)
             ->get(['id', 'name', 'number', 'trade_name'])
             ->map(function ($p) {
                 return [

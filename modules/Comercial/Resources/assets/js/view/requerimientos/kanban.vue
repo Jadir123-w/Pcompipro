@@ -143,8 +143,11 @@
                 />
               </el-tab-pane>
 
-              <!-- Proveedores (COM-02 E4 — IA sugiere proveedores por ítem) -->
-              <el-tab-pane label="Proveedores" name="proveedores">
+              <!-- [NUEVO FLUJO 2026-10-20] Proveedores OCULTA temporalmente.
+                   La asignación de proveedores ahora se maneja desde la
+                   comparativa dentro de Pre-Cotización (acordeón del ítem).
+                   El código se conserva por si se necesita reactivar. -->
+              <el-tab-pane label="Proveedores" name="proveedores" v-if="false">
                 <TabProveedores
                   v-if="detailDialog.activeTab === 'proveedores'"
                   :requerimientoId="detail.id"

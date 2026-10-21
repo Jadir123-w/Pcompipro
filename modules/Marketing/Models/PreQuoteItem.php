@@ -194,20 +194,58 @@ class PreQuoteItem extends ModelTenant
     }
 
     /**
-     * Comparativa de proveedores del ítem (mockup): N cotizaciones por
-     * ítem; el ganador define supplier_id/name + costo_base de la línea.
+     * Comparativa de proveedores del ítem: N cotizaciones por ítem; el
+     * proveedor elegido define supplier_id/name + costo_base de la línea.
+     *
+     * [NUEVO FLUJO 2026-10-21] Apuntaba a `quotation_prequote_item_suppliers`
+     * (tabla que no existe). Ahora usa la tabla vigente
+     * `quotation_items_supplier` (misma relación que itemSuppliers()).
      */
     public function supplierQuotes()
     {
-        return $this->hasMany(PreQuoteItemSupplier::class, 'prequote_item_id')
-            ->orderBy('orden')
+        return $this->itemSuppliers();
+    }
+
+    /**
+     * [NUEVO FLUJO 2026-10-21] Apuntaba a la tabla vieja (inexistente).
+     * Ahora es el proveedor ELEGIDO de `quotation_items_supplier`.
+     */
+    public function winningQuote()
+    {
+        return $this->winningItemSupplier();
+    }
+
+    /**
+     * [NUEVO FLUJO 2026-10-20] Comparativa de proveedores con la tabla nueva
+     * `quotation_items_supplier` (solución momentánea).
+     *
+     * A diferencia de supplierQuotes() (tabla vieja), esta relación:
+     *   - Usa `quotation_items_id` como FK
+     *   - Origen siempre 'manual' (sin match con catálogo)
+     *   - El front la usa al abrir el acordeón del ítem para listar proveedores
+     *
+     * [NUEVO FLUJO 2026-10-21] Ya no hay columna `orden`: el orden es por id.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function itemSuppliers()
+    {
+        return $this->hasMany(QuotationItemSupplier::class, 'quotation_items_id')
             ->orderBy('id');
     }
 
-    public function winningQuote()
+    /**
+     * [NUEVO FLUJO 2026-10-20] El proveedor elegido de la tabla nueva.
+     * Define supplier_id/supplier_name/costo_base del ítem.
+     *
+     * [NUEVO FLUJO 2026-10-21] `es_ganador` → `seleccionado`.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     */
+    public function winningItemSupplier()
     {
-        return $this->hasOne(PreQuoteItemSupplier::class, 'prequote_item_id')
-            ->where('es_ganador', true);
+        return $this->hasOne(QuotationItemSupplier::class, 'quotation_items_id')
+            ->where('seleccionado', 1);
     }
 
     /*

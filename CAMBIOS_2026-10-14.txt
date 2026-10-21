@@ -244,3 +244,395 @@ de l�nea de servicio INCOMPLETA)
   ~1100 migraciones, >5 min) y APP_DEBUG=true + LOG_CHANNEL=daily para ver
   errores reales. Revisar APP_KEY del .env local (cambi� sin registro).
 - Migraci�n pendiente de aplicar en tenants existentes.
+
+========
+ACTUALIZACION 2026-10-20 � Nueva tabla comparativa de proveedores (solucion momentanea)
+====================================================================================
+
+1) NUEVA TABLA quotation_items_supplier (sin migracion Laravel)
+- SQL manual en sql/quotation_items_supplier.sql (ejecutar en cada tenant).
+  Seguro para re-ejecutar: usa CREATE TABLE IF NOT EXISTS.
+  Columnas: id, quotation_items_id (FK cascade), supplier_id, supplier_name,
+  origen (siempre 'manual'), product_reference (texto libre), costo_base,
+  tiempo_entrega, observaciones, es_ganador, orden, user_id, timestamps.
+  v_unit NO se almacena: se calcula en backend.
+- Reemplaza temporalmente a quotation_prequote_item_suppliers (queda intacta).
+- Ya ejecutada y verificada en tenancy_prueba (2 copias, solo 1 tabla).
+
+2) MODELO QuotationItemSupplier (nuevo)
+- modules/Marketing/Models/QuotationItemSupplier.php
+- Tabla quotation_items_supplier, relacion item() inversa a PreQuoteItem.
+- Constantes: ORIGEN_MANUAL='manual', DEFAULT_SUPPLIER_NAME.
+- Comentarios en cada campo y metodo para el jefe.
+
+3) RELACIONES EN PreQuoteItem
+- itemSuppliers(): hasMany a la tabla nueva (la usa el front).
+- winningItemSupplier(): hasOne del ganador en la tabla nueva.
+
+4) BACKEND � 6 endpoints modificados en QuotationPreQuoteController
+- supplierQuotes(): lee/crea en tabla nueva via itemSuppliers().
+- storeSupplierQuote(): crea en tabla nueva, origen siempre 'manual'.
+- updateSupplierQuote(): edita en tabla nueva, sin campo 'source'.
+- destroySupplierQuote(): borra de tabla nueva, promueve siguiente ganador.
+- setWinnerSupplierQuote(): marca ganador en tabla nueva + sync + recalculo.
+- toCatalogSupplierQuote(): ACTUALIZADO pero YA NO SE USA DESDE EL FRONT.
+  Se mantiene registrado por si se necesita en el futuro.
+- resolveSupplierName(): ahora usa QuotationItemSupplier::DEFAULT_SUPPLIER_NAME.
+- Todas las funciones tienen comentarios [NUEVO FLUJO] en sus lineas.
+
+5) FRONTEND TabPreCotizacion.vue � Comparativa reescrita (2 copias: normal + kit)
+- Dropdown Proveedor: al cambiar, limpia costo_base/tiempo_entrega/observaciones.
+- Columna Origen: siempre muestra "Manual" (tag).
+- Referencia: texto libre, sin boton "Buscar" en catalogo.
+- Columna Observaciones: renombrada de "Observacion".
+- Accion: SOLO boton rojo eliminar (icon el-icon-delete circle) con
+  confirmacion  antes de borrar. Sin "Agregar catalogo".
+- Guardado DEFERRED: los cambios NO se envian al backend hasta presionar
+  "Guardar detalles" del producto (saveItem -> flushSupplierQuotes).
+  Buffer local en supplierQuoteBuffers[itemId] con dirty flag.
+  flush: borra eliminados, crea nuevos, actualiza existentes, marca ganador,
+  recarga desde BD.
+
+6) PESTANA PROVEEDORES OCULTADA (no borrada)
+- index.vue y kanban.vue: el-tab-pane con v-if="false" + comentario.
+- El codigo de TabProveedores.vue se conserva intacto por si se reactiva.
+- La IA de sugerencia de proveedores NO se toco, solo no se llama.
+
+7) VERIFICACIONES REALIZADAS
+- SQL ejecutado 2 veces en tenancy_prueba: solo 1 tabla (sin duplicados).
+- php -l en los 3 archivos PHP modificados: sin errores de sintaxis.
+- npm run development: compilado exitosamente en 41.87s.
+- Flujo de conversion a proyectos: SIN CAMBIOS (el ganador sigue
+  definiendo supplier_id/costo_base del item igual que antes).
+
+- Archivos nuevos: sql/quotation_items_supplier.sql,
+  modules/Marketing/Models/QuotationItemSupplier.php.
+- Archivos modificados: QuotationPreQuoteController.php,
+  PreQuoteItem.php, TabPreCotizacion.vue, index.vue, kanban.vue.
+
+====================================================================================
+ADDENDUM 2026-10-20 � parte 2
+====================================================================================
+- Pre-carga de proveedores: search-proveedores acepta q vacio (devuelve hasta
+  300 proveedores); TabPreCotizacion precarga allSuppliers al cargar la
+  precotizacion (preloadAllSuppliers) y el dropdown los muestra todos sin
+  escribir. Con texto, comportamiento anterior (min 2 chars, tope 20).
+- flushSupplierQuotes mejorado: mapea temp id -> id real tras crear cada fila
+  nueva (el POST devuelve la lista), asi un proveedor nuevo puede quedar como
+  ganador en el mismo guardado.
+- Smoke test end-to-end de los 6 endpoints (GET/POST/PUT/winner/DELETE/
+  to-catalog) invocando el controller directo: OK, sin duplicados al re-GET,
+  winner sincroniza supplier_id/costo_base del item, DELETE promueve siguiente.
+  to-catalog responde ok=false suave (catalogos base faltantes en
+  tenancy_prueba); ya no se invoca desde el front.
+- PHP CLI del smoke test: usar php-7.4 (el servidor Apache corre 7.4;
+  php-8.3 rechaza el bootstrap de Laravel 8 por deprecations).
+
+====================================================================================
+ACTUALIZACION 2026-10-21 � Correcciones de la comparativa de proveedores
+====================================================================================
+
+PROBLEMAS CORREGIDOS
+1) Los campos NO se podian editar (solo "Costo Base" respondia).
+   Causa: se usaba :value + @change. Element UI (el-input) descarta lo tipeado
+   porque el prop :value no cambia; ademas saveSupplierQuote REEMPLAZABA el
+   objeto de la fila, asi que la vista seguia mostrando el valor viejo.
+   Fix: todo el bloque usa v-model sobre qscope.row.* y los metodos mutan el
+   objeto EN EL LUGAR (this.) en vez de crear uno nuevo.
+   Campos ahora editables: Producto/referencia cotizada, Costo Base,
+   Tiempo entrega y Observaciones (las 2 copias de la tabla).
+
+2) El nombre del proveedor salia "viejo" en el dropdown.
+   Causa: el-select con :value + @change (mismo problema que 1).
+   Fix: v-model="qscope.row.supplier_id".
+
+3) La columna "Ganador" salia VACIA (no se veia ningun radio).
+   Causa: el <input type="radio"> nativo esta oculto por el CSS global del
+   tema (position:absolute; left:-9999px; opacity:0).
+   Fix: se usa <el-radio> de Element (dibuja su propio circulo) y se
+   etiqueta como "Respaldo" a las filas que no son ganadoras.
+
+4) La "Producto / referencia cotizada" de la 1a fila mostraba un nombre viejo
+   (p.ej. "COMISION" cuando el item ya se llamaba "tomatodo").
+   Causa: la fila se sembraba con el nombre del item al momento de crearse y
+   no se actualizaba al renombrar el item.
+   Fix: la 1a fila es la "fila del ITEM" (orden = 1) y su referencia se
+   sincroniza siempre con el nombre actual:
+     - GET supplierQuotes(): actualiza la referencia y, si no hay ganador,
+       deja ganadora la fila del item.
+     - updateItem(): actualiza la referencia de la fila con orden = 1.
+     - Frontend: markItemQuoteRow() marca la fila del item (_esItemRow) y
+       sincroniza su referencia al cargar; onItemNameChanged() la mantiene
+       al escribir en el campo del item.
+     - destroySupplierQuote(): si se borra la fila del item, la siguiente
+       queda con orden = 1 y pasa a ser la principal.
+
+5) El item con la comparativa??? no habia ganador (es_ganador = 0 en todas
+   las filas) y por eso el Costo Base del item quedaba sin proveedor.
+   Fix: markItemQuoteRow() y el GET del backend garantizan que siempre haya
+   una fila ganadora (si no, gana la fila del item).
+
+6) flushSupplierQuotes(): al crear una fila nueva se tomaba el ULTIMO id de
+   la respuesta del backend, que no siempre era el recien creado. Fix: se
+   busca el id que no estaba en la lista previa.
+   Los "originales" (para detectar borrados) se guardan en un mapa por item
+   (supplierQuoteOriginals) en vez de item._originalQuotes (se perdia al
+   re-renderizar la fila).
+
+ARCHIVOS MODIFICADOS
+- modules/Comercial/.../TabPreCotizacion.vue
+- modules/Marketing/Http/Controllers/Api/QuotationPreQuoteController.php
+
+VERIFICACIONES
+- php -l limpio; npm run development OK.
+- Smoke test de endpoints (GET/POST/PUT/winner/DELETE): la fila del item
+  conserva el nombre actual, los respaldos quedan con orden >= 2, el ganador
+  sincroniza el Costo Base del item y los 3 campos editables se guardan.
+   NOTA: la fila 1 de la comparativa es la LINEA DEL ITEM (su referencia es
+   el nombre actual del producto). Las filas 2+ son RESPALDOS: se agregan con
+   "+ proveedor" y el radio de la columna "Ganador" define cual manda (define
+   el Costo Base del item). Las que no son ganadoras se marcan "Respaldo".
+
+====================================================================================
+ACTUALIZACION 2026-10-21 (2) � Combo de proveedores listaba solo algunos
+====================================================================================
+
+SINTOMA
+En la comparativa, el combo "Proveedor" mostraba solo algunos proveedores
+(dependia del texto escrito) y a veces ninguno.
+
+CAUSA RAIZ
+El <el-select> estaba en modo "remote" (remote-method=searchSuppliers). En
+Element UI 2.x, con "remote" el componente NO filtra en el navegador: solo
+muestra las <el-option> que el padre renderiza, y el backend
+searchProveedores exige 2+ caracteres (con 1 letra devolvia data: []). Como la
+lista se armaba con los resultados de busqueda, al escribir 1 letra el combo
+se quedaba vacio y con 2+ solo aparecian los coincidientes.
+
+SOLUCION
+- El combo ya NO es "remote": se precargan TODOS los proveedores una sola vez
+  (endpoint con q vacio -> hasta 500) y el filtro es LOCAL.
+- Nuevo metodo filterSuppliers(query): guarda el texto en supplierFilterQuery y
+  supplierOptionsFor(quote) filtra por nombre comercial + razon social + RUC
+  (sin distinguir mayusculas). OJO: en Element 2.x el filter-method NO filtra
+  solo (su valor de retorno se ignora) y desactiva el filtrado interno, por eso
+  el filtro se aplica en la lista propia.
+- Se agrego mounted() con preloadAllSuppliers() para que la lista se cargue
+  aunque la prequote ya venga cargada (el watcher "prequote" no es immediate).
+- Backend: la precarga (q vacio) sube de 300 a 500 proveedores.
+
+VERIFICACION
+- Precarga (q=''): 8/8 proveedores en tenancy_prueba, con nombre, RUC y
+  nombre comercial.
+- Filtro local 'laser' -> 1 resultado; 'a' (1 letra) -> 7 resultados
+  (con remote habrian sido 0).
+- php -l limpio; npm run development OK.
+
+ARCHIVOS MODIFICADOS
+- modules/Comercial/.../TabPreCotizacion.vue (2 copias del combo)
+- modules/Comercial/Http/Controllers/ProyectosController.php
+
+====================================================================================
+ACTUALIZACION 2026-10-21 (3) � Nueva estructura de quotation_items_supplier
+====================================================================================
+
+CAMBIO DE ESTRUCTURA (aplicado por el jefe en la tabla)
+- es_ganador  -> seleccionado (0 = respaldo, 1 = el elegido)
+- se elimino la columna orden (ya no se maneja)
+- tiempo_entrega -> tiempo_estimado_dias
+
+MODELO QuotationItemSupplier (modules/Marketing/Models/QuotationItemSupplier.php)
+- fillable/casts actualizados a la estructura nueva.
+- Maneja AMBAS tablas: sus propias filas + relacion item() al item de pre-cotizacion.
+- NO escribe en quotation_prequote_items las columnas de proveedor, costo base ni
+  tiempo estimado: esos datos viven en la tabla nueva. El reflejo al item lo
+  hace el controller (syncWinningQuoteToItem), que es lo que lee el motor.
+- Nuevo scopeSeleccionado() (seleccionado = 1).
+
+MODELO PreQuoteItem (modules/Marketing/Models/PreQuoteItem.php)
+- itemSuppliers(): ya no ordena por orden (orden = id).
+- winningItemSupplier(): es_ganador -> seleccionado = 1.
+- supplierQuotes() y winningQuote() APUNTABAN a quotation_prequote_item_suppliers
+  (tabla que NO existe). Ahora redirigen a la relacion nueva.
+
+CONTROLLER (QuotationPreQuoteController.php)
+- Los 6 endpoints usan seleccionado y 	iempo_estimado_dias; sin orden.
+- GET supplierQuotes(): siembra con seleccionado = 1 y garantiza que haya
+  exactamente una fila elegida (si no hay, elige la mas antigua).
+- POST store: el respaldo nace con seleccionado = 0; si es la primera, queda
+  elegida y sincroniza al item.
+- PUT update: si edita la cita ELEGIDA, sincroniza al item + recalcula.
+- DELETE destroy: si se borra la elegida, promueve la mas antigua.
+- POST winner: desmarca todas y marca solo esa.
+
+FRONT (TabPreCotizacion.vue)
+- La columna Costo Base de la fila del ITEM paso a SOLO LECTURA (campo-calculado)
+  y muestra el costo del proveedor SELECCIONADO. Se edita en la comparativa.
+- La columna V. Unit. de items ahora se calcula con ese mismo costo.
+- La comparativa: columna "Producto / referencia cotizada" SOLO LECTURA (muestra
+  el nombre del item, no un input): antes al agregar un proveedor salia en blanco.
+- Se agrego la columna V. Unit. a la comparativa (campo-calculado).
+- Radio "Ganador" <-> seleccionado; las no elegidas quedan como "Respaldo".
+- El payload de saveItem() manda costo_base = costo del proveedor seleccionado.
+
+VERIFICACION (smoke tests sobre los 6 endpoints + motor)
+- GET siembra con seleccionado = 1, sin columna orden.
+- POST respaldo -> seleccionado = 0 con sus 3 campos (costo, tiempo, obs).
+- PUT edita los 3 campos de la fila elegida.
+- POST winner -> queda 1 elegida y el resto respaldo (siempre 1).
+- DELETE de la elegida -> promueve la otra (sigue habiendo 1 elegida).
+- El item toma el costo del proveedor elegido (12.00 -> 15.75) y el motor
+  recalcula igual que antes (valor_unitario 20.79, total_item 1962.58).
+- php -l limpio; npm run development OK.
+
+ARCHIVOS MODIFICADOS
+- modules/Marketing/Models/QuotationItemSupplier.php
+- modules/Marketing/Models/PreQuoteItem.php
+- modules/Marketing/Http/Controllers/Api/QuotationPreQuoteController.php
+- modules/Comercial/.../TabPreCotizacion.vue
+- sql/quotation_items_supplier.sql (estructura nueva para otros tenants)
+
+====================================================================================
+ACTUALIZACION 2026-10-21 (4) � quotation_prequote_items deja de guardar proveedor/costo
+====================================================================================
+
+PEDIDO
+"las columnas que no debe tocar en quotation_prequote_items serian las de supplier,
+costo base y tiempo estimado dias, ya que esas columnas estan en nuestra nueva tabla"
+-> La fuente de verdad es SIEMPRE quotation_items_supplier.
+
+QUE SE CORRIGIO
+1) QuotationCalculationEngine
+   - Nuevo resolveCostoBase(PreQuoteItem): devuelve el costo_base de la fila con
+     seleccionado = 1 de quotation_items_supplier; si el item no tiene comparativa
+     (comision, item previo al flujo, item sin proveedor), cae al costo_base del item.
+   - recalculateItem() usa ese valor en los 3 puntos donde antes leia
+     ->costo_base (comision, precio_muestra, computeItem).
+   - El motor NO cambio su formula: sigue aplicando el redondeo comercial a
+     terminacion 0/5/9 (ej: 12.00 x 1.30 = 15.60 -> 15.85).
+
+2) QuotationPreQuoteController
+   - syncWinningQuoteToItem() ya NO escribe supplier_id, supplier_name ni
+     costo_base en el item: solo marca is_inferred = false y recalcula.
+   - updateItem(): saco supplier_id, supplier_name y costo_base de los campos
+     editables del item (el costo se edita en la comparativa).
+   - updateItem(): el recalculo por escalon de volumen (Fase C) ahora actualiza el
+     costo_base de la fila ELEGIDA de la comparativa (no la columna del item).
+   - applySupplier() (IA de proveedores): escribe proveedor/costo/tiempo en la
+     fila ELEGIDA de la comparativa, no en el item.
+   - setWinnerSupplierQuote(): si cambia el proveedor elegido, limpia el
+     "Cod. Artic." manual del item (el codigo lleva las iniciales del proveedor).
+
+3) Front (TabPreCotizacion.vue)
+   - El payload de saveItem() ya NO manda costo_base.
+   - Los calculos en vivo (precioMuestraEfectivo, precioMuestra, costeoBreakdown
+     x2, kitRowTotals) usan selectedQuoteCostValue(item) en vez de item.costo_base.
+   - La columna Costo Base de items y la de componentes de kit muestran el costo
+     del proveedor SELECCIONADO (solo lectura).
+
+VERIFICACION (smoke test)
+- item con costo_base=99.99 en BD + proveedor elegido con costo 12.00:
+  -> el item conserva costo_base=99.99, supplier_id=null, supplier_name=null
+     (NO se escriben).
+  -> el motor calcula valor_unitario=15.85 (12.00 x 1.30 con redondeo comercial).
+  -> en la comparativa: proveedor_id=2, costo=12.00, tiempo='10 dias'.
+- php -l limpio; npm run development OK.
+
+ARCHIVOS MODIFICADOS
+- modules/Marketing/Services/QuotationCalculationEngine.php
+- modules/Marketing/Http/Controllers/Api/QuotationPreQuoteController.php
+- modules/Comercial/.../TabPreCotizacion.vue
+
+====================================================================================
+ACTUALIZACION 2026-10-21 (5) � Kits ocultados momentaneamente en Pre-Cotizacion
+====================================================================================
+
+PEDIDO: "momentaneamente tambien oculta el anadido de kits en pre cotizacion"
+
+QUE SE OCULTO (el codigo queda intacto, solo la UI)
+- El colapso "Agrupacion de kits" (barra con Accion / Nombre del kit / boton
+  Crear kit-Agregar): <el-col v-if="false">.
+- El check de marcado en la columna "Kit" de la tabla de items: v-if="false".
+- El colapso de IA pasa a ancho completo (md 24) porque ya no comparte la
+  fila con el de kits.
+
+LO QUE SIGUE VISIBLE
+- Los kits YA CREADOS: si un item ya pertenece a un kit, la fila del kit se
+  sigue mostrando con su boton "Disolver" (para poder deshacerlo).
+- Toda la logica de kits (crear, agregar, disolver, componentes, foto) queda
+  en el codigo: se reactiva quitando el v-if="false".
+
+VERIFICACION
+- npm run development OK (sin errores de compilacion).
+
+ARCHIVO MODIFICADO
+- modules/Comercial/.../TabPreCotizacion.vue
+
+====================================================================================
+ACTUALIZACION 2026-10-21 (6) � user_id de la comparativa = usuario de apoyo
+====================================================================================
+
+PEDIDO
+"cuando se crea un item ya sea manualmente o con IA, en la tabla de
+quotation_items_supplier el proveedor que se crea de manera automatica al crear el
+item sale con user_id en null, deberia de colocarse el user id que se halla
+seleccionado en usuario de apoyo en ese requerimiento"
+
+CAUSA
+La fila de proveedor NO se creaba al crear el item: se sembraba despues, en el
+GET de la comparativa (supplierQuotes), y ahi no se seteba user_id -> quedaba NULL.
+
+CAMBIO (QuotationPreQuoteController.php)
+- Nuevo resolveUsuarioApoyo(PreQuote, Request): devuelve
+  requerimiento.usuario_apoyo_cotizacion (Requerimiento es del modulo Comercial).
+  Si la prequote no tiene requerimiento (cotizador independiente), cae al
+  usuario de la sesion.
+- Nuevo crearQuoteInicialItem(PreQuote, PreQuoteItem, Request): crea la fila
+  inicial de la comparativa (Proveedor por definir, seleccionado = 1) con el
+  user_id del usuario de apoyo.
+- Se llama al crear el item en los 3 puntos de alta:
+    - interpretItem (productos por IA / imagen)      ~linea 1117
+    - storeManualItem (item manual)                  ~linea 1206
+    - reinterpretWithImage (re-interpretar)         ~linea 957
+- GET supplierQuotes: si aun no hay filas, siembra con el usuario de apoyo.
+- POST storeSupplierQuote: el respaldo nuevo tambien se atribuye al usuario de
+  apoyo del requerimiento.
+- applySupplier (IA de proveedores): la fila elegida queda con ese user_id.
+- reinterpretWithImage ahora recibe Request (para resolver el usuario de apoyo).
+
+VERIFICACION (smoke test, requerimiento con usuario_apoyo_cotizacion = 1)
+- Fila sembrada por GET: user_id = 1 (esperado 1).
+- Respaldo creado por POST: user_id = 1.
+- Item manual creado: nace con 1 fila de comparativa, user_id = 1.
+- Alta por IA: la fila nace con user_id = 1.
+- php -l limpio; npm run development OK.
+
+ARCHIVO MODIFICADO
+- modules/Marketing/Http/Controllers/Api/QuotationPreQuoteController.php
+
+====================================================================================
+PUSH 2026-10-21 — Comparativa de proveedores (tabla nueva) + fuente unica de costo
+====================================================================================
+
+Este commit reune el trabajo de la sesion 2026-10-20/21 (documentado en las
+secciones anteriores de este archivo):
+
+- Tabla nueva quotation_items_supplier (SQL manual en sql/, sin migracion).
+- Estructura vigente: es_ganador -> seleccionado (0/1), sin columna orden,
+  tiempo_entrega -> tiempo_estimado_dias.
+- quotation_prequote_items deja de guardar supplier_id/supplier_name/costo_base:
+  el motor de calculo los resuelve desde la comparativa (resolveCostoBase).
+- En la fila del item, Costo Base y V. Unit. son solo lectura (muestran el del
+  proveedor seleccionado); en la comparativa, Producto/referencia es solo lectura
+  (nombre del item) y el radio "Ganador" elige cual manda (las otras = Respaldo).
+- user_id de las filas = usuario de apoyo del requerimiento.
+- Ocultos momentaneamente: pestana "Proveedores" (IA) y kits en pre-cotizacion.
+- Combo de proveedores: se precargan todos y el filtro es local.
+- Documentacion del repo: AGENTS.md (reglas + mapa de edicion) y ESTADO_ACTUAL.md.
+
+VERIFICACION
+- Smoke tests de los 6 endpoints de comparativa + motor de calculo: OK.
+- El item conserva sus columnas de proveedor (no se escriben) y el motor calcula
+  con el costo del proveedor elegido (12.00 x 1.30 = 15.60 -> 15.85 con el
+  redondeo comercial).
+- php -l limpio en los PHP tocados; npm run development OK.

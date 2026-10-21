@@ -57,7 +57,7 @@
          Der: crear kits (SOLO FRONTAL por ahora; el backend llega después).
          Se muestra en arranque en frío (sin prequote) y con prequote editable. -->
     <el-row :gutter="12" class="mb-2">
-      <el-col :xs="24" :md="12" v-if="refReqId && !loading && (!prequote || isEditable)">
+      <el-col :xs="24" :md="24" v-if="refReqId && !loading && (!prequote || isEditable)">
         <el-collapse v-model="iaCollapseOpen" class="precot-collapse">
           <el-collapse-item name="ia">
             <template slot="title">
@@ -110,7 +110,9 @@
           </el-collapse-item>
         </el-collapse>
       </el-col>
-      <el-col :xs="24" :md="12">
+      <!-- [NUEVO FLUJO 2026-10-21] Kits ocultados momentaneamente (pedido del jefe).
+           El código queda intacto: solo se oculta la UI de creación/agrupación. -->
+      <el-col v-if="false" :xs="24" :md="12">
         <el-collapse v-model="kitCollapseOpen" class="precot-collapse">
           <el-collapse-item name="kit">
             <template slot="title">
@@ -676,27 +678,42 @@
                 </div><!-- /.erp-costcard -->
               </div><!-- /.erp-detail-layout -->
 
-              <!-- ─────── Comparativa de proveedores (mockup db) ───────
-                   N cotizaciones por ítem; el ganador define el Costo Base
-                   de la línea. Origen: catálogo (lista de precios) o manual. -->
+              <!-- ─────── Comparativa de proveedores [NUEVO FLUJO 2026-10-20] ───────
+                   N cotizaciones por ítem en tabla nueva quotation_items_supplier.
+                   Origen SIEMPRE manual (sin match con catálogo).
+                   Los cambios NO se guardan hasta presionar "Guardar detalles" del ítem. -->
               <div class="supplier-quotes-section" v-if="!isComision(props.row)">
                 <div class="supplier-quotes__title">▣ Comparativa de proveedores</div>
-                <div class="supplier-quotes__hint">El proveedor ganador define el Costo Base de esta línea. El origen lo asigna el sistema: catálogo si viene de lista de precios, manual si fue cotizado fuera del catálogo.</div>
+                <div class="supplier-quotes__hint">El proveedor ganador define el Costo Base de esta línea. El origen siempre es manual. Los cambios se guardan al presionar "Guardar detalles".</div>
                 <el-table :data="supplierQuotesOf(props.row)" size="mini" border style="width:100%;">
-                  <el-table-column label="Ganador" width="70" align="center">
+                  <el-table-column label="Ganador" width="110" align="center">
                     <template slot-scope="qscope">
-                      <input type="radio" :name="'supplierWinner-' + props.row.id" :value="qscope.row.id"
-                             :checked="!!qscope.row.es_ganador" :disabled="!isEditable"
-                             @change="setWinnerQuote(props.row, qscope.row)"
-                             title="Proveedor ganador: define el Costo Base"/>
+                      <!-- [NUEVO FLUJO 2026-10-21] el-radio de Element: el <input type="radio">
+                           nativo lo oculta el CSS global (position:absolute; left:-9999px; opacity:0),
+                           por eso la columna salía vacía. @input (no @change): el valor
+                           emitido es el label (id de la fila) al hacer clic. -->
+                      <el-radio :value="qscope.row.seleccionado ? qscope.row.id : null" :label="qscope.row.id"
+                                :disabled="!isEditable" @input="setWinnerQuote(props.row, qscope.row)">
+                        <span class="supplier-quotes__radio-label">&nbsp;</span>
+                      </el-radio>
+                      <div v-if="!qscope.row.seleccionado" class="supplier-quotes__respaldo"
+                           title="Este proveedor queda como respaldo; el ganador define el Costo Base.">
+                        Respaldo
+                      </div>
                     </template>
                   </el-table-column>
                   <el-table-column label="Proveedor" min-width="170">
                     <template slot-scope="qscope">
-                      <el-select :value="qscope.row.supplier_id || 0" size="mini" filterable remote reserve-keyword
-                                 placeholder="Proveedor por definir" :remote-method="searchSuppliers"
-                                 :loading="supplierSearching" :disabled="!isEditable" style="width:100%;"
-                                 @change="function (val) { saveSupplierQuote(props.row, qscope.row, { supplier_id: val || null }) }">
+                      <!-- [NUEVO FLUJO] Al cambiar proveedor, limpia costo/tiempo/observaciones -->
+                      <!-- [FIX 2026-10-21] Ya NO es "remote": con remote Element NO filtra
+                           en local y solo muestra lo que devuelve el server en ese momento
+                           (y el server exige 2+ caracteres), por eso se listaban solo
+                           algunos. Ahora se precargan TODOS y el filtro es local. -->
+                      <el-select v-model="qscope.row.supplier_id" size="mini" filterable
+                                 placeholder="Proveedor por definir"
+                                 :filter-method="filterSuppliers"
+                                 :disabled="!isEditable" style="width:100%;"
+                                 @change="function (val) { onQuoteSupplierChange(props.row, qscope.row, val) }">
                         <el-option :key="0" :label="'Proveedor por definir'" :value="0"></el-option>
                         <el-option v-for="s in supplierOptionsFor(qscope.row)" :key="s.id"
                                    :label="s.nombre_comercial || s.razon_social" :value="s.id"></el-option>
@@ -705,50 +722,55 @@
                   </el-table-column>
                   <el-table-column label="Origen" width="90" align="center">
                     <template slot-scope="qscope">
-                      <el-tag size="mini" :type="qscope.row.source === 'catalog' ? 'success' : ''" effect="plain">
-                        {{ qscope.row.source === 'catalog' ? 'Catálogo' : 'Manual' }}
-                      </el-tag>
+                      <!-- [NUEVO FLUJO] Origen siempre manual en esta tabla -->
+                      <el-tag size="mini" effect="plain">Manual</el-tag>
                     </template>
                   </el-table-column>
                   <el-table-column label="Producto / referencia cotizada" min-width="200">
                     <template slot-scope="qscope">
-                      <div style="display:flex; gap:6px; align-items:center;">
-                        <el-input :value="qscope.row.product_reference" size="mini"
-                                  placeholder="Referencia manual cotizada" :disabled="!isEditable" style="flex:1;"
-                                  @change="function (val) { saveSupplierQuote(props.row, qscope.row, { product_reference: val }) }"></el-input>
-                        <el-button v-if="isEditable" size="mini" @click="openQuoteRefSearch(props.row, qscope.row)">Buscar</el-button>
-                      </div>
+                      <!-- [NUEVO FLUJO 2026-10-21] Solo lectura: es el MISMO campo
+                           "Producto solicitado" de la fila del item (el-input__inner).
+                           Se edita desde la fila del item, no desde acá. Antes, al
+                           agregar un proveedor, este campo salía en blanco. -->
+                      <span class="campo-calculado">{{ qscope.row.product_reference || props.row.product_name }}</span>
                     </template>
                   </el-table-column>
                   <el-table-column label="Costo Base" width="110" align="right">
                     <template slot-scope="qscope">
-                      <el-input-number :value="parseFloat(qscope.row.costo_base || 0)" size="mini" :precision="2" :step="1" :min="0"
+                      <!-- [NUEVO FLUJO 2026-10-21] v-model: el input-number con
+                           :value + @change perdía la edición (no se guardaba). -->
+                      <el-input-number v-model="qscope.row.costo_base" size="mini" :precision="2" :step="1" :min="0"
                                        controls-position="right" :disabled="!isEditable" style="width:100%;"
-                                       @change="function (val) { saveSupplierQuote(props.row, qscope.row, { costo_base: val }) }"></el-input-number>
+                                       @change="markSupplierQuoteDirty(props.row)"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="V. Unit." width="86" align="right">
+                    <template slot-scope="qscope">
+                      <!-- [NUEVO FLUJO 2026-10-21] Valor unitario del proveedor:
+                           costo × (1 + margen%), igual que el del item. Solo lectura. -->
+                      <span class="campo-calculado">{{ quoteUnitValue(props.row, qscope.row) }}</span>
                     </template>
                   </el-table-column>
                   <el-table-column label="Tiempo entrega" width="130">
                     <template slot-scope="qscope">
-                      <el-input :value="qscope.row.tiempo_entrega" size="mini" placeholder="Ej: 15 días útiles"
-                                :disabled="!isEditable"
-                                @change="function (val) { saveSupplierQuote(props.row, qscope.row, { tiempo_entrega: val }) }"></el-input>
+                      <!-- [NUEVO FLUJO 2026-10-21] v-model: editable de verdad. -->
+                      <el-input v-model="qscope.row.tiempo_estimado_dias" size="mini" placeholder="Ej: 15 días útiles"
+                                :disabled="!isEditable" @input="markSupplierQuoteDirty(props.row)"></el-input>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Observación" min-width="150">
+                  <el-table-column label="Observaciones" min-width="150">
                     <template slot-scope="qscope">
-                      <el-input :value="qscope.row.observacion" size="mini" placeholder="Observación"
-                                :disabled="!isEditable"
-                                @change="function (val) { saveSupplierQuote(props.row, qscope.row, { observacion: val }) }"></el-input>
+                      <!-- [NUEVO FLUJO 2026-10-21] v-model: editable de verdad. -->
+                      <el-input v-model="qscope.row.observaciones" size="mini" placeholder="Observaciones"
+                                :disabled="!isEditable" @input="markSupplierQuoteDirty(props.row)"></el-input>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Acción" width="150" align="center">
+                  <el-table-column label="Acción" width="60" align="center">
                     <template slot-scope="qscope">
-                      <el-button v-if="qscope.row.source !== 'catalog' && isEditable" size="mini"
-                                 @click="toCatalogQuote(props.row, qscope.row)">Agregar catálogo</el-button>
-                      <el-tag v-else-if="qscope.row.source === 'catalog'" size="mini" type="success" effect="plain">Ya está en catálogo</el-tag>
-                      <el-button v-if="isEditable" size="mini" type="danger" plain
+                      <!-- [NUEVO FLUJO] Solo botón eliminar con confirmación. Sin "Agregar catálogo". -->
+                      <el-button v-if="isEditable" size="mini" type="danger" icon="el-icon-delete" circle
                                  :disabled="supplierQuotesOf(props.row).length <= 1"
-                                 @click="removeSupplierQuote(props.row, qscope.row)">Quitar</el-button>
+                                 @click="removeSupplierQuote(props.row, qscope.row)"></el-button>
                     </template>
                   </el-table-column>
                 </el-table>
@@ -848,7 +870,7 @@
                   <template slot-scope="mscope">{{ mscope.row.quantity }}</template>
                 </el-table-column>
                 <el-table-column label="Costo Base" width="110" align="right">
-                  <template slot-scope="mscope">S/ {{ parseFloat(mscope.row.costo_base || 0).toFixed(2) }}</template>
+                  <template slot-scope="mscope">{{ selectedQuoteCost(mscope.row) }}</template>
                 </el-table-column>
                 <el-table-column label="Margen %" width="90" align="right">
                   <template slot-scope="mscope">{{ parseFloat(mscope.row.margen_porcentaje || 0).toFixed(1) }}%</template>
@@ -1244,27 +1266,42 @@
                 </div><!-- /.erp-costcard -->
               </div><!-- /.erp-detail-layout -->
 
-              <!-- ─────── Comparativa de proveedores (mockup db) ───────
-                   N cotizaciones por ítem; el ganador define el Costo Base
-                   de la línea. Origen: catálogo (lista de precios) o manual. -->
+              <!-- ─────── Comparativa de proveedores [NUEVO FLUJO 2026-10-20] ───────
+                   N cotizaciones por ítem en tabla nueva quotation_items_supplier.
+                   Origen SIEMPRE manual (sin match con catálogo).
+                   Los cambios NO se guardan hasta presionar "Guardar detalles" del ítem. -->
               <div class="supplier-quotes-section" v-if="!isComision(props.row)">
                 <div class="supplier-quotes__title">▣ Comparativa de proveedores</div>
-                <div class="supplier-quotes__hint">El proveedor ganador define el Costo Base de esta línea. El origen lo asigna el sistema: catálogo si viene de lista de precios, manual si fue cotizado fuera del catálogo.</div>
+                <div class="supplier-quotes__hint">El proveedor ganador define el Costo Base de esta línea. El origen siempre es manual. Los cambios se guardan al presionar "Guardar detalles".</div>
                 <el-table :data="supplierQuotesOf(props.row)" size="mini" border style="width:100%;">
-                  <el-table-column label="Ganador" width="70" align="center">
+                  <el-table-column label="Ganador" width="110" align="center">
                     <template slot-scope="qscope">
-                      <input type="radio" :name="'supplierWinner-' + props.row.id" :value="qscope.row.id"
-                             :checked="!!qscope.row.es_ganador" :disabled="!isEditable"
-                             @change="setWinnerQuote(props.row, qscope.row)"
-                             title="Proveedor ganador: define el Costo Base"/>
+                      <!-- [NUEVO FLUJO 2026-10-21] el-radio de Element: el <input type="radio">
+                           nativo lo oculta el CSS global (position:absolute; left:-9999px; opacity:0),
+                           por eso la columna salía vacía. @input (no @change): el valor
+                           emitido es el label (id de la fila) al hacer clic. -->
+                      <el-radio :value="qscope.row.seleccionado ? qscope.row.id : null" :label="qscope.row.id"
+                                :disabled="!isEditable" @input="setWinnerQuote(props.row, qscope.row)">
+                        <span class="supplier-quotes__radio-label">&nbsp;</span>
+                      </el-radio>
+                      <div v-if="!qscope.row.seleccionado" class="supplier-quotes__respaldo"
+                           title="Este proveedor queda como respaldo; el ganador define el Costo Base.">
+                        Respaldo
+                      </div>
                     </template>
                   </el-table-column>
                   <el-table-column label="Proveedor" min-width="170">
                     <template slot-scope="qscope">
-                      <el-select :value="qscope.row.supplier_id || 0" size="mini" filterable remote reserve-keyword
-                                 placeholder="Proveedor por definir" :remote-method="searchSuppliers"
-                                 :loading="supplierSearching" :disabled="!isEditable" style="width:100%;"
-                                 @change="function (val) { saveSupplierQuote(props.row, qscope.row, { supplier_id: val || null }) }">
+                      <!-- [NUEVO FLUJO] Al cambiar proveedor, limpia costo/tiempo/observaciones -->
+                      <!-- [FIX 2026-10-21] Ya NO es "remote": con remote Element NO filtra
+                           en local y solo muestra lo que devuelve el server en ese momento
+                           (y el server exige 2+ caracteres), por eso se listaban solo
+                           algunos. Ahora se precargan TODOS y el filtro es local. -->
+                      <el-select v-model="qscope.row.supplier_id" size="mini" filterable
+                                 placeholder="Proveedor por definir"
+                                 :filter-method="filterSuppliers"
+                                 :disabled="!isEditable" style="width:100%;"
+                                 @change="function (val) { onQuoteSupplierChange(props.row, qscope.row, val) }">
                         <el-option :key="0" :label="'Proveedor por definir'" :value="0"></el-option>
                         <el-option v-for="s in supplierOptionsFor(qscope.row)" :key="s.id"
                                    :label="s.nombre_comercial || s.razon_social" :value="s.id"></el-option>
@@ -1273,50 +1310,55 @@
                   </el-table-column>
                   <el-table-column label="Origen" width="90" align="center">
                     <template slot-scope="qscope">
-                      <el-tag size="mini" :type="qscope.row.source === 'catalog' ? 'success' : ''" effect="plain">
-                        {{ qscope.row.source === 'catalog' ? 'Catálogo' : 'Manual' }}
-                      </el-tag>
+                      <!-- [NUEVO FLUJO] Origen siempre manual en esta tabla -->
+                      <el-tag size="mini" effect="plain">Manual</el-tag>
                     </template>
                   </el-table-column>
                   <el-table-column label="Producto / referencia cotizada" min-width="200">
                     <template slot-scope="qscope">
-                      <div style="display:flex; gap:6px; align-items:center;">
-                        <el-input :value="qscope.row.product_reference" size="mini"
-                                  placeholder="Referencia manual cotizada" :disabled="!isEditable" style="flex:1;"
-                                  @change="function (val) { saveSupplierQuote(props.row, qscope.row, { product_reference: val }) }"></el-input>
-                        <el-button v-if="isEditable" size="mini" @click="openQuoteRefSearch(props.row, qscope.row)">Buscar</el-button>
-                      </div>
+                      <!-- [NUEVO FLUJO 2026-10-21] Solo lectura: es el MISMO campo
+                           "Producto solicitado" de la fila del item (el-input__inner).
+                           Se edita desde la fila del item, no desde acá. Antes, al
+                           agregar un proveedor, este campo salía en blanco. -->
+                      <span class="campo-calculado">{{ qscope.row.product_reference || props.row.product_name }}</span>
                     </template>
                   </el-table-column>
                   <el-table-column label="Costo Base" width="110" align="right">
                     <template slot-scope="qscope">
-                      <el-input-number :value="parseFloat(qscope.row.costo_base || 0)" size="mini" :precision="2" :step="1" :min="0"
+                      <!-- [NUEVO FLUJO 2026-10-21] v-model: el input-number con
+                           :value + @change perdía la edición (no se guardaba). -->
+                      <el-input-number v-model="qscope.row.costo_base" size="mini" :precision="2" :step="1" :min="0"
                                        controls-position="right" :disabled="!isEditable" style="width:100%;"
-                                       @change="function (val) { saveSupplierQuote(props.row, qscope.row, { costo_base: val }) }"></el-input-number>
+                                       @change="markSupplierQuoteDirty(props.row)"></el-input-number>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="V. Unit." width="86" align="right">
+                    <template slot-scope="qscope">
+                      <!-- [NUEVO FLUJO 2026-10-21] Valor unitario del proveedor:
+                           costo × (1 + margen%), igual que el del item. Solo lectura. -->
+                      <span class="campo-calculado">{{ quoteUnitValue(props.row, qscope.row) }}</span>
                     </template>
                   </el-table-column>
                   <el-table-column label="Tiempo entrega" width="130">
                     <template slot-scope="qscope">
-                      <el-input :value="qscope.row.tiempo_entrega" size="mini" placeholder="Ej: 15 días útiles"
-                                :disabled="!isEditable"
-                                @change="function (val) { saveSupplierQuote(props.row, qscope.row, { tiempo_entrega: val }) }"></el-input>
+                      <!-- [NUEVO FLUJO 2026-10-21] v-model: editable de verdad. -->
+                      <el-input v-model="qscope.row.tiempo_estimado_dias" size="mini" placeholder="Ej: 15 días útiles"
+                                :disabled="!isEditable" @input="markSupplierQuoteDirty(props.row)"></el-input>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Observación" min-width="150">
+                  <el-table-column label="Observaciones" min-width="150">
                     <template slot-scope="qscope">
-                      <el-input :value="qscope.row.observacion" size="mini" placeholder="Observación"
-                                :disabled="!isEditable"
-                                @change="function (val) { saveSupplierQuote(props.row, qscope.row, { observacion: val }) }"></el-input>
+                      <!-- [NUEVO FLUJO 2026-10-21] v-model: editable de verdad. -->
+                      <el-input v-model="qscope.row.observaciones" size="mini" placeholder="Observaciones"
+                                :disabled="!isEditable" @input="markSupplierQuoteDirty(props.row)"></el-input>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Acción" width="150" align="center">
+                  <el-table-column label="Acción" width="60" align="center">
                     <template slot-scope="qscope">
-                      <el-button v-if="qscope.row.source !== 'catalog' && isEditable" size="mini"
-                                 @click="toCatalogQuote(props.row, qscope.row)">Agregar catálogo</el-button>
-                      <el-tag v-else-if="qscope.row.source === 'catalog'" size="mini" type="success" effect="plain">Ya está en catálogo</el-tag>
-                      <el-button v-if="isEditable" size="mini" type="danger" plain
+                      <!-- [NUEVO FLUJO] Solo botón eliminar con confirmación. Sin "Agregar catálogo". -->
+                      <el-button v-if="isEditable" size="mini" type="danger" icon="el-icon-delete" circle
                                  :disabled="supplierQuotesOf(props.row).length <= 1"
-                                 @click="removeSupplierQuote(props.row, qscope.row)">Quitar</el-button>
+                                 @click="removeSupplierQuote(props.row, qscope.row)"></el-button>
                     </template>
                   </el-table-column>
                 </el-table>
@@ -1375,7 +1417,10 @@
             <span class="col-tip" title="Marca 2 o más productos para crear un kit. La comisión no entra a kits.">Kit <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
-            <el-checkbox v-if="!scope.row._isKit && !isComision(scope.row) && !isService(scope.row)"
+            <!-- [NUEVO FLUJO 2026-10-21] Kits ocultados momentaneamente (pedido del
+                 jefe): el check de marcado queda oculto. Si el item YA pertenece a
+                 un kit, se sigue mostrando el kit y el botón "Disolver". -->
+            <el-checkbox v-if="false"
                          :value="kitSelection.indexOf(scope.row.id) !== -1"
                          :disabled="!isEditable"
                          @change="toggleKitSelected(scope.row)"></el-checkbox>
@@ -1392,8 +1437,14 @@
 
         <el-table-column label="Producto solicitado" min-width="110">
           <template slot-scope="scope">
-            <el-input v-if="!scope.row._isKit && !isComision(scope.row) && !isService(scope.row)" v-model="scope.row.product_name" size="mini" :disabled="!isEditable"></el-input>
-            <span v-if="!scope.row._isKit && isService(scope.row)" style="font-size:12px;">{{ scope.row.product_name || 'Servicio' }}</span>
+            <!-- [FIX 2026-10-21] Cadena if/else-if única. Servicio se edita igual
+                 que producto (solo la COMISIÓN queda con nombre fijo): antes el
+                 span de Servicio abría una cadena propia y el de COMISIÓN se
+                 renderizaba JUNTO al input (texto duplicado bajo el input). -->
+            <el-input v-if="!scope.row._isKit && !isComision(scope.row)" v-model="scope.row.product_name" size="mini"
+                      :disabled="!isEditable"
+                      :placeholder="isService(scope.row) ? 'Servicio' : ''"
+                      @input="onItemNameChanged(scope.row, $event)"></el-input>
             <span v-else-if="!scope.row._isKit" style="font-size:12px;">{{ scope.row.product_name || 'COMISIÓN' }}</span>
             <el-input v-else v-model="scope.row.kit.nombre" size="mini" :disabled="!isEditable" maxlength="191"></el-input>
           </template>
@@ -1505,12 +1556,13 @@
         </el-table-column>
         <el-table-column label="Costo Base" width="118" align="right">
           <template slot="header">
-            <span class="col-tip" title="Costo unitario base del producto, antes de aplicar el margen.">Costo Base <i class="el-icon-info"></i></span>
+            <span class="col-tip" title="Costo unitario base del producto, antes de aplicar el margen. Se toma del proveedor seleccionado en la comparativa (solo lectura).">Costo Base <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
             <template v-if="!scope.row._isKit">
-            <el-input-number v-model="scope.row.costo_base" size="mini" :precision="2" :step="0.5"
-                             controls-position="right" :disabled="!isEditable" class="campo-precio"></el-input-number>
+            <!-- [NUEVO FLUJO 2026-10-21] Solo lectura: el costo base del item es
+                 el del proveedor SELECCIONADO en la comparativa (se edita allá). -->
+            <span class="campo-calculado">{{ selectedQuoteCost(scope.row) }}</span>
             <!-- Fase C — Badge "Escalón aplicado" cuando el costo viene de item_unit_types -->
             <div v-if="scope.row.tier_aplicado" class="tier-aplicado-badge">
               <el-tooltip
@@ -1559,7 +1611,9 @@
             <span class="col-tip" title="Valor unitario de venta (costo base + margen), sin IGV.">V. Unit. <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
-            <span v-if="!scope.row._isKit" class="campo-calculado">S/ {{ parseFloat(scope.row.valor_unitario).toFixed(2) }}</span>
+            <!-- [NUEVO FLUJO 2026-10-21] Con el costo base del proveedor
+                 SELECCIONADO (solo lectura, no se edita en la fila del item). -->
+            <span v-if="!scope.row._isKit" class="campo-calculado">{{ itemUnitValue(scope.row) }}</span>
             <span v-else class="campo-calculado">S/ {{ kitRowTotals(scope.row.kit).vunit.toFixed(2) }}</span>
           </template>
         </el-table-column>
@@ -1745,7 +1799,10 @@
       </div>
     </el-dialog>
 
-    <!-- Dialog: Buscar referencia en catálogo para una cotización de proveedor -->
+    <!-- [NUEVO FLUJO 2026-10-20] Dialog: Buscar referencia en catálogo.
+         YA NO SE USA: el botón "Buscar" fue eliminado de la comparativa porque
+         el flujo nuevo no mapea productos del catálogo en proveedores.
+         El código se conserva por si se necesita en el futuro. -->
     <el-dialog title="Buscar referencia en catálogo" :visible.sync="quoteRefDialogVisible" width="640px"
                append-to-body>
       <div v-if="quoteRefTarget">
@@ -1863,6 +1920,22 @@ export default {
       supplierQuotesLoading: {}, // itemId -> true (cargando)
       supplierOptionsMap: {},    // quoteId -> [opciones de proveedor]
       supplierSearching: false,
+      // [NUEVO FLUJO 2026-10-20] Lista global de proveedores, precargada al
+      // abrir la comparativa para que el dropdown muestre todos sin escribir.
+      allSuppliers: [],           // [{id, razon_social, ruc, nombre_comercial}]
+      suppliersPreloaded: false,  // ya se pidió la lista completa
+      // [FIX 2026-10-21] Texto que el usuario escribe en el combo: el filtro
+      // es LOCAL (con "remote" el backend exige 2+ caracteres y solo
+      // aparecian algunos proveedores).
+      supplierFilterQuery: '',
+      // [NUEVO FLUJO 2026-10-21] Buffer de cambios pendientes por ítem.
+      // itemId -> { quotes: [copia local], dirty: bool }
+      // Los cambios NO se envían al backend hasta "Guardar detalles".
+      supplierQuoteBuffers: {},
+      // [NUEVO FLUJO 2026-10-21] Copia de lo que había en BD por ítem
+      // (para detectar qué se borró). Antes vivía en el objeto del ítem
+      // (item._originalQuotes) y se perdía al re-renderizar la fila.
+      supplierQuoteOriginals: {},
       quoteRefDialogVisible: false,
       quoteRefTarget: null,      // { item, quote }
       quoteRefQuery: '',
@@ -2002,9 +2075,16 @@ export default {
         pq.items.forEach(function (it) {
           if (it && it.id && !self.supplierQuotesLoaded[it.id]) self.loadSupplierQuotes(it)
         })
+        // [NUEVO FLUJO] Precarga todos los proveedores para los dropdowns
+        this.preloadAllSuppliers()
         this.loadKits()
       }
     }
+  },
+  mounted() {
+    // [FIX 2026-10-21] Precarga la lista de proveedores aunque la prequote ya
+    // venga cargada (el watcher "prequote" no es immediate y no se disparaba).
+    this.preloadAllSuppliers()
   },
   methods: {
     // COM-02 R3 — Guarda el % de SCTR de la cotización y repinta con la prequote
@@ -2169,6 +2249,12 @@ export default {
       }
       if (v === 'service') {
         item.excluir_catalogo = true
+        // [FIX 2026-10-21] Si venía de COMISIÓN, el nombre fijo "COMISIÓN" ya no
+        // aplica: el Servicio sí tiene "Producto solicitado" editable (con
+        // placeholder "Servicio"); se renombra para que no quede mal etiquetado.
+        if (String(item.product_name || '').trim().toUpperCase() === 'COMISIÓN') {
+          item.product_name = 'Servicio'
+        }
         // Servicio: solo Costo Base, Cantidad y Margen editables. Todo lo demás en 0.
         item.cantidad_colores = 1
         item.cantidad_lados = 1
@@ -2222,7 +2308,9 @@ export default {
           cantidad_colores: item.cantidad_colores,
           cantidad_lados: item.cantidad_lados,
           observaciones: item.observaciones,
-          costo_base: item.costo_base,
+          // [NUEVO FLUJO 2026-10-21] costo_base NO se manda: ya no se edita en el
+          // item (es el del proveedor SELECCIONADO en la comparativa) y el motor
+          // lo resuelve desde quotation_items_supplier.
           margen_porcentaje: item.margen_porcentaje,
           // Componentes de costo (Fase A — motor de costeo ampliado)
           numero_muestras: item.numero_muestras,
@@ -2302,6 +2390,13 @@ export default {
           }
         }
         this.$message.success('Item actualizado')
+        // [NUEVO FLUJO 2026-10-20] Sincroniza los proveedores pendientes con el backend
+        // después de guardar el ítem. Solo hace algo si hay cambios en el buffer.
+        try {
+          await this.flushSupplierQuotes(item)
+        } catch (flushErr) {
+          console.error('flushSupplierQuotes error:', flushErr)
+        }
       } catch (e) {
         // Mostrar mensaje real del backend (status + mensaje) para facilitar el diagnóstico.
         var status = e.response && e.response.status ? e.response.status : ''
@@ -2557,7 +2652,7 @@ export default {
         var n = parseFloat(propio)
         if (!isNaN(n)) return n
       }
-      return parseFloat(item.costo_base) || 0
+      return this.selectedQuoteCostValue(item)
     },
 
     // Costo de muestra derivado = N° de muestras × precio de la muestra (preview
@@ -2576,7 +2671,7 @@ export default {
     onPrecioMuestraToggle(item) {
       if (item._precio_muestra_distinto) {
         if (item.precio_muestra === null || item.precio_muestra === undefined || item.precio_muestra === '') {
-          this.$set(item, 'precio_muestra', parseFloat(item.costo_base) || 0)
+          this.$set(item, 'precio_muestra', this.selectedQuoteCostValue(item))
         }
       } else {
         this.$set(item, 'precio_muestra', null)
@@ -2629,7 +2724,7 @@ export default {
       // SCTR, IGV ni adicionales (espejo del motor backend). El encabezado
       // (resumenCostoReal) suma este mismo objeto, así que cierra solo.
       if (String((item && item.tipo_linea) || '').toLowerCase() === 'comision') {
-        var cbc = Math.round((parseFloat(item.costo_base) || 0) * 100) / 100
+        var cbc = Math.round(this.selectedQuoteCostValue(item) * 100) / 100
         return {
           productoUnit: cbc, productoTotal: cbc, muestra: 0, movilidad: 0,
           impresion: 0, imprColores: 1, imprLados: 1, imprMillar: 1,
@@ -2645,7 +2740,7 @@ export default {
       // Servicio = costo fijo: costo base × cantidad × (1 + margen).
       // Todo lo demás en 0. Sin IGV, sin SCTR, sin muestra, sin impresión, sin empaque.
       if (String((item && item.tipo_linea) || '').toLowerCase() === 'service') {
-        var costoBase = parseFloat(item.costo_base) || 0
+        var costoBase = this.selectedQuoteCostValue(item)
         var markup    = parseFloat(item.margen_porcentaje) || 0
         var q         = parseInt(item.quantity) || 1
         if (q < 1) q = 1
@@ -2665,7 +2760,7 @@ export default {
       }
       var q = parseInt(item.quantity) || 1
       if (q < 1) q = 1
-      var costoBase = parseFloat(item.costo_base) || 0
+      var costoBase = this.selectedQuoteCostValue(item)
       var markup    = parseFloat(item.margen_porcentaje) || 0
       // Agosto 2026 (punto 4): N° muestras × precio de la muestra. Cae al costo
       // base cuando el ítem no tiene un precio propio (comportamiento histórico).
@@ -3324,7 +3419,30 @@ export default {
     },
     supplierQuotesOf(item) {
       if (!item || !item.id) return []
+      // [NUEVO FLUJO 2026-10-21] El BUFFER es la única fuente que se pinta.
+      // Antes se pintaba el mapa y, al no estar "dirty", la edición se perdía.
+      var buf = this.supplierQuoteBuffers[item.id]
+      if (buf) return buf.quotes
       return this.supplierQuotesMap[item.id] || []
+    },
+    // [NUEVO FLUJO] Inicializa o actualiza el buffer local con la copia de los quotes.
+    initSupplierQuoteBuffer(item) {
+      if (!item || !item.id) return
+      if (!this.supplierQuoteBuffers[item.id]) {
+        var src = (this.supplierQuotesMap[item.id] || []).map(function (q) { return Object.assign({}, q) })
+        // [NUEVO FLUJO 2026-10-21] Conserva la marca de la fila del ÍTEM.
+        this.markItemQuoteRow(src, item)
+        this.$set(this.supplierQuoteBuffers, item.id, {
+          quotes: src,
+          dirty: false,
+          loaded: false
+        })
+      }
+    },
+    // [NUEVO FLUJO] Marca el buffer del ítem como "sucio" (pendiente de guardar).
+    markSupplierQuoteDirty(item) {
+      this.initSupplierQuoteBuffer(item)
+      this.$set(this.supplierQuoteBuffers[item.id], 'dirty', true)
     },
     async loadSupplierQuotes(item, force) {
       var self = this
@@ -3334,8 +3452,27 @@ export default {
       try {
         var resp = await this.$http.get(this.quotesBaseUrl(item))
         if (resp.data && resp.data.ok) {
-          this.$set(this.supplierQuotesMap, item.id, resp.data.quotes || [])
+          var loaded = resp.data.quotes || []
+          // [NUEVO FLUJO 2026-10-21] Marca la fila del ÍTEM (la principal).
+          this.markItemQuoteRow(loaded, item)
+          this.$set(this.supplierQuotesMap, item.id, loaded)
           this.$set(this.supplierQuotesLoaded, item.id, true)
+          // [NUEVO FLUJO 2026-10-21] Copia de lo que hay en BD (para detectar borrados).
+          // Va en un mapa por ítem: antes vivía en item._originalQuotes y se perdía
+          // cuando la fila se re-renderizaba.
+          this.$set(this.supplierQuoteOriginals, item.id, JSON.parse(JSON.stringify(loaded)))
+          // [NUEVO FLUJO] Al cargar desde backend, inicializa/resetea el buffer si no estaba sucio
+          var buf = this.supplierQuoteBuffers[item.id]
+          if (!buf || !buf.dirty) {
+            // [NUEVO FLUJO 2026-10-21] Copia con la marca de la fila del ÍTEM.
+            var copy = loaded.map(function (q) { return Object.assign({}, q) })
+            this.markItemQuoteRow(copy, item)
+            this.$set(this.supplierQuoteBuffers, item.id, {
+              quotes: copy,
+              dirty: false,
+              loaded: true
+            })
+          }
         }
       } catch (e) {
         // Silencioso: la sección queda vacía hasta el próximo intento.
@@ -3345,108 +3482,393 @@ export default {
     },
     applyQuotesResponse(item, data) {
       if (data.quotes) {
+        // [NUEVO FLUJO 2026-10-21] Marca la fila del ÍTEM (la principal).
+        this.markItemQuoteRow(data.quotes, item)
         this.$set(this.supplierQuotesMap, item.id, data.quotes)
         this.$set(this.supplierQuotesLoaded, item.id, true)
+        // [NUEVO FLUJO 2026-10-21] Copia de lo que hay en BD (para detectar borrados).
+        this.$set(this.supplierQuoteOriginals, item.id, JSON.parse(JSON.stringify(data.quotes)))
+        // [NUEVO FLUJO] Tras una respuesta del backend, resincroniza el buffer
+        var copy2 = data.quotes.map(function (q) { return Object.assign({}, q) })
+        this.markItemQuoteRow(copy2, item)
+        this.$set(this.supplierQuoteBuffers, item.id, {
+          quotes: copy2,
+          dirty: false,
+          loaded: true
+        })
       }
       if (data.prequote) {
         this.prequote = this.parseNumericFields(data.prequote)
         this.$emit('precotizacion-added')
       }
     },
-    async addSupplierQuote(item) {
-      try {
-        var resp = await this.$http.post(this.quotesBaseUrl(item), {})
-        if (resp.data && resp.data.ok) {
-          this.applyQuotesResponse(item, resp.data)
-          this.$message.success('Cotización agregada. Elige el proveedor y márcalo ganador.')
-        } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo agregar la cotización.')
+    // [NUEVO FLUJO] Cambia proveedor en el dropdown: limpia costo/tiempo/observaciones.
+    // [NUEVO FLUJO 2026-10-21] Normaliza 0 -> null (el "Proveedor por definir" es
+    // la opción 0 del select) y deja el nombre del proveedor resuelto.
+    onQuoteSupplierChange(item, quote, supplierId) {
+      var sid = supplierId ? Number(supplierId) : null
+      this.saveSupplierQuote(item, quote, {
+        supplier_id: sid,
+        costo_base: 0,
+        tiempo_estimado_dias: '',
+        observaciones: ''
+      })
+    },
+    // [NUEVO FLUJO 2026-10-21] Valor unitario del ÍTEM: usa el costo base del
+    // proveedor SELECCIONADO (mismo criterio que el de la comparativa).
+    itemUnitValue(item) {
+      var costo = this.selectedQuoteCostValue(item)
+      var markup = 0
+      if (!this.isService(item) && !this.isComision(item)) {
+        markup = parseFloat(item && item.margen_porcentaje) || 0
+      }
+      return 'S/ ' + (costo * (1 + markup / 100)).toFixed(2)
+    },
+    // [NUEVO FLUJO 2026-10-21] Costo base (número) del proveedor SELECCIONADO.
+    selectedQuoteCostValue(item) {
+      var quotes = this.supplierQuotesOf(item) || []
+      for (var i = 0; i < quotes.length; i++) {
+        if (Number(quotes[i].seleccionado) === 1) return parseFloat(quotes[i].costo_base) || 0
+      }
+      return parseFloat(item && item.costo_base) || 0
+    },
+    // [NUEVO FLUJO 2026-10-21] Costo base del ÍTEM = el del proveedor
+    // SELECCIONADO en la comparativa (solo lectura en la fila del item).
+    selectedQuoteCost(item) {
+      var costo = this.selectedQuoteCostValue(item)
+      return 'S/ ' + costo.toFixed(2)
+    },
+    // [NUEVO FLUJO 2026-10-21] Valor unitario de un PROVEEDOR: mismo criterio
+    // que el del item (costo × (1 + margen%)), salvo servicio/comisión (sin margen).
+    quoteUnitValue(item, quote) {
+      var costo = parseFloat(quote && quote.costo_base) || 0
+      var markup = 0
+      if (!this.isService(item) && !this.isComision(item)) {
+        markup = parseFloat(item && item.margen_porcentaje) || 0
+      }
+      return 'S/ ' + (costo * (1 + markup / 100)).toFixed(2)
+    },
+    // [NUEVO FLUJO 2026-10-21] ¿Esta fila es la ELEGIDA (seleccionado = 1)?
+    // Es la que refleja el nombre del producto y la que define el Costo Base
+    // del ítem. Las demás son respaldos.
+    isItemQuoteRow(quote) {
+      if (!quote) return false
+      return Number(quote.seleccionado) === 1
+    },
+    // [NUEVO FLUJO 2026-10-21] Normaliza la comparativa tras cargar:
+    //  - deja exactamente UNA fila con seleccionado = 1 (si no hay, se toma la
+    //    más antigua);
+    //  - la fila elegida refleja el nombre ACTUAL del producto (si no, quedaba
+    //    con el nombre viejo de cuando se creó).
+    markItemQuoteRow(quotes, item) {
+      var list = quotes || []
+      if (!list.length) return list
+      var selected = null
+      for (var i = 0; i < list.length; i++) {
+        if (Number(list[i].seleccionado) === 1) { selected = list[i]; break }
+      }
+      if (!selected) {
+        selected = list[0]
+        for (var j = 1; j < list.length; j++) {
+          if (Number(list[j].id) < Number(selected.id)) selected = list[j]
         }
-      } catch (e) {
-        var msg = (e.response && e.response.data && e.response.data.message) || 'Error al agregar la cotización.'
-        this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+        this.$set(selected, 'seleccionado', 1)
+      }
+      var nombre = item && item.product_name ? String(item.product_name) : ''
+      if (nombre && selected.product_reference !== nombre) {
+        this.$set(selected, 'product_reference', nombre)
+      }
+      return list
+    },
+    // [NUEVO FLUJO 2026-10-21] Cambió el nombre del producto del ítem: la fila
+    // ELEGIDA debe reflejar SIEMPRE el nombre actual, no el viejo.
+    onItemNameChanged(item, newName) {
+      if (!item) return
+      item.product_name = newName
+      var buf = this.supplierQuoteBuffers[item.id]
+      if (!buf || !buf.quotes || !buf.quotes.length) return
+      for (var i = 0; i < buf.quotes.length; i++) {
+        if (this.isItemQuoteRow(buf.quotes[i])) {
+          if (buf.quotes[i].product_reference !== newName) {
+            this.$set(buf.quotes[i], 'product_reference', newName)
+          }
+          this.$set(buf, 'dirty', true)
+          break
+        }
       }
     },
-    async saveSupplierQuote(item, quote, patch) {
-      try {
-        var resp = await this.$http.put(this.quotesBaseUrl(item) + '/' + quote.id, patch)
-        if (resp.data && resp.data.ok) {
-          this.applyQuotesResponse(item, resp.data)
-        } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo guardar la cotización.')
-          this.loadSupplierQuotes(item, true)
+    // [NUEVO FLUJO] Guarda cambios LOCALMENTE en el buffer. NO llama al backend.
+    // El backend se llama recién en flushSupplierQuotes() al presionar "Guardar detalles".
+    // [NUEVO FLUJO 2026-10-21] Muta el objeto EN EL LUGAR (no crea uno nuevo):
+    // los inputs usan v-model sobre qscope.row, así que si se reemplazaba el
+    // objeto, la vista seguía mostrando el valor viejo (edición perdida).
+    saveSupplierQuote(item, quote, patch) {
+      this.initSupplierQuoteBuffer(item)
+      var buf = this.supplierQuoteBuffers[item.id]
+      var quotes = buf.quotes
+      var idx = quotes.findIndex(function (q) { return Number(q.id) === Number(quote.id) })
+      if (idx === -1) {
+        var nuevo = Object.assign({}, quote, patch)
+        quotes.push(nuevo)
+        this.$set(buf, 'quotes', quotes)
+      } else {
+        var target = quotes[idx]
+        Object.keys(patch).forEach(function (key) {
+          this.$set(target, key, patch[key])
+        }, this)
+        // [NUEVO FLUJO] Si cambia el proveedor, resuelve el nombre desde la opción
+        if (patch.hasOwnProperty('supplier_id')) {
+          if (patch.supplier_id) {
+            var opt = (this.allSuppliers || []).concat(this.supplierOptionsMap[quote.id] || []).find(function (s) {
+              return Number(s.id) === Number(patch.supplier_id)
+            })
+            this.$set(target, 'supplier_name', opt ? (opt.nombre_comercial || opt.razon_social) : target.supplier_name)
+          } else {
+            this.$set(target, 'supplier_name', 'Proveedor por definir')
+          }
         }
+      }
+      this.$set(buf, 'dirty', true)
+      // Actualiza también el mapa visible por si algo lo lee de ahí
+      this.$set(this.supplierQuotesMap, item.id, quotes)
+    },
+    // [NUEVO FLUJO] Agrega proveedor LOCALMENTE (temp id negativo para distinguir de BD).
+    addSupplierQuote(item) {
+      this.initSupplierQuoteBuffer(item)
+      var buf = this.supplierQuoteBuffers[item.id]
+      var quotes = buf.quotes
+      var tempId = -(Date.now())
+      // [NUEVO FLUJO 2026-10-21] Ya no hay columna `orden`. La fila nueva entra
+      // como RESPALDO (seleccionado = 0); el radio "Ganador" elige cuál manda.
+      quotes.push({
+        id: tempId,  // temp id negativo: existe solo en local
+        supplier_id: null,
+        supplier_name: 'Proveedor por definir',
+        origen: 'manual',
+        product_reference: '',
+        costo_base: 0,
+        tiempo_estimado_dias: '',
+        observaciones: '',
+        seleccionado: 0,
+        _isNew: true  // marca para que flush sepa que es nuevo
+      })
+      this.$set(buf, 'quotes', quotes)
+      this.$set(buf, 'dirty', true)
+      this.$set(this.supplierQuotesMap, item.id, quotes)
+      this.$message.success('Proveedor agregado. Selecciónalo y completa los datos. Se guardará al presionar "Guardar detalles".')
+    },
+    // [NUEVO FLUJO] Elimina proveedor LOCALMENTE con confirmación.
+    removeSupplierQuote(item, quote) {
+      var self = this
+      this.$confirm(
+        '¿Estás seguro de eliminar al proveedor "' + (quote.supplier_name || 'sin nombre') + '"?',
+        'Confirmar eliminación',
+        { confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar', type: 'warning' }
+      ).then(function () {
+        self.initSupplierQuoteBuffer(item)
+        var buf = self.supplierQuoteBuffers[item.id]
+        var quotes = buf.quotes.filter(function (q) { return Number(q.id) !== Number(quote.id) })
+        // Si se borró la elegida, promueve la primera
+        if (Number(quote.seleccionado) === 1 && quotes.length > 0
+            && !quotes.some(function (q) { return Number(q.seleccionado) === 1 })) {
+          self.$set(quotes[0], 'seleccionado', 1)
+        }
+        self.$set(buf, 'quotes', quotes)
+        self.$set(buf, 'dirty', true)
+        self.$set(self.supplierQuotesMap, item.id, quotes)
+        self.$message.success('Proveedor eliminado. Se aplicará al guardar.')
+      }).catch(function () {
+        // Cancelado: no hace nada
+      })
+    },
+    // [NUEVO FLUJO] Marca el proveedor ELEGIDO LOCALMENTE (los demás quedan
+    // como respaldo).
+    // [NUEVO FLUJO 2026-10-21] Muta en el lugar (no reemplaza objetos) para que
+    // los inputs con v-model no pierdan lo tipeado al cambiar de ganador.
+    setWinnerQuote(item, quote) {
+      this.initSupplierQuoteBuffer(item)
+      var buf = this.supplierQuoteBuffers[item.id]
+      var quotes = buf.quotes
+      for (var i = 0; i < quotes.length; i++) {
+        this.$set(quotes[i], 'seleccionado', Number(quotes[i].id) === Number(quote.id) ? 1 : 0)
+      }
+      this.$set(buf, 'quotes', quotes)
+      this.$set(buf, 'dirty', true)
+      this.$set(this.supplierQuotesMap, item.id, quotes)
+    },
+    // [NUEVO FLUJO] Sincroniza TODOS los cambios pendientes del buffer con el backend.
+    // Se llama desde saveItem() cuando el usuario presiona "Guardar detalles".
+    async flushSupplierQuotes(item) {
+      if (!item || !item.id) return
+      var buf = this.supplierQuoteBuffers[item.id]
+      if (!buf) return
+
+      // [NUEVO FLUJO 2026-10-21] La fila ELEGIDA (seleccionado = 1) ES la
+      // línea del producto: su referencia debe ser SIEMPRE el nombre actual (no
+      // uno viejo). Se hace ANTES de validar "dirty" para que el renombrado del
+      // ítem también se guarde.
+      for (var ri = 0; ri < buf.quotes.length; ri++) {
+        if (this.isItemQuoteRow(buf.quotes[ri]) && item.product_name) {
+          if (buf.quotes[ri].product_reference !== item.product_name) {
+            this.$set(buf.quotes[ri], 'product_reference', item.product_name)
+            this.$set(buf, 'dirty', true)
+          }
+          break
+        }
+      }
+      if (!buf.dirty) return  // no hay cambios pendientes
+
+      var quotes = buf.quotes
+      // [NUEVO FLUJO 2026-10-21] Los originales viven en un mapa por ítem
+      // (antes en item._originalQuotes, que se perdía al re-renderizar).
+      var originals = this.supplierQuoteOriginals[item.id] || []  // lo que había en BD al cargar
+      var idMap = {}  // [NUEVO FLUJO] tempId -> id real (quotes recién creados)
+
+      try {
+        // 1. Eliminar quotes que ya no están en el buffer (estaban en BD pero se borraron)
+        for (var i = 0; i < originals.length; i++) {
+          var orig = originals[i]
+          var stillExists = quotes.some(function (q) { return Number(q.id) === Number(orig.id) })
+          if (!stillExists) {
+            await this.$http.delete(this.quotesBaseUrl(item) + '/' + orig.id)
+          }
+        }
+        // 2. Crear o actualizar cada quote del buffer
+        for (var j = 0; j < quotes.length; j++) {
+          var q = quotes[j]
+          var payload = {
+            supplier_id: q.supplier_id || null,
+            // [NUEVO FLUJO 2026-10-21] La referencia es el nombre del producto
+            // del ítem: no se edita desde la fila del proveedor.
+            product_reference: item.product_name || q.product_reference || '',
+            costo_base: q.costo_base || 0,
+            tiempo_estimado_dias: q.tiempo_estimado_dias || '',
+            observaciones: q.observaciones || ''
+          }
+          if (q._isNew || q.id < 0) {
+            // [NUEVO FLUJO] Nuevo: crear en BD. El backend devuelve la lista
+            // real; el id nuevo es el que NO estaba antes (no el último,
+            // que puede ser otro si el orden no coincide).
+            var knownIds = quotes.filter(function (x) { return Number(x.id) > 0; })
+              .map(function (x) { return Number(x.id) })
+            var created = await this.$http.post(this.quotesBaseUrl(item), payload)
+            var serverQuotes = (created.data && created.data.quotes) || []
+            var realId = null
+            for (var si = 0; si < serverQuotes.length; si++) {
+              if (knownIds.indexOf(Number(serverQuotes[si].id)) === -1) {
+                realId = serverQuotes[si].id
+                break
+              }
+            }
+            if (realId === null && serverQuotes.length) {
+              realId = serverQuotes[serverQuotes.length - 1].id
+            }
+            if (realId !== null) {
+              idMap[q.id] = realId
+              this.$set(q, 'id', realId)
+              this.$delete(q, '_isNew')
+            }
+          } else {
+            // Existente: actualizar en BD
+            await this.$http.put(this.quotesBaseUrl(item) + '/' + q.id, payload)
+          }
+        }
+        // 3. Marcar el proveedor ELEGIDO (el que tenga seleccionado = 1, ya con id real)
+        var winner = quotes.find(function (q) { return Number(q.seleccionado) === 1 && q.id > 0 })
+        if (winner) {
+          await this.$http.post(this.quotesBaseUrl(item) + '/' + winner.id + '/winner', {})
+        }
+        // 4. Recargar desde backend para tener datos consistentes
+        await this.loadSupplierQuotes(item, true)
+        this.$delete(this.supplierQuoteBuffers, item.id)
       } catch (e) {
-        var msg = (e.response && e.response.data && (e.response.data.message || (e.response.data.errors ? 'Revisa los datos.' : null))) || 'Error al guardar la cotización.'
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error sincronizando proveedores.'
         this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+        // Recarga para mostrar estado real de BD
         this.loadSupplierQuotes(item, true)
       }
     },
-    async setWinnerQuote(item, quote) {
-      try {
-        var resp = await this.$http.post(this.quotesBaseUrl(item) + '/' + quote.id + '/winner', {})
-        if (resp.data && resp.data.ok) {
-          this.applyQuotesResponse(item, resp.data)
-          this.$message.success((resp.data && resp.data.message) || 'Proveedor ganador actualizado.')
-        } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo marcar ganadora.')
-        }
-      } catch (e) {
-        var msg = (e.response && e.response.data && e.response.data.message) || 'Error al marcar ganadora.'
-        this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
-      }
+    // [NUEVO FLUJO] Guardar cotización individual - ahora solo actualiza el buffer.
+    // Mantenido por compatibilidad con código existente.
+    // Ya NO llama al backend directamente.
+    async setWinnerQuoteAPI(item, quote) {
+      // Este método ya no se usa. setWinnerQuote() actualiza el buffer local.
+      return
     },
-    async removeSupplierQuote(item, quote) {
-      try {
-        var resp = await this.$http.delete(this.quotesBaseUrl(item) + '/' + quote.id)
-        if (resp.data && resp.data.ok) {
-          this.applyQuotesResponse(item, resp.data)
-        } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo quitar la cotización.')
-        }
-      } catch (e) {
-        var msg = (e.response && e.response.data && e.response.data.message) || 'Error al quitar la cotización.'
-        this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
-      }
-    },
-    async toCatalogQuote(item, quote) {
-      try {
-        var resp = await this.$http.post(this.quotesBaseUrl(item) + '/' + quote.id + '/to-catalog', {})
-        if (resp.data && resp.data.ok) {
-          this.applyQuotesResponse(item, resp.data)
-          this.$message.success((resp.data && resp.data.message) || 'Producto creado en catálogo.')
-        } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo agregar a catálogo.')
-        }
-      } catch (e) {
-        var msg = (e.response && e.response.data && e.response.data.message) || 'Error al agregar a catálogo.'
-        this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
-      }
+    toCatalogQuote(item, quote) {
+      // [NUEVO FLUJO 2026-10-20] ESTE MÉTODO YA NO SE USA.
+      // El botón "Agregar catálogo" fue eliminado de la UI porque el flujo
+      // nuevo no mapea productos del catálogo en proveedores.
+      this.$message.info('La función de catálogo no está disponible en este flujo.')
     },
     supplierOptionsFor(quote) {
-      var list = this.supplierOptionsMap[quote.id] || []
-      // La opción elegida siempre visible aunque no esté en la búsqueda actual.
+      // [FIX 2026-10-21] Usa la lista GLOBAL precargada (todos los proveedores)
+      // + los extras buscados. Antes, con el combo en modo "remote", el listado
+      // dependia de lo que devolvia el server en ese momento y se veian solo
+      // algunos proveedores.
+      var list = (this.allSuppliers || []).slice()
+      var extras = this.supplierOptionsMap[quote.id] || []
+      extras.forEach(function (s) {
+        if (!list.some(function (m) { return Number(m.id) === Number(s.id) })) list.push(s)
+      })
+      // [FIX 2026-10-21] Filtro local (nombre comercial, razón social o RUC).
+      var q = (this.supplierFilterQuery || '').toLowerCase()
+      if (q) {
+        list = list.filter(function (s) {
+          var texto = ((s.nombre_comercial || '') + ' ' + (s.razon_social || '') + ' ' + (s.ruc || '')).toLowerCase()
+          return texto.indexOf(q) !== -1
+        })
+      }
+      // La opcion elegida siempre visible aunque no este en la lista.
       var hasCurrent = quote.supplier_id && list.some(function (s) { return Number(s.id) === Number(quote.supplier_id) })
       if (quote.supplier_id && !hasCurrent) {
         list = [{ id: quote.supplier_id, razon_social: quote.supplier_name, nombre_comercial: null }].concat(list)
       }
       return list
     },
+    // [FIX 2026-10-21] Filtro LOCAL del combo de proveedores.
+    // Con "remote" el server filtraba y el backend exige 2+ caracteres, asi que
+    // con 1 letra no salia nada. Ahora el select filtra en el navegador.
+    // OJO: en Element 2.x el `filter-method` NO filra solo (su valor de retorno
+    // se ignora): hay que mutar la lista propia. Por eso guardamos el texto en
+    // `supplierFilterQuery` y `supplierOptionsFor` lo aplica.
+    filterSuppliers(query) {
+      this.supplierFilterQuery = (query || '').trim()
+    },
+    // [NUEVO FLUJO] Precarga la lista COMPLETA de proveedores (una sola vez).
+    // Se llama al abrir la comparativa para que el dropdown tenga todo disponible.
+    async preloadAllSuppliers() {
+      if (this.suppliersPreloaded) return
+      this.suppliersPreloaded = true
+      try {
+        var resp = await this.$http.get('/comercial/proyectos/search-proveedores', { params: { q: '' } })
+        this.allSuppliers = (resp.data && resp.data.data) || []
+      } catch (e) {
+        this.suppliersPreloaded = false  // permite reintentar en el proximo render
+      }
+    },
+    // [NUEVO FLUJO] Busqueda remota de proveedores (usada por otros selects del
+    // modulo; el combo de la comparativa filtra en local con filterSuppliers).
     async searchSuppliers(query) {
       var self = this
-      if (!query || query.length < 2) return
+      var q = (query || '').trim()
+      // [NUEVO FLUJO] Sin texto: asegura la precarga completa (dropdown abierto).
+      if (!q) {
+        this.preloadAllSuppliers()
+        return
+      }
       this.supplierSearching = true
       try {
-        var resp = await this.$http.get('/comercial/proyectos/search-proveedores', { params: { q: query } })
+        var resp = await this.$http.get('/comercial/proyectos/search-proveedores', { params: { q: q } })
         var rows = (resp.data && resp.data.data) || []
         // Guardar resultados para las filas abiertas (simple: todas).
         Object.keys(this.supplierQuotesMap).forEach(function (itemId) {
-          (self.supplierQuotesMap[itemId] || []).forEach(function (q) {
-            var merged = (self.supplierOptionsMap[q.id] || []).slice()
+          (self.supplierQuotesMap[itemId] || []).forEach(function (q2) {
+            var merged = (self.supplierOptionsMap[q2.id] || []).slice()
             rows.forEach(function (r) {
               if (!merged.some(function (m) { return Number(m.id) === Number(r.id) })) merged.push(r)
             })
-            self.$set(self.supplierOptionsMap, q.id, merged)
+            self.$set(self.supplierOptionsMap, q2.id, merged)
           })
         })
       } catch (e) {
@@ -3671,7 +4093,7 @@ export default {
       var margenS = 0
       members.forEach(function (it) {
         var q = parseFloat(it.quantity) || 0
-        var cb = parseFloat(it.costo_base) || 0
+        var cb = this.selectedQuoteCostValue(it)
         var mp = parseFloat(it.margen_porcentaje) || 0
         costo += q * cb
         margenS += q * cb * (mp / 100)
@@ -4524,6 +4946,13 @@ export default {
 }
 .supplier-quotes__title { font-size: 13px; color: #606266; font-weight: 800; margin-bottom: 2px; }
 .supplier-quotes__hint { font-size: 11px; color: #909399; margin-bottom: 8px; }
+/* [NUEVO FLUJO 2026-10-21] Radio de "Ganador": se usa el-radio de Element
+   (el <input type="radio"> nativo lo oculta el CSS global del tema). */
+.supplier-quotes-section .el-radio { margin-right: 0; }
+.supplier-quotes__radio-label { display: inline-block; }
+.supplier-quotes__respaldo {
+  font-size: 10px; color: #a8abb2; margin-top: 2px; line-height: 1;
+}
 /* Kits/paquetes (mockup db) */
 .kit-bar { padding: 4px 2px; }
 .kit-bar__row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }

@@ -255,10 +255,14 @@ class QuotationPreQuoteController extends Controller
         $item = $prequote->items()->where('id', $itemId)->firstOrFail();
 
         // Campos editables
+        // [NUEVO FLUJO 2026-10-21] supplier_id, supplier_name y costo_base ya NO
+        // se editan desde el ítem: viven en la tabla `quotation_items_supplier`
+        // (fila con seleccionado = 1) y el motor de cálculo los resuelve desde
+        // ahí (QuotationCalculationEngine::resolveCostoBase).
         $editableFields = [
             'product_name', 'product_description', 'quantity', 'material', 'medida',
             'tecnica_impresion', 'cantidad_colores', 'cantidad_lados', 'empaque',
-            'personalizacion', 'supplier_id', 'supplier_name', 'costo_base',
+            'personalizacion',
             // Tipo de línea (combo sin nombre en la tabla del Tab).
             'tipo_linea',
             'costos_adicionales', 'margen_porcentaje', 'tiempo_estimado_dias', 'observaciones',
@@ -366,27 +370,25 @@ class QuotationPreQuoteController extends Controller
         $previousInferred = is_array($item->datos_inferidos) ? $item->datos_inferidos : [];
 
         // Fase C — Precios por volumen: si cambió la cantidad y el ítem está
-        // matcheado al catálogo, recalcular costo_base con el escalón aplicable.
+        // matcheado al catálogo, recalcular el costo con el escalón aplicable.
         //
-        // El frontend SIEMPRE envía costo_base en el payload (es un input
-        // controlado), así que no nos sirve `array_key_exists` para detectar
-        // edición manual: comparamos contra el valor previo del ítem. Solo
-        // consideramos "edición manual" cuando el costo_base del request difiere
-        // del actual del item (con tolerancia de 0.001 por imprecisión decimal).
+        // [NUEVO FLUJO 2026-10-21] El costo base ya no es una columna del ítem:
+        // vive en la tabla `quotation_items_supplier` (fila con seleccionado = 1).
+        // Se considera "edición manual" cuando el costo actual de esa fila
+        // difiere del costo del escalón.
         $quantityChanged = array_key_exists('quantity', $updates)
             && (int) $updates['quantity'] !== (int) $item->quantity;
-        $manualCostoBase = false;
-        if (array_key_exists('costo_base', $updates)) {
-            $reqCosto = (float) $updates['costo_base'];
-            $curCosto = (float) $item->costo_base;
-            $manualCostoBase = abs($reqCosto - $curCosto) > 0.001;
-        }
+        $selectedQuote = $item->itemSuppliers()->where('seleccionado', 1)->orderBy('id')->first();
+        $currentCosto = $selectedQuote
+            ? (float) $selectedQuote->costo_base
+            : (float) $item->costo_base;
 
-        if ($quantityChanged && !$manualCostoBase && $item->item_id) {
+        if ($quantityChanged && $selectedQuote && $item->item_id) {
             $newQty = (int) $updates['quantity'];
             $volumeMatch = $this->volumePricing->getCostForVolume($item->item_id, $newQty);
-            if ($volumeMatch !== null) {
-                $updates['costo_base'] = $volumeMatch['cost'];
+            if ($volumeMatch !== null && abs((float) $volumeMatch['cost'] - $currentCosto) > 0.001) {
+                $selectedQuote->costo_base = $volumeMatch['cost'];
+                $selectedQuote->save();
                 \Illuminate\Support\Facades\Log::info(
                     'QuotationPreQuoteController: costo_base recalculado por cambio de cantidad',
                     [
@@ -402,23 +404,27 @@ class QuotationPreQuoteController extends Controller
         }
 
         // COM-02 — "Cód. Artíc.": el override manual lleva las iniciales del
-        // proveedor, así que queda atado al proveedor con el que se cotizó. Si
-        // la ejecutiva CAMBIA de proveedor, el código deja de ser válido y se
-        // limpia (el ítem vuelve a heredar el del catálogo).
-        // Al asignar el PRIMER proveedor NO se limpia: lo habitual es completar
-        // el preview (y escribir el código) antes de elegir proveedor, y
-        // borrarlo ahí sería perder trabajo en silencio.
-        // Es una de las 2 únicas escrituras de supplier_id sobre un ítem; la
-        // otra está en applySupplier().
-        if (array_key_exists('supplier_id', $updates)
-            && $item->supplier_id !== null
-            && (int) $updates['supplier_id'] !== (int) $item->supplier_id
-            && $this->tieneColumnaCodigoArticulo()) {
-            $updates['codigo_articulo_manual'] = null;
-        }
+        // proveedor, así que queda atado al proveedor con el que se cotizó.
+        // [NUEVO FLUJO 2026-10-21] El proveedor ya no se edita desde el ítem: se
+        // elige en la comparativa (endpoint /winner), y es ahí donde se limpia
+        // el código manual si el proveedor cambió.
 
         $item->update($updates);
         $item->update(['is_inferred' => false]);
+
+        // [NUEVO FLUJO 2026-10-21] La cotización ELEGIDA del ítem refleja el
+        // nombre del producto. Si el nombre cambió, esa referencia se actualiza
+        // para que no quede un nombre viejo.
+        if (array_key_exists('product_name', $updates)) {
+            $newName = trim((string) $updates['product_name']);
+            if ($newName !== '') {
+                $itemRow = $item->itemSuppliers()->where('seleccionado', 1)->orderBy('id')->first();
+                if ($itemRow && $itemRow->product_reference !== $newName) {
+                    $itemRow->product_reference = $newName;
+                    $itemRow->save();
+                }
+            }
+        }
 
         // Mantener sincronizado datos_inferidos con la edición humana:
         // Si la ejecutiva editó un campo que estaba marcado como "inferido por IA",
@@ -897,7 +903,7 @@ class QuotationPreQuoteController extends Controller
      *
      * POST /api/marketing/quotation/prequotes/{id}/reinterpret-with-image
      */
-    public function reinterpretWithImage($id)
+    public function reinterpretWithImage(Request $request, $id)
     {
         $prequote = PreQuote::findOrFail($id);
 
@@ -948,7 +954,9 @@ class QuotationPreQuoteController extends Controller
             // categoría-aware + matching de productos)
             $items = isset($interpretation['items']) ? $interpretation['items'] : [];
             foreach ($items as $itemData) {
-                $this->orchestrator->createPreQuoteItem($prequote, $itemData);
+                $newItem = $this->orchestrator->createPreQuoteItem($prequote, $itemData);
+                // [NUEVO FLUJO 2026-10-21] La comparativa nace con el ítem.
+                $this->crearQuoteInicialItem($prequote, $newItem, $request);
             }
 
             // Recalcular totales
@@ -1110,6 +1118,9 @@ class QuotationPreQuoteController extends Controller
                 if ($imagePath) {
                     $item->update(['product_reference_image' => $imagePath]);
                 }
+                // [NUEVO FLUJO 2026-10-21] La comparativa nace con el ítem (con el
+                // usuario de apoyo del requerimiento en user_id).
+                $this->crearQuoteInicialItem($prequote, $item, $request);
 
                 $this->calcEngine->recalculate($prequote);
 
@@ -1193,6 +1204,9 @@ class QuotationPreQuoteController extends Controller
                 $item = $this->orchestrator->createPreQuoteItem($prequote, $itemData);
                 // No es inferido: que no cuente como "ítem con IA" ni pida revisión de IA.
                 $item->update(['is_inferred' => false]);
+                // [NUEVO FLUJO 2026-10-21] La comparativa nace con el ítem (con el
+                // usuario de apoyo del requerimiento en user_id).
+                $this->crearQuoteInicialItem($prequote, $item, $request);
 
                 $this->calcEngine->recalculate($prequote);
 
@@ -1886,25 +1900,44 @@ class QuotationPreQuoteController extends Controller
             ], 422);
         }
 
-        $updates = [
-            'supplier_id'          => (int) $request->input('supplier_id'),
-            'supplier_name'        => $request->input('supplier_name'),
-            'costo_base'           => (float) $request->input('costo_unitario_estimado'),
-            'tiempo_estimado_dias' => $request->input('tiempo_estimado_dias'),
-            'is_inferred'          => false,
-        ];
+        // [NUEVO FLUJO 2026-10-21] El proveedor del ítem vive en la tabla
+        // `quotation_items_supplier`: se crea/actualiza la fila ELEGIDA
+        // (seleccionado = 1) y ya NO se escriben supplier_id/supplier_name/
+        // costo_base/tiempo_estimado_dias en el ítem.
+        $selectedQuote = $item->itemSuppliers()->where('seleccionado', 1)->orderBy('id')->first();
+        if (!$selectedQuote) {
+            $selectedQuote = $item->itemSuppliers()->orderBy('id')->first();
+        }
+        $supplierId   = (int) $request->input('supplier_id');
+        $supplierName = $request->input('supplier_name');
+        $costoBase    = (float) $request->input('costo_unitario_estimado');
+        $tiempo       = $request->input('tiempo_estimado_dias');
+
+        if ($selectedQuote) {
+            $selectedQuote->supplier_id          = $supplierId ?: null;
+            $selectedQuote->supplier_name        = $supplierName;
+            $selectedQuote->costo_base           = $costoBase;
+            $selectedQuote->tiempo_estimado_dias = $tiempo;
+            $selectedQuote->seleccionado         = 1;
+            // [NUEVO FLUJO 2026-10-21] Las cotizaciones se atribuyen al
+            // usuario de apoyo del requerimiento.
+            $selectedQuote->user_id = $this->resolveUsuarioApoyo($prequote, $request);
+            $selectedQuote->save();
+            $item->itemSuppliers()->where('id', '!=', $selectedQuote->id)
+                ->update(['seleccionado' => 0]);
+        }
 
         // COM-02 — mismo criterio que updateItem(): al CAMBIAR de proveedor, el
         // "Cód. Artíc." manual (que lleva sus iniciales) deja de ser válido y el
         // ítem vuelve a heredar el del catálogo. Al asignar el PRIMER proveedor
         // se conserva lo que la ejecutiva ya había escrito.
-        if ($item->supplier_id !== null
-            && $updates['supplier_id'] !== (int) $item->supplier_id
+        $currentSupplierId = $selectedQuote ? (int) $selectedQuote->supplier_id : null;
+        if ($currentSupplierId !== null
+            && $supplierId !== $currentSupplierId
             && $this->tieneColumnaCodigoArticulo()) {
-            $updates['codigo_articulo_manual'] = null;
+            $item->update(['codigo_articulo_manual' => null]);
         }
-
-        $item->update($updates);
+        $item->update(['is_inferred' => false]);
 
         // Recalcular toda la precotización
         $prequote = $this->calcEngine->recalculate($prequote);
@@ -1917,8 +1950,8 @@ class QuotationPreQuoteController extends Controller
             [
                 'item_id'     => $itemId,
                 'action'      => 'supplier_applied_from_ai',
-                'supplier_id' => $updates['supplier_id'],
-                'costo_base'  => $updates['costo_base'],
+                'supplier_id' => $supplierId,
+                'costo_base'  => $costoBase,
             ],
             $request->user() ? $request->user()->id : null
         );
@@ -1953,55 +1986,139 @@ class QuotationPreQuoteController extends Controller
     /**
      * Nombre visible del proveedor (persons) o "Proveedor por definir".
      */
+    /**
+     * Resolver el nombre de un proveedor desde persons (type='suppliers').
+     *
+     * [NUEVO FLUJO] Usa la constante del modelo nuevo QuotationItemSupplier.
+     * Si el ID no existe o es 0, devuelve "Proveedor por definir".
+     *
+     * @param  int  $supplierId  persons.id o 0/null
+     * @return array  [supplier_id|null, supplier_name]
+     */
     private function resolveSupplierName($supplierId)
     {
         $supplierId = (int) $supplierId;
         if ($supplierId <= 0) {
-            return [null, \Modules\Marketing\Models\PreQuoteItemSupplier::DEFAULT_SUPPLIER_NAME];
+            return [null, \Modules\Marketing\Models\QuotationItemSupplier::DEFAULT_SUPPLIER_NAME];
         }
         $person = \App\Models\Tenant\Person::where('type', 'suppliers')->find($supplierId);
         if (!$person) {
-            return [null, \Modules\Marketing\Models\PreQuoteItemSupplier::DEFAULT_SUPPLIER_NAME];
+            return [null, \Modules\Marketing\Models\QuotationItemSupplier::DEFAULT_SUPPLIER_NAME];
         }
         $name = trim((string) ($person->trade_name ?: $person->name));
-        return [$supplierId, $name !== '' ? $name : \Modules\Marketing\Models\PreQuoteItemSupplier::DEFAULT_SUPPLIER_NAME];
+        return [$supplierId, $name !== '' ? $name : \Modules\Marketing\Models\QuotationItemSupplier::DEFAULT_SUPPLIER_NAME];
     }
 
     /**
-     * Sincronizar el ganador con el ítem (supplier + costo base) y recalcular.
+     * Sincronizar el ganador con el ítem y recalcular.
+     *
+     * [NUEVO FLUJO 2026-10-21] La fuente de verdad del proveedor, del costo base
+     * y del tiempo estimado es la tabla `quotation_items_supplier` (fila con
+     * `seleccionado = 1`). Acá NO se escriben esas columnas del ítem: el motor
+     * de cálculo resuelve el costo desde la comparativa
+     * (QuotationCalculationEngine::resolveCostoBase) y el resto de la app
+     * consulta el proveedor seleccionado por la misma relación.
      */
     private function syncWinningQuoteToItem($prequote, $item, $quote)
     {
-        $item->supplier_id   = $quote->supplier_id;
-        $item->supplier_name = $quote->supplier_name;
-        $item->costo_base    = $quote->costo_base;
-        $item->is_inferred   = false;
+        $item->is_inferred = false;
         $item->save();
 
         return $this->calcEngine->recalculate($prequote);
     }
 
     /**
-     * GET — Comparativa del ítem. Si no hay cotizaciones, siembra la
-     * primera ("Proveedor por definir", mockup) y la deja ganadora.
+     * Crear la fila inicial de la comparativa de proveedores de un ítem.
+     *
+     * [NUEVO FLUJO 2026-10-21] Se llama al crear el ítem (manual o con IA),
+     * para que la comparativa exista desde el inicio con el usuario de apoyo
+     * del requerimiento en `user_id` (antes quedaba NULL porque la fila solo
+     * se sembraba al abrir la comparativa).
+     *
+     * @param  PreQuote  $prequote
+     * @param  PreQuoteItem  $item
+     * @param  \Illuminate\Http\Request|null  $request
+     * @return QuotationItemSupplier
      */
-    public function supplierQuotes($id, $itemId)
+    private function crearQuoteInicialItem(PreQuote $prequote, \Modules\Marketing\Models\PreQuoteItem $item, $request = null)
+    {
+        return $item->itemSuppliers()->create([
+            'supplier_id'          => $item->supplier_id,
+            'supplier_name'        => $item->supplier_name ?: \Modules\Marketing\Models\QuotationItemSupplier::DEFAULT_SUPPLIER_NAME,
+            'origen'               => \Modules\Marketing\Models\QuotationItemSupplier::ORIGEN_MANUAL,
+            'product_reference'    => $item->product_name,
+            'costo_base'           => (float) ($item->costo_base ?: 0),
+            'tiempo_estimado_dias' => 'Por confirmar',
+            'seleccionado'         => 1,
+            'user_id'              => $this->resolveUsuarioApoyo($prequote, $request),
+        ]);
+    }
+
+    /**
+     * Usuario de apoyo (cotización) del requerimiento de la pre-cotización.
+     *
+     * [NUEVO FLUJO 2026-10-21] Las filas de la comparativa de proveedores se
+     * atribuyen a la persona asignada como apoyo de la cotización en ese
+     * requerimiento (`requerimiento.usuario_apoyo_cotizacion`). Si la
+     * pre-cotización no tiene requerimiento (cotizador independiente), se usa
+     * el usuario de la sesión.
+     *
+     * @param  PreQuote  $prequote
+     * @param  \Illuminate\Http\Request|null  $request
+     * @return int|null
+     */
+    private function resolveUsuarioApoyo(PreQuote $prequote, $request = null)
+    {
+        try {
+            $requerimiento = $prequote->requerimiento;
+            if ($requerimiento && (int) $requerimiento->usuario_apoyo_cotizacion > 0) {
+                return (int) $requerimiento->usuario_apoyo_cotizacion;
+            }
+        } catch (\Exception $e) {
+            // Sin requerimiento (pre-cotización independiente): se usa la sesión.
+        }
+
+        return ($request && $request->user()) ? (int) $request->user()->id : null;
+    }
+
+    /**
+     * GET — Comparativa del ítem. Si no hay cotizaciones, siembra la
+     * primera ("Proveedor por definir") y la deja elegida.
+     *
+     * [NUEVO FLUJO 2026-10-20] Ahora lee/escribe en la tabla nueva
+     * `quotation_items_supplier` via QuotationItemSupplier.
+     * Origen siempre 'manual' (sin match con catálogo de productos).
+     */
+    public function supplierQuotes(Request $request, $id, $itemId)
     {
         try {
             list($prequote, $item) = $this->resolvePreQuoteItem($id, $itemId);
 
-            $quotes = $item->supplierQuotes()->get();
+            // [NUEVO FLUJO] Usa itemSuppliers() (tabla nueva) en vez de supplierQuotes() (tabla vieja)
+            // [NUEVO FLUJO 2026-10-21] Sin columna `orden`: el orden es por id.
+            $quotes = $item->itemSuppliers()->orderBy('id')->get();
             if ($quotes->isEmpty()) {
-                $quotes = collect([$item->supplierQuotes()->create([
-                    'supplier_id'       => $item->supplier_id,
-                    'supplier_name'     => $item->supplier_name ?: \Modules\Marketing\Models\PreQuoteItemSupplier::DEFAULT_SUPPLIER_NAME,
-                    'source'            => \Modules\Marketing\Models\PreQuoteItemSupplier::SOURCE_MANUAL,
-                    'product_reference' => $item->product_name,
-                    'costo_base'        => (float) ($item->costo_base ?: 0),
-                    'tiempo_entrega'    => 'Por confirmar',
-                    'es_ganador'        => true,
-                    'orden'             => 1,
-                ])]);
+                $quotes = collect([$this->crearQuoteInicialItem($prequote, $item, $request)]);
+            }
+
+            // [NUEVO FLUJO 2026-10-21] Debe haber exactamente una fila con
+            // seleccionado = 1 (el proveedor elegido). Si no hay ninguna, se
+            // elige la más antigua. Además su referencia sigue el nombre actual
+            // del producto: si el ítem se renombró, quedaba con el nombre viejo.
+            $selected = $quotes->firstWhere('seleccionado', 1);
+            if (!$selected) {
+                $selected = $quotes->sortBy('id')->first();
+            }
+            if ($selected) {
+                if ($item->product_name && $selected->product_reference !== $item->product_name) {
+                    $selected->product_reference = $item->product_name;
+                    $selected->save();
+                }
+                if ((int) $selected->seleccionado !== 1) {
+                    $item->itemSuppliers()->update(['seleccionado' => 0]);
+                    $selected->seleccionado = 1;
+                    $selected->save();
+                }
             }
 
             return response()->json(['ok' => true, 'quotes' => $quotes->values()]);
@@ -2014,7 +2131,11 @@ class QuotationPreQuoteController extends Controller
     }
 
     /**
-     * POST — Agregar cotización ("+ proveedor", mockup).
+     * POST — Agregar cotización ("+ proveedor").
+     *
+     * [NUEVO FLUJO 2026-10-20] Crea en tabla nueva `quotation_items_supplier`.
+     * Origen siempre 'manual'. No hay búsqueda en catálogo de productos.
+     * La referencia es texto libre.
      */
     public function storeSupplierQuote(Request $request, $id, $itemId)
     {
@@ -2029,38 +2150,46 @@ class QuotationPreQuoteController extends Controller
             }
 
             $v = Validator::make($request->all(), [
-                'supplier_id'       => ['nullable', 'integer'],
-                'costo_base'        => ['nullable', 'numeric', 'min:0'],
-                'product_reference' => ['nullable', 'string', 'max:255'],
-                'tiempo_entrega'    => ['nullable', 'string', 'max:150'],
-                'observacion'       => ['nullable', 'string'],
+                'supplier_id'          => ['nullable', 'integer'],
+                'costo_base'           => ['nullable', 'numeric', 'min:0'],
+                'product_reference'    => ['nullable', 'string', 'max:255'],
+                'tiempo_estimado_dias' => ['nullable', 'string', 'max:150'],
+                'observaciones'        => ['nullable', 'string'],
             ]);
             if ($v->fails()) {
                 return response()->json(['ok' => false, 'errors' => $v->errors()], 422);
             }
 
             list($supplierId, $supplierName) = $this->resolveSupplierName($request->input('supplier_id'));
-            $isFirst = !$item->supplierQuotes()->exists();
+            // [NUEVO FLUJO] Verifica si es la primera cotización de este ítem en la tabla nueva
+            $isFirst = !$item->itemSuppliers()->exists();
 
             $quote = null;
             \Illuminate\Support\Facades\DB::connection('tenant')->transaction(function () use (
                 &$quote, $prequote, $item, $request, $supplierId, $supplierName, $isFirst
             ) {
-                $maxOrden = (int) $item->supplierQuotes()->max('orden');
-                $quote = $item->supplierQuotes()->create([
-                    'supplier_id'       => $supplierId,
-                    'supplier_name'     => $supplierName,
-                    'source'            => \Modules\Marketing\Models\PreQuoteItemSupplier::SOURCE_MANUAL,
-                    'product_reference' => $request->input('product_reference', $item->product_name),
-                    'costo_base'        => (float) $request->input('costo_base', 0),
-                    'tiempo_entrega'    => $request->input('tiempo_entrega', 'Por confirmar'),
-                    'observacion'       => $request->input('observacion'),
-                    'es_ganador'        => $isFirst,
-                    'orden'             => $maxOrden + 1,
-                    'user_id'           => $request->user() ? $request->user()->id : null,
+                // [NUEVO FLUJO 2026-10-21] Ya no hay columna `orden`. La única
+                // cotización marcada es la elegida (seleccionado = 1); el resto
+                // son respaldos (0).
+                $quote = $item->itemSuppliers()->create([
+                    'supplier_id'          => $supplierId,
+                    'supplier_name'        => $supplierName,
+                    'origen'               => \Modules\Marketing\Models\QuotationItemSupplier::ORIGEN_MANUAL,
+                    'product_reference'    => $request->input('product_reference', $item->product_name),
+                    'costo_base'           => (float) $request->input('costo_base', 0),
+                    'tiempo_estimado_dias' => $request->input('tiempo_estimado_dias', 'Por confirmar'),
+                    'observaciones'        => $request->input('observaciones'),
+                    'seleccionado'         => 0,
+                    // [NUEVO FLUJO 2026-10-21] Las cotizaciones de la comparativa
+                    // se atribuyen al usuario de apoyo del requerimiento.
+                    'user_id'              => $this->resolveUsuarioApoyo($prequote, $request),
                 ]);
 
+                // [NUEVO FLUJO] Si es la primera, se marca elegida y sincroniza al ítem
                 if ($isFirst) {
+                    $item->itemSuppliers()->update(['seleccionado' => 0]);
+                    $quote->seleccionado = 1;
+                    $quote->save();
                     $this->syncWinningQuoteToItem($prequote, $item, $quote);
                 }
 
@@ -2080,7 +2209,7 @@ class QuotationPreQuoteController extends Controller
 
             return response()->json([
                 'ok'       => true,
-                'quotes'   => $item->supplierQuotes()->get()->values(),
+                'quotes'   => $item->itemSuppliers()->get()->values(),
                 'prequote' => $this->enrichItemsWithMinMargin($prequote->fresh()->load('items')),
             ]);
         } catch (\Exception $e) {
@@ -2093,7 +2222,10 @@ class QuotationPreQuoteController extends Controller
 
     /**
      * PUT — Editar cotización. Si cambia el costo del ganador, se
-     * sincroniza el ítem y se recalcula (mockup: el ganador manda).
+     * sincroniza el ítem y se recalcula.
+     *
+     * [NUEVO FLUJO 2026-10-20] Editable en tabla nueva. La referencia es
+     * texto libre (sin catálogo). Origen siempre 'manual'.
      */
     public function updateSupplierQuote(Request $request, $id, $itemId, $quoteId)
     {
@@ -2107,15 +2239,15 @@ class QuotationPreQuoteController extends Controller
                 ], 422);
             }
 
-            $quote = $item->supplierQuotes()->where('id', $quoteId)->firstOrFail();
+            // [NUEVO FLUJO] Busca en tabla nueva
+            $quote = $item->itemSuppliers()->where('id', $quoteId)->firstOrFail();
 
             $v = Validator::make($request->all(), [
                 'supplier_id'       => ['nullable', 'integer'],
-                'costo_base'        => ['nullable', 'numeric', 'min:0'],
-                'product_reference' => ['nullable', 'string', 'max:255'],
-                'tiempo_entrega'    => ['nullable', 'string', 'max:150'],
-                'observacion'       => ['nullable', 'string'],
-                'source'            => ['nullable', 'string', 'in:manual,catalog'],
+                'costo_base'           => ['nullable', 'numeric', 'min:0'],
+                'product_reference'    => ['nullable', 'string', 'max:255'],
+                'tiempo_estimado_dias' => ['nullable', 'string', 'max:150'],
+                'observaciones'        => ['nullable', 'string'],
             ]);
             if ($v->fails()) {
                 return response()->json(['ok' => false, 'errors' => $v->errors()], 422);
@@ -2124,12 +2256,14 @@ class QuotationPreQuoteController extends Controller
             \Illuminate\Support\Facades\DB::connection('tenant')->transaction(function () use (
                 $prequote, $item, $quote, $request
             ) {
+                // [NUEVO FLUJO] Si cambia el proveedor, se actualiza nombre resuelto desde persons
                 if ($request->has('supplier_id')) {
                     list($supplierId, $supplierName) = $this->resolveSupplierName($request->input('supplier_id'));
                     $quote->supplier_id   = $supplierId;
                     $quote->supplier_name = $supplierName;
                 }
-                foreach (['product_reference', 'tiempo_entrega', 'observacion', 'source'] as $field) {
+                // [NUEVO FLUJO] Campos editables: referencia (texto libre), tiempo, observaciones
+                foreach (['product_reference', 'tiempo_estimado_dias', 'observaciones'] as $field) {
                     if ($request->has($field)) {
                         $quote->$field = $request->input($field);
                     }
@@ -2139,14 +2273,15 @@ class QuotationPreQuoteController extends Controller
                 }
                 $quote->save();
 
-                if ($quote->es_ganador) {
+                // [NUEVO FLUJO] Si edita la cotización ELEGIDA, sincroniza al ítem + recalcula
+                if ((int) $quote->seleccionado === 1) {
                     $this->syncWinningQuoteToItem($prequote, $item, $quote);
                 }
             });
 
             return response()->json([
                 'ok'       => true,
-                'quotes'   => $item->supplierQuotes()->get()->values(),
+                'quotes'   => $item->itemSuppliers()->get()->values(),
                 'prequote' => $this->enrichItemsWithMinMargin($prequote->fresh()->load('items')),
             ]);
         } catch (\Exception $e) {
@@ -2158,9 +2293,11 @@ class QuotationPreQuoteController extends Controller
     }
 
     /**
-     * DELETE — Quitar cotización. No se puede quitar la última (mockup
-     * deshabilita "Quitar" con 1 sola). Si era ganadora, se promueve la
-     * primera por orden y se sincroniza el ítem.
+     * DELETE — Quitar cotización. No se puede quitar la última. Si era
+     * ganadora, se promueve la primera por orden y se sincroniza el ítem.
+     *
+     * [NUEVO FLUJO 2026-10-20] Borra de la tabla nueva. El front muestra
+     * confirmación antes de eliminar.
      */
     public function destroySupplierQuote(Request $request, $id, $itemId, $quoteId)
     {
@@ -2174,9 +2311,11 @@ class QuotationPreQuoteController extends Controller
                 ], 422);
             }
 
-            $quote = $item->supplierQuotes()->where('id', $quoteId)->firstOrFail();
+            // [NUEVO FLUJO] Busca en tabla nueva
+            $quote = $item->itemSuppliers()->where('id', $quoteId)->firstOrFail();
 
-            if ((int) $item->supplierQuotes()->count() <= 1) {
+            // [NUEVO FLUJO] Validación: mínimo 1 proveedor por ítem
+            if ((int) $item->itemSuppliers()->count() <= 1) {
                 return response()->json([
                     'ok'      => false,
                     'message' => 'El ítem debe tener al menos una cotización de proveedor.',
@@ -2186,14 +2325,15 @@ class QuotationPreQuoteController extends Controller
             \Illuminate\Support\Facades\DB::connection('tenant')->transaction(function () use (
                 $prequote, $item, $quote, $request
             ) {
-                $wasWinner = (bool) $quote->es_ganador;
+                $wasWinner = (bool) $quote->seleccionado;
                 $quote->delete();
 
+                // [NUEVO FLUJO] Si se borró la elegida, se promueve la más antigua
                 if ($wasWinner) {
-                    $next = $item->supplierQuotes()->orderBy('orden')->orderBy('id')->first();
+                    $next = $item->itemSuppliers()->orderBy('id')->first();
                     if ($next) {
-                        $item->supplierQuotes()->update(['es_ganador' => false]);
-                        $next->es_ganador = true;
+                        $item->itemSuppliers()->update(['seleccionado' => 0]);
+                        $next->seleccionado = 1;
                         $next->save();
                         $this->syncWinningQuoteToItem($prequote, $item, $next);
                     }
@@ -2210,7 +2350,7 @@ class QuotationPreQuoteController extends Controller
 
             return response()->json([
                 'ok'       => true,
-                'quotes'   => $item->supplierQuotes()->get()->values(),
+                'quotes'   => $item->itemSuppliers()->get()->values(),
                 'prequote' => $this->enrichItemsWithMinMargin($prequote->fresh()->load('items')),
             ]);
         } catch (\Exception $e) {
@@ -2222,8 +2362,11 @@ class QuotationPreQuoteController extends Controller
     }
 
     /**
-     * POST — Marcar ganadora (radio del mockup). Sincroniza supplier +
-     * costo base del ítem y recalcula la precotización.
+     * POST — Marcar ganadora (radio). Sincroniza supplier + costo base
+     * del ítem y recalcula la precotización.
+     *
+     * [NUEVO FLUJO 2026-10-20] Trabaja sobre la tabla nueva. El ganador
+     * define supplier_id/supplier_name/costo_base del ítem.
      */
     public function setWinnerSupplierQuote(Request $request, $id, $itemId, $quoteId)
     {
@@ -2237,15 +2380,32 @@ class QuotationPreQuoteController extends Controller
                 ], 422);
             }
 
-            $quote = $item->supplierQuotes()->where('id', $quoteId)->firstOrFail();
+            // [NUEVO FLUJO] Busca en tabla nueva
+            $quote = $item->itemSuppliers()->where('id', $quoteId)->firstOrFail();
 
             \Illuminate\Support\Facades\DB::connection('tenant')->transaction(function () use (
                 $prequote, $item, $quote, $request
             ) {
-                $item->supplierQuotes()->update(['es_ganador' => false]);
-                $quote->es_ganador = true;
+                // COM-02 — "Cód. Artíc.": el override manual lleva las iniciales
+                // del proveedor, así que queda atado al proveedor con el que se
+                // cotizó. Si se CAMBIA el proveedor elegido, el código deja de
+                // ser válido y se limpia (el ítem vuelve a heredar el del catálogo).
+                // [NUEVO FLUJO 2026-10-21] El proveedor vive en la comparativa,
+                // así que el cambio de proveedor se detecta acá.
+                $previousSelected = $item->itemSuppliers()->where('seleccionado', 1)
+                    ->where('id', '!=', $quote->id)->orderBy('id')->first();
+                if ($previousSelected
+                    && (int) $previousSelected->supplier_id !== (int) $quote->supplier_id
+                    && $this->tieneColumnaCodigoArticulo()) {
+                    $item->update(['codigo_articulo_manual' => null]);
+                }
+
+                // [NUEVO FLUJO] Desmarca todas y marca solo esta como elegida
+                $item->itemSuppliers()->update(['seleccionado' => 0]);
+                $quote->seleccionado = 1;
                 $quote->save();
 
+                // [NUEVO FLUJO] Recalcula (el costo sale del proveedor elegido)
                 $this->syncWinningQuoteToItem($prequote, $item, $quote);
 
                 \Modules\Marketing\Models\PreQuoteHistory::log(
@@ -2265,7 +2425,7 @@ class QuotationPreQuoteController extends Controller
 
             return response()->json([
                 'ok'       => true,
-                'quotes'   => $item->supplierQuotes()->get()->values(),
+                'quotes'   => $item->itemSuppliers()->get()->values(),
                 'prequote' => $this->enrichItemsWithMinMargin($prequote->fresh()->load('items')),
                 'item'     => $item->fresh(),
                 'message'  => 'Proveedor ganador actualizado. Totales recalculados.',
@@ -2279,9 +2439,13 @@ class QuotationPreQuoteController extends Controller
     }
 
     /**
-     * POST — "Agregar catálogo" (mockup): crea el producto en el catálogo
-     * (items) desde la referencia cotizada y marca la cotización con
-     * origen catálogo.
+     * POST — "Agregar catálogo": crea el producto en el catálogo (items)
+     * desde la referencia cotizada y marca la cotización con origen catálogo.
+     *
+     * [NUEVO FLUJO 2026-10-20] ESTE ENDPOINT YA NO SE USA DESDE EL FRONT.
+     * El botón "Agregar catálogo" fue eliminado de la UI porque el flujo
+     * nuevo no mapea productos del catálogo en proveedores.
+     * Se mantiene registrado por si se necesita en el futuro.
      */
     public function toCatalogSupplierQuote(Request $request, $id, $itemId, $quoteId)
     {
@@ -2295,9 +2459,11 @@ class QuotationPreQuoteController extends Controller
                 ], 422);
             }
 
-            $quote = $item->supplierQuotes()->where('id', $quoteId)->firstOrFail();
+            // [NUEVO FLUJO] Busca en tabla nueva
+            $quote = $item->itemSuppliers()->where('id', $quoteId)->firstOrFail();
 
-            if ($quote->source === \Modules\Marketing\Models\PreQuoteItemSupplier::SOURCE_CATALOG) {
+            // [NUEVO FLUJO] La tabla nueva usa 'origen' (siempre manual), no 'source'
+            if ($quote->origen === 'catalog') {
                 return response()->json(['ok' => false, 'message' => 'Ya está en catálogo.'], 422);
             }
 
@@ -2339,14 +2505,15 @@ class QuotationPreQuoteController extends Controller
                     'updated_at'                    => now(),
                 ]);
 
-                $quote->source            = \Modules\Marketing\Models\PreQuoteItemSupplier::SOURCE_CATALOG;
+                // [NUEVO FLUJO] Marca origen catálogo en la tabla nueva
+                $quote->origen            = 'catalog';
                 $quote->product_reference = $nombre;
                 $quote->save();
             });
 
             return response()->json([
                 'ok'         => true,
-                'quotes'     => $item->supplierQuotes()->get()->values(),
+                'quotes'     => $item->itemSuppliers()->get()->values(),
                 'catalog_id' => $catalogId,
                 'message'    => 'Producto creado en catálogo.',
             ]);
