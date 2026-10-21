@@ -60,6 +60,13 @@ Lint PHP (usar SIEMPRE el 7.4):
   reescribe) una sección fechada a `CAMBIOS_2026-10-14.txt`.
 - `CAMBIOS_2026-10-14.txt` = bitácora de cambios. **Siempre** append, con fecha,
   causa raíz, archivos tocados y verificaciones.
+- **Ojo: el clone de push NO se sincroniza solo.** Si el remoto avanzó (por un
+  push desde GitHub web o desde otra copia), el push se rechaza con
+  "fetch first". Antes de pushear: `git fetch origin` y, si hay commits remotos
+  nuevos, `git rebase origin/dev-jadir` (resolver a favor del working copy, que
+  es la fuente de verdad) y `git push`.
+- Hay **3 copias** del repo (working copy, clone de push y GitHub). Si se sube
+  desde GitHub web, hay que hacer `fetch` + `rebase` en el clone antes de pushear.
 
 ---
 
@@ -125,6 +132,22 @@ Columnas clave: `quotation_items_id` (FK cascade), `supplier_id`, `supplier_name
 - `user_id` de las filas = **usuario de apoyo** del requerimiento
   (`requerimiento.usuario_apoyo_cotizacion`), no el usuario de sesión.
   Ver `resolveUsuarioApoyo()` / `crearQuoteInicialItem()`.
+- **`ganancia_absoluta`** (columna "Margen (S/)") se calcula con el costo del
+  proveedor **seleccionado**, no con la columna vieja `costo_base` del ítem:
+  `PreQuoteItem::getGananciaAbsolutaAttribute()` usa la relación
+  `winningItemSupplier` (OJO: `winningQuote()` devuelve la relación, no el modelo).
+- En la **fila de la tabla de ítems** todo es EN VIVO (Costo Base, V. Unit.,
+  Margen (S/) y Total). "Total" lleva IGV (igual que `total_item` del motor);
+  los totales del encabezado (Subtotal/IGV/Total) son los persistidos.
+- La **"V. Unit." de cada fila de la comparativa** es el unitario FINAL que
+  saldría si ese proveedor fuera el ganador (= Total sin IGV ÷ Q, con muestras,
+  impresión, empaque y SCTR). Sale de `costeoBreakdown(item, costoDeEseProveedor)`,
+  o sea la misma cadena del motor: el número es el que se guardaría al elegirlo.
+- **"V. unit." es UN SOLO concepto** (mockup V24): el unitario final de venta
+  (Total sin IGV ÷ Q). Da el MISMO número en la fila del ítem
+  (`itemUnitValue`), en la fila del proveedor ganador (`quoteUnitValue`) y en el
+  "Costo unitario (sin IGV)" de la tarjeta. Con eso la fila cierra:
+  V. unit. × Q = Total sin IGV, y Total = × (1 + IGV).
 - Los cambios son **locales** (buffer) hasta que se presiona **"Guardar
   detalles"** del ítem → `saveItem()` → `flushSupplierQuotes()`.
   - `flushSupplierQuotes()` = borra las que ya no están, crea las nuevas
@@ -155,11 +178,13 @@ No hace falta leer el archivo entero: con estos anclajes se llega directo.
 | ~2206 | `onTipoLineaChange(item)` | Cambio de Tipo (Producto/Servicio/Comisión): normaliza campos y guarda |
 | ~2247 | `isComision(item)` / `isService(item)` | Detectores de tipo de línea (usados por TODOS los `v-if` del front) |
 | ~2256 | `async saveItem(item)` | Botón "Guardar detalles": PUT del ítem + `flushSupplierQuotes()` al final |
-| ~686-760 | **tabla comparativa (copia 1**, ítem normal) | Columnas: Ganador / Proveedor / Origen / Referencia / Costo / Tiempo / Observaciones / Acción |
+| ~686-760 | **tabla comparativa (copia 1**, ítem normal) | Columnas: Ganador / Proveedor / Origen / Referencia / Costo / **V. Unit.** / Tiempo / Observaciones / Acción. La "V. Unit." de cada proveedor = unitario final si ese proveedor fuera el ganador (`quoteUnitValue`) |
 | ~1266-1340 | **tabla comparativa (copia 2**, componente de kit) | Idéntica a la copia 1 — **cualquier cambio se hace en las DOS** |
 | ~1419 | columna "Producto solicitado" de la tabla de ítems | Input del nombre del producto (`v-model` + `@input="onItemNameChanged"`) |
 | ~1552 | columna "Costo Base" de la tabla de ítems | **Solo lectura** (`campo-calculado`): muestra el costo del proveedor **seleccionado** |
-| ~1604 | columna "V. Unit." de la tabla de ítems | `campo-calculado`, calculado con el costo del proveedor seleccionado |
+| ~1600 | columna "Margen (S/)" de la tabla de ítems | `campo-calculado` **en vivo** (`itemGainValue`): Q × costo del ganador × margen% |
+| ~1604 | columna "V. Unit." de la tabla de ítems | `campo-calculado` **en vivo** (`itemUnitValue`): unitario final (Total sin IGV ÷ Q) con el costo del proveedor seleccionado |
+| ~1622 | columna "Total" de la tabla de ítems | `campo-calculado` **en vivo** (`itemTotalValue`): total **con IGV**, igual que `total_item` del motor |
 | ~3385 | `supplierQuotesOf(item)` | Devuelve las filas que se pintan (siempre el buffer) |
 | ~3394 | `initSupplierQuoteBuffer(item)` | Crea el buffer del ítem desde el mapa (marca `_esItemRow`) |
 | ~3408 | `markSupplierQuoteDirty(item)` | Marca "pendiente de guardar" (el front **NO** llama al backend) |
@@ -168,9 +193,12 @@ No hace falta leer el archivo entero: con estos anclajes se llega directo.
 | ~3473 | `onQuoteSupplierChange(item, quote, supplierId)` | Cambio de proveedor → limpia costo/tiempo/observaciones |
 | ~3485 | `isItemQuoteRow(quote)` | ¿Esta fila es la ELEGIDA? (`seleccionado = 1`) |
 | ~3496 | `markItemQuoteRow(quotes, item)` | Normaliza: deja 1 elegida y su referencia = nombre actual |
-| ~3515 | `selectedQuoteCostValue(item)` | Costo base (número) del proveedor **seleccionado** |
-| ~3533 | `selectedQuoteCost(item)` | Lo anterior formateado ("S/ 12.00") |
-| ~3539 | `quoteUnitValue(item, quote)` | V. Unit. de un proveedor (costo × (1 + margen%)) |
+| ~2727 | `costeoBreakdown(item, costoBaseAlterno)` | Cadena de costeo de la línea (espejo del motor). El 2º parámetro, opcional, **fuerza el costo base**: lo usa la comparativa para el unitario hipotético de cada proveedor |
+| ~3524 | `itemUnitValue(item)` | V. Unit. de la línea: unitario **final** (Total sin IGV ÷ Q, con muestras, impresión, empaque y SCTR). Mismo número que la "V. Unit." del proveedor ganador y que el "Costo unitario (sin IGV)" de la tarjeta |
+| ~3533 | `selectedQuoteCostValue(item)` | Costo base (número) del proveedor **seleccionado** |
+| ~3539 | `quoteUnitValue(item, quote)` | "V. Unit." de un proveedor: unitario FINAL si ese proveedor fuera el ganador (Total sin IGV ÷ Q, con muestras, impresión, empaque y SCTR). Usa `costeoBreakdown(item, costoDeEseProveedor)` |
+| ~3561 | `itemTotalValue(item)` | Total de la línea **en vivo** (con IGV, como `total_item`) |
+| ~3570 | `itemGainValue(item)` | Margen en soles de la línea **en vivo** (costo del ganador) |
 | ~3546 | `onItemNameChanged(item, newName)` | Renombró el producto → actualiza la referencia de la fila elegida |
 | ~3557 | `itemUnitValue(item)` | V. Unit. del ítem con el costo del proveedor seleccionado |
 | ~3561 | `saveSupplierQuote(item, quote, patch)` | Aplica un cambio **en el sitio** (`this.$set`) — nunca reemplazar el objeto |
@@ -213,6 +241,8 @@ No hace falta leer el archivo entero: con estos anclajes se llega directo.
 ### Otros puntos sensibles
 
 - `modules/Marketing/Models/QuotationItemSupplier.php` — casts (`costo_base` decimal, `seleccionado` int).
+- `modules/Marketing/Models/PreQuoteItem.php` — `getGananciaAbsolutaAttribute()`
+  (ganancia con el costo del proveedor ganador) y `winningItemSupplier()`.
 - `sql/quotation_items_supplier.sql` — CREATE TABLE idempotente (`IF NOT EXISTS`).
 - `modules/Comercial/.../index.vue` y `kanban.vue` — pestaña "Proveedores" con `v-if="false"`.
 - `database/migrations/tenant/` — migraciones de tenant (kits: `2026_10_15_000001_create_quotation_proposal_kit_tables.php`).

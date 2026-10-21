@@ -1626,13 +1626,15 @@ export default {
 
     // ✅ MÉTODOS PARA LOS EVENTOS DE LOS COMPONENTES TAB
     onRequerimientoCreado(data) {
-      // Cuando TabDatos crea un nuevo requerimiento, convertir el dialog a modo edición
+      // Cuando TabDatos crea un nuevo requerimiento, cerrar el modal (ya quedó
+      // guardado) y refrescar los listados.
       if (data && data.id) {
         this.selectedId = data.id;
         this.detail = data;
         this.fetchKpis();
         this.fetchRequerimientos();
         this.loadLogs();
+        this.detailDialog.visible = false;
       }
     },
 

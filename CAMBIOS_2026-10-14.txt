@@ -636,3 +636,256 @@ VERIFICACION
   con el costo del proveedor elegido (12.00 x 1.30 = 15.60 -> 15.85 con el
   redondeo comercial).
 - php -l limpio en los PHP tocados; npm run development OK.
+====================================================================================
+ACTUALIZACION 2026-10-21 (7) - Total y Margen (S/) EN VIVO en la fila del item
+====================================================================================
+
+PEDIDO
+"por que el total es mayor si el costo base es 3 soles y si le pongo 7 sale menos?"
+
+CAUSA
+La columna "Total" de la tabla de items pintaba el valor PERSISTIDO (row.total_item),
+y el backend solo lo recalcula al presionar "Guardar detalles". Al cambiar el
+proveedor ganador (radio "Ganador" de la comparativa) SIN guardar, la columna se
+quedaba con el total del ganador anterior (S/ 1091.50, el de LASER COLOR 7.00)
+mientras el panel lateral "Mi Resultado del costeo" (que si es en vivo) mostraba
+S/ 399.00 con el ganador de S/ 3.00. Con el IGV de por medio (la columna Total lo
+incluye, el panel no) la diferencia parecia un error de calculo.
+Ademas la columna "Margen (S/)" usaba row.ganancia_absoluta, que el backend
+calculaba con la columna VIEJA quotation_prequote_items.costo_base (residuo del
+flujo anterior, que ya no se actualiza: 7.50 en vez del 7.00 del proveedor
+ganador), por eso marcaba S/ 225.00 en vez de S/ 210.00.
+
+CAMBIO (TabPreCotizacion.vue)
+- costeoBreakdown() ahora devuelve totalConIgv: el total CON IGV que es lo que el
+  motor guarda en total_item (total sin IGV + IGV). La comision va sin IGV (el
+  motor la guarda con igv = 0).
+- Se elimino la rama especial de 'service': el motor NO tiene caso especial para
+  servicio (solo para comision), asi que un servicio se costea como un producto
+  (con SCTR e IGV). El preview del front mostraba un total sin SCTR ni IGV que
+  nunca era el que se guardaba.
+- Nuevos itemTotalValue() e itemGainValue(): valores EN VIVO de la linea, con el
+  mismo criterio que itemUnitValue (costo del proveedor SELECCIONADO).
+- Columnas de la tabla de items: "Total" y "Margen (S/)" pasan a EN VIVO.
+
+CAMBIO (PreQuoteItem.php)
+- getGananciaAbsolutaAttribute() ahora toma el costo del proveedor SELECCIONADO
+  (winningItemSupplier) y solo cae al costo_base del item si el item no tiene
+  comparativa (comision/servicio).
+
+VERIFICACION
+- npm run development OK (sin errores de compilacion).
+- php -l limpio (PHP 7.4) en el PHP tocado.
+- Cadena del front == cadena del motor (mismo redondeo comercial):
+    costo 3.00 -> unit 3.99 -> sin IGV 399.00 -> total 470.82
+    costo 7.00 -> unit 9.25 -> sin IGV 925.00 -> total 1091.50
+  El motor devuelve esos mismos 470.82 y 1091.50.
+- ganancia_absoluta del item 13 (ganador LASER COLOR 7.00, q 100, margen 30%):
+  210.00 (antes 225.00, que salia del costo_base viejo 7.50).
+- phpunit: Com02ConvertTest OK; test de ganancia_absoluta OK; Com02MotorCosteoTest
+  con 8 fallos PRE-EXISTENTES (las expectativas del test no se actualizaron tras
+  el redondeo comercial), comprobados igual sin este cambio.
+
+PENDIENTE (decision del jefe)
+- El motor NO tiene caso especial para 'service', aunque el changelog del
+  2026-10-16 dice que un servicio se guarda "sin IGV, sin SCTR". Hoy el backend le
+  aplica SCTR e IGV como a un producto. Si se quiere respetar esa regla hay que
+  agregar el caso 'service' a QuotationCalculationEngine (eso cambia los totales
+  ya guardados de los servicios existentes).
+
+ARCHIVO MODIFICADO
+- modules/Comercial/Resources/assets/js/view/requerimientos/TabPreCotizacion.vue
+- modules/Marketing/Models/PreQuoteItem.php
+
+====================================================================================
+ACTUALIZACION 2026-10-21 (8) - "V. Unit." de la comparativa = unitario final
+====================================================================================
+
+PEDIDO
+"quiero que el valor unitario salga en la fila de los proveedores como en el mockup
+V24 (Total sin IGV / cantidad), solo en el front, sin tocar la matematica"
+
+ALCANCE
+- SOLO el front (TabPreCotizacion.vue). La matematica del motor NO se toco:
+  QuotationCalculationEngine.php y costeoReal.js quedan intactos.
+- SOLO la columna "V. Unit." de la COMPARATIVA de proveedores (las 2 copias: item
+  normal y componente de kit). La columna "V. Unit." de la fila del item y la
+  tarjeta "Mi Resultado del costeo" quedan como estaban.
+
+QUE SE ARMABA ANTES
+- V. unit. de la comparativa = costo del proveedor x (1 + margen%) (sin costos
+  fijos ni SCTR). Ej. costo 7, margen 30% -> S/ 9.10.
+- V. unit. de la fila del item = costo del ganador x (1 + margen%) -> S/ 9.10.
+- "Costo unitario (sin IGV)" de la tarjeta = Total sin IGV / Q (con SCTR) -> 9.25.
+  O sea: los dos "V. unit." de la app NO eran comparables entre si.
+
+QUE SE ARMA AHORA (concepto del mockup V24)
+- La "V. Unit." de cada proveedor es el unitario FINAL de venta que saldría si
+  ESE proveedor fuera el ganador: Total sin IGV / Cantidad, con muestras,
+  movilidad, impresion, empaque y SCTR ya repartidos. Es el mismo numero que la
+  tarjeta muestra como "Costo unitario (sin IGV)".
+- Se calcula con la MISMA cadena del motor (y con el redondeo comercial), asi
+  que el numero es exactamente el que se guardaria al elegir ese proveedor.
+  Ej. costo 7 -> 9.25 (= 925.00 / 100); costo 3 -> 3.99 (= 399.00 / 100).
+
+CAMBIOS (TabPreCotizacion.vue)
+- costeoBreakdown(item, costoBaseAlterno): 2do parametro opcional que FUERZA el
+  costo base (en vez del del proveedor seleccionado). Es lo que permite calcular
+  la cadena completa de un proveedor hipotetico con una sola funcion.
+- precioMuestraEfectivo(item, costoBaseAlterno): si el item no tiene precio de
+  muestra propio, cae al costo base recibido (el de ese proveedor), que es lo
+  que haria el motor si ese proveedor ganara.
+- quoteUnitValue(item, quote): ahora devuelve costeoBreakdown(item, costo del
+  proveedor).unit en vez de costo x (1 + margen%).
+- Tooltip en el header de la columna "V. Unit." de la comparativa (2 copias).
+- Todo el resto (columnas del item, tarjeta de costeo, motor) sin cambios.
+
+VERIFICACION
+- npm run development OK.
+- Mockup V24 (costo 1.69 / 1.55 / 1.90, Q 135, margen 39%, 2 muestras,
+  movilidad 100, impresion 30, SCTR 1.5%): 3.39 / 3.19 / 3.69 -> los mismos
+  numeros que muestra el mockup.
+- Item 13 (tomatodo, Q 100, margen 30%, SCTR 1.5%): costo 7 -> 9.25
+  (base_igv 925.00, total_item 1091.50) y costo 3 -> 3.99 (base_igv 399.00,
+  total_item 470.82). Coincide con lo que devuelve QuotationCalculationEngine.
+- La "V. Unit." del proveedor ganador ahora es IGUAL al "Costo unitario (sin
+  IGV)" de la tarjeta del item.
+
+PENDIENTE (no implementado, requiere decision)
+- La "V. Unit." de la FILA DEL ITEM sigue siendo costo x (1 + margen%) (no el
+  unitario final): el mockup V24 la muestra como Total sin IGV / Q. Para
+  igualarla habria que cambiar tambien esa columna (y entonces la fila cerraria
+  V. unit. x Q x (1+IGV) = Total).
+- El mockup no aplica redondeo comercial y calcula el total sin recomponerlo
+  desde el unitario redondeado; nosotros SI (redondeo 0/5/9). Con nuestro
+  redondeo los numeros coinciden (3.39 / 3.19 / 3.69).
+- Comision: en el mockup se costea como un producto (margen 0 + SCTR + IGV) y su
+  costo base sale de un proveedor ganador. En nuestra app la comision es costo
+  directo (sin SCTR/IGV, Q 1, sin comparativa). No se toco.
+
+ARCHIVO MODIFICADO
+- modules/Comercial/Resources/assets/js/view/requerimientos/TabPreCotizacion.vue
+
+====================================================================================
+ACTUALIZACION 2026-10-21 (9) - "V. unit." como UN SOLO concepto (fila item + fila
+proveedor + fila kit), igual que el mockup V24
+====================================================================================
+
+PEDIDO
+"quiero que en el proyecto lo manejes asi: en el mockup el 'V. unit.' es un solo
+concepto, usado en los dos lugares (fila del item y fila del proveedor)"
+
+QUE SE ARMA AHORA
+- "V. unit." = unitario FINAL de venta = Total sin IGV / Cantidad (con muestras,
+  movilidad, impresion, empaque y SCTR repartidos). Es el MISMO numero en:
+    1) la fila del item            -> itemUnitValue(item)
+    2) la fila del proveedor        -> quoteUnitValue(item, quote)
+    3) el "Costo unitario (sin IGV)" de la tarjeta "Mi Resultado del costeo"
+  Con eso la fila cierra: V. unit. x Q = Total sin IGV y Total = x (1 + IGV).
+- Antes la fila del item mostraba costo x (1 + margen%) (9.10) y la tarjeta
+  9.25: dos numeros distintos con el mismo nombre.
+- En la fila del KIT: "V. unit." = suma del unitario final de cada componente y
+  "Total" = suma de los totales con IGV (antes: costo x (1+margen%), sin IGV).
+
+CAMBIOS (TabPreCotizacion.vue)
+- itemUnitValue(item): ahora devuelve costeoBreakdown(item).unit (unitario final)
+  en vez de costo x (1 + margen%).
+- kitRowTotals(kit): vunit = suma de los unitarios finales de los componentes;
+  total = suma de sus totales con IGV. Costo base, margen % y margen S/ igual.
+- Tooltips de "V. Unit." actualizados (fila del item y comparativa, 2 copias).
+- Sin cambios en la matematica: QuotationCalculationEngine.php y costeoReal.js
+  intactos. Todo sale de costeoBreakdown, que ya es el espejo del motor.
+
+VERIFICACION
+- npm run development OK.
+- Item 13 (tomatodo, Q 100, margen 30%, SCTR 1.5%): con el ganador LASER COLOR
+  7.00 -> V. unit. 9.25 (= 925.00/100), Total 1091.50 (= 925.00 x 1.18); con
+  GLOBAL PUFFS 3.00 -> V. unit. 3.99 (= 399.00/100), Total 470.82. Coincide con
+  lo que devuelve QuotationCalculationEngine::computeItem.
+- Mockup V24 (1.69 / 1.55 / 1.90) -> 3.39 / 3.19 / 3.69, los mismos del mockup.
+
+PENDIENTE (no se toco, requiere decision)
+- La fila del KIT muestra el "Costo Base" como total (S q x costo) y el mockup lo
+  muestra como suma de costos unitarios: son escalas distintas en la misma
+  columna. Tambien el mockup calcula la comision como un producto (margen 0 +
+  SCTR + IGV, con proveedor ganador) y nuestra comision es costo directo.
+
+ARCHIVO MODIFICADO
+- modules/Comercial/Resources/assets/js/view/requerimientos/TabPreCotizacion.vue
+
+====================================================================================
+ACTUALIZACION 2026-10-21 (10) - Modal de requerimiento nuevo: se cierra al guardar
++ campo Empresa bloqueado en requerimientos ya guardados
+====================================================================================
+
+PEDIDO
+"al guardar los cambios el modal se queda abierto y se limpia; que se cierre luego
+de guardar correctamente. Ademas, en requerimientos ya guardados el campo Empresa
+no se debe poder editar"
+
+CAUSA
+- Al crear un requerimiento desde la pestana Datos (boton "Nuevo" de index.vue),
+  TabDatos hace el POST y emite 'created'; onRequerimientoCreado solo refrescaba
+  listados y dejaba el dialog abierto, con el formulario reiniciado.
+- El select de Empresa seguia editable en requerimientos ya existentes
+  (isNewRecord = !selectedId solo es true mientras no hay id).
+
+CAMBIOS
+- modules/Comercial/.../index.vue: onRequerimientoCreado() cierra el dialog
+  (detailDialog.visible = false) cuando el requerimiento se creo correctamente.
+  El guardado y el refresco de listados/KPIs quedan igual.
+- modules/Comercial/.../TabDatos.vue: el select de Empresa queda deshabilitado
+  cuando el requerimiento ya esta guardado (:disabled="!isNewRecord"). Solo sigue
+  editable mientras se crea el requerimiento.
+
+VERIFICACION
+- npm run development OK (sin errores de compilacion).
+- kanban.vue usa TabDatos con isNewRecord=false: queda bloqueado tambien ahi.
+- La pestana Datos del requerimiento ya guardado se sigue podiendo editar en el
+  resto de campos (titulo, fechas, monto, etc.).
+
+ARCHIVO MODIFICADO
+- modules/Comercial/Resources/assets/js/view/requerimientos/index.vue
+- modules/Comercial/Resources/assets/js/view/requerimientos/TabDatos.vue
+
+====================================================================================
+PUSH 2026-10-21 (2) - V. unit. como concepto unico + Total/Margen en vivo + modal
+de requerimiento nuevo
+====================================================================================
+
+Este commit reune el trabajo de la sesion 2026-10-21 (documentado en las secciones
+(7) a (10) de este archivo):
+
+- "V. unit." es UN SOLO concepto (mockup V24): unitario final de venta
+  (Total sin IGV / Q, con muestras, movilidad, impresion, empaque y SCTR). Da el
+  MISMO numero en la fila del item, en la fila del proveedor ganador de la
+  comparativa (las 2 copias) y en el "Costo unitario (sin IGV)" de la tarjeta.
+  La fila cierra: V. unit. x Q = Total sin IGV, y Total = x (1 + IGV).
+- La columna "Total" de la tabla de items pasa a EN VIVO (con IGV, igual que
+  total_item del motor) y "Margen (S/)" tambien, tomando el costo del proveedor
+  SELECCIONADO (antes usaba la columna vieja costo_base del item, que quedo
+  como residuo).
+- PreQuoteItem::getGananciaAbsolutaAttribute() ahora usa el costo del proveedor
+  seleccionado (winningItemSupplier).
+- La fila del kit: "V. unit." = suma del unitario final de cada componente y
+  "Total" = suma de sus totales con IGV.
+- Modal del requerimiento nuevo: al guardar correctamente se cierra; el campo
+  "Empresa" de la pestana Datos queda bloqueado en requerimientos ya guardados.
+- Sin cambios en la matematica: QuotationCalculationEngine.php y costeoReal.js
+  intactos. Todo el calculo en vivo sale de costeoBreakdown, que ya es el espejo
+  del motor.
+
+VERIFICACION
+- npm run development OK; php -l limpio.
+- Cadena front == motor: costo 7 -> 9.25 / base 925.00 / total 1091.50; costo 3 ->
+  3.99 / 399.00 / 470.82 (los mismos que devuelve computeItem).
+- Mockup V24 (1.69 / 1.55 / 1.90) -> 3.39 / 3.19 / 3.69.
+- phpunit: test de ganancia_absoluta OK; Com02ConvertTest OK; Com02MotorCosteoTest
+  con 8 fallos PRE-EXISTENTES (comprobados igual sin estos cambios).
+
+ARCHIVOS MODIFICADOS
+- modules/Comercial/.../view/requerimientos/TabPreCotizacion.vue
+- modules/Comercial/.../view/requerimientos/TabDatos.vue
+- modules/Comercial/.../view/requerimientos/index.vue
+- modules/Marketing/Models/PreQuoteItem.php
+- AGENTS.md, ESTADO_ACTUAL.md, CAMBIOS_2026-10-14.txt

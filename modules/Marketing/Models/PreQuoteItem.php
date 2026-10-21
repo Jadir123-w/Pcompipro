@@ -383,15 +383,24 @@ class PreQuoteItem extends ModelTenant
      *
      * Es la ganancia del producto por el markup; NO incluye los costos fijos
      * (muestra, movilidad, impresión, empaque) ni el SCTR. No se persiste ni
-     * requiere migración: se recalcula al vuelo desde los campos del ítem, así
-     * que siempre queda consistente con el costo_base y el margen actuales.
+     * requiere migración: se recalcula al vuelo, así que siempre queda
+     * consistente con el costo vigente y el margen actual.
      *
      * @return float
      */
     public function getGananciaAbsolutaAttribute()
     {
         $q = max(1, (int) $this->quantity);
-        return round($q * (float) $this->costo_base * ((float) $this->margen_porcentaje / 100), 2);
+
+        // Costo del proveedor SELECCIONADO (fuente de verdad del comparativo);
+        // si el ítem no tiene comparativa (comisión, servicio), cae al costo
+        // base del ítem. winningItemSupplier (propiedad de la relación)
+        // devuelve el MODELO elegido o null; winningQuote() devuelve la
+        // relación, no el modelo.
+        $winner = $this->winningItemSupplier;
+        $costoBase = $winner ? (float) $winner->costo_base : (float) $this->costo_base;
+
+        return round($q * $costoBase * ((float) $this->margen_porcentaje / 100), 2);
     }
 
     /**

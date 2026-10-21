@@ -705,10 +705,6 @@
                   <el-table-column label="Proveedor" min-width="170">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO] Al cambiar proveedor, limpia costo/tiempo/observaciones -->
-                      <!-- [FIX 2026-10-21] Ya NO es "remote": con remote Element NO filtra
-                           en local y solo muestra lo que devuelve el server en ese momento
-                           (y el server exige 2+ caracteres), por eso se listaban solo
-                           algunos. Ahora se precargan TODOS y el filtro es local. -->
                       <el-select v-model="qscope.row.supplier_id" size="mini" filterable
                                  placeholder="Proveedor por definir"
                                  :filter-method="filterSuppliers"
@@ -745,9 +741,10 @@
                     </template>
                   </el-table-column>
                   <el-table-column label="V. Unit." width="86" align="right">
+                    <template slot="header">
+                      <span class="col-tip" title="Unitario de venta que saldría si este proveedor fuera el ganador (Total sin IGV ÷ cantidad, con muestras, impresión, empaque y SCTR).">V. Unit. <i class="el-icon-info"></i></span>
+                    </template>
                     <template slot-scope="qscope">
-                      <!-- [NUEVO FLUJO 2026-10-21] Valor unitario del proveedor:
-                           costo × (1 + margen%), igual que el del item. Solo lectura. -->
                       <span class="campo-calculado">{{ quoteUnitValue(props.row, qscope.row) }}</span>
                     </template>
                   </el-table-column>
@@ -1293,10 +1290,6 @@
                   <el-table-column label="Proveedor" min-width="170">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO] Al cambiar proveedor, limpia costo/tiempo/observaciones -->
-                      <!-- [FIX 2026-10-21] Ya NO es "remote": con remote Element NO filtra
-                           en local y solo muestra lo que devuelve el server en ese momento
-                           (y el server exige 2+ caracteres), por eso se listaban solo
-                           algunos. Ahora se precargan TODOS y el filtro es local. -->
                       <el-select v-model="qscope.row.supplier_id" size="mini" filterable
                                  placeholder="Proveedor por definir"
                                  :filter-method="filterSuppliers"
@@ -1333,9 +1326,10 @@
                     </template>
                   </el-table-column>
                   <el-table-column label="V. Unit." width="86" align="right">
+                    <template slot="header">
+                      <span class="col-tip" title="Unitario de venta que saldría si este proveedor fuera el ganador (Total sin IGV ÷ cantidad, con muestras, impresión, empaque y SCTR).">V. Unit. <i class="el-icon-info"></i></span>
+                    </template>
                     <template slot-scope="qscope">
-                      <!-- [NUEVO FLUJO 2026-10-21] Valor unitario del proveedor:
-                           costo × (1 + margen%), igual que el del item. Solo lectura. -->
                       <span class="campo-calculado">{{ quoteUnitValue(props.row, qscope.row) }}</span>
                     </template>
                   </el-table-column>
@@ -1437,10 +1431,7 @@
 
         <el-table-column label="Producto solicitado" min-width="110">
           <template slot-scope="scope">
-            <!-- [FIX 2026-10-21] Cadena if/else-if única. Servicio se edita igual
-                 que producto (solo la COMISIÓN queda con nombre fijo): antes el
-                 span de Servicio abría una cadena propia y el de COMISIÓN se
-                 renderizaba JUNTO al input (texto duplicado bajo el input). -->
+            <!-- Cadena if/else-if ÚNICA: no agregar otro v-if aquí (ver AGENTS.md §5). -->
             <el-input v-if="!scope.row._isKit && !isComision(scope.row)" v-model="scope.row.product_name" size="mini"
                       :disabled="!isEditable"
                       :placeholder="isService(scope.row) ? 'Servicio' : ''"
@@ -1602,24 +1593,22 @@
             <span class="col-tip" title="Ganancia en soles del ítem (markup sobre el costo × cantidad). Solo lectura.">Margen (S/) <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
-            <span v-if="!scope.row._isKit" class="campo-calculado campo-margen-soles">S/ {{ parseFloat(scope.row.ganancia_absoluta || 0).toFixed(2) }}</span>
+            <span v-if="!scope.row._isKit" class="campo-calculado campo-margen-soles">{{ itemGainValue(scope.row) }}</span>
             <span v-else class="campo-calculado campo-margen-soles">S/ {{ kitRowTotals(scope.row.kit).margenS.toFixed(2) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="V. Unit." width="86" align="right">
           <template slot="header">
-            <span class="col-tip" title="Valor unitario de venta (costo base + margen), sin IGV.">V. Unit. <i class="el-icon-info"></i></span>
+            <span class="col-tip" title="Unitario de venta: Total sin IGV ÷ cantidad (ya incluye muestras, movilidad, impresión, empaque y SCTR). Es el mismo número que el del proveedor ganador en la comparativa.">V. Unit. <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
-            <!-- [NUEVO FLUJO 2026-10-21] Con el costo base del proveedor
-                 SELECCIONADO (solo lectura, no se edita en la fila del item). -->
             <span v-if="!scope.row._isKit" class="campo-calculado">{{ itemUnitValue(scope.row) }}</span>
             <span v-else class="campo-calculado">S/ {{ kitRowTotals(scope.row.kit).vunit.toFixed(2) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="Total" width="92" align="right">
           <template slot-scope="scope">
-            <span v-if="!scope.row._isKit" class="campo-calculado"><strong>S/ {{ parseFloat(scope.row.total_item).toFixed(2) }}</strong></span>
+            <span v-if="!scope.row._isKit" class="campo-calculado"><strong>{{ itemTotalValue(scope.row) }}</strong></span>
             <span v-else class="campo-calculado"><strong>S/ {{ kitRowTotals(scope.row.kit).total.toFixed(2) }}</strong></span>
           </template>
         </el-table-column>
@@ -1924,9 +1913,7 @@ export default {
       // abrir la comparativa para que el dropdown muestre todos sin escribir.
       allSuppliers: [],           // [{id, razon_social, ruc, nombre_comercial}]
       suppliersPreloaded: false,  // ya se pidió la lista completa
-      // [FIX 2026-10-21] Texto que el usuario escribe en el combo: el filtro
-      // es LOCAL (con "remote" el backend exige 2+ caracteres y solo
-      // aparecian algunos proveedores).
+      // Texto que el usuario escribe en el combo: el filtro es LOCAL.
       supplierFilterQuery: '',
       // [NUEVO FLUJO 2026-10-21] Buffer de cambios pendientes por ítem.
       // itemId -> { quotes: [copia local], dirty: bool }
@@ -2082,8 +2069,8 @@ export default {
     }
   },
   mounted() {
-    // [FIX 2026-10-21] Precarga la lista de proveedores aunque la prequote ya
-    // venga cargada (el watcher "prequote" no es immediate y no se disparaba).
+    // Precarga la lista de proveedores aunque la prequote ya venga cargada
+    // (el watcher "prequote" no es immediate y no se disparaba).
     this.preloadAllSuppliers()
   },
   methods: {
@@ -2249,9 +2236,8 @@ export default {
       }
       if (v === 'service') {
         item.excluir_catalogo = true
-        // [FIX 2026-10-21] Si venía de COMISIÓN, el nombre fijo "COMISIÓN" ya no
-        // aplica: el Servicio sí tiene "Producto solicitado" editable (con
-        // placeholder "Servicio"); se renombra para que no quede mal etiquetado.
+        // Si venía de COMISIÓN, el nombre fijo "COMISIÓN" ya no aplica: el
+        // Servicio sí tiene "Producto solicitado" editable.
         if (String(item.product_name || '').trim().toUpperCase() === 'COMISIÓN') {
           item.product_name = 'Servicio'
         }
@@ -2645,12 +2631,16 @@ export default {
       this.$set(item, '_precio_muestra_distinto', tienePrecioPropio)
     },
 
-    precioMuestraEfectivo(item) {
+    precioMuestraEfectivo(item, costoBaseAlterno) {
       if (!item) return 0
       var propio = item.precio_muestra
       if (propio !== null && propio !== undefined && propio !== '') {
         var n = parseFloat(propio)
         if (!isNaN(n)) return n
+      }
+      // Sin precio propio, la muestra se cotiza al costo base.
+      if (costoBaseAlterno !== undefined && costoBaseAlterno !== null) {
+        return parseFloat(costoBaseAlterno) || 0
       }
       return this.selectedQuoteCostValue(item)
     },
@@ -2718,13 +2708,16 @@ export default {
       }
       this.saveItem(item)
     },
-    costeoBreakdown(item) {
+    costeoBreakdown(item, costoBaseAlterno) {
       if (!item) return null
+      var costoBaseUsado = (costoBaseAlterno !== undefined && costoBaseAlterno !== null)
+        ? (parseFloat(costoBaseAlterno) || 0)
+        : this.selectedQuoteCostValue(item)
       // Comisión = costo fijo: el costo base es el total directo, sin margen,
       // SCTR, IGV ni adicionales (espejo del motor backend). El encabezado
       // (resumenCostoReal) suma este mismo objeto, así que cierra solo.
       if (String((item && item.tipo_linea) || '').toLowerCase() === 'comision') {
-        var cbc = Math.round(this.selectedQuoteCostValue(item) * 100) / 100
+        var cbc = Math.round(costoBaseUsado * 100) / 100
         return {
           productoUnit: cbc, productoTotal: cbc, muestra: 0, movilidad: 0,
           impresion: 0, imprColores: 1, imprLados: 1, imprMillar: 1,
@@ -2735,36 +2728,18 @@ export default {
           utilidadReal: 0, margenRealPct: 0,
           precioNecesario: cbc, cuantoSubir: 0, precioUnitObjetivo: cbc,
           margenObjetivoPct: MARGEN_REAL_OBJETIVO_PCT, margenRequeridoPct: null,
+          totalConIgv: cbc,
         }
       }
-      // Servicio = costo fijo: costo base × cantidad × (1 + margen).
-      // Todo lo demás en 0. Sin IGV, sin SCTR, sin muestra, sin impresión, sin empaque.
-      if (String((item && item.tipo_linea) || '').toLowerCase() === 'service') {
-        var costoBase = this.selectedQuoteCostValue(item)
-        var markup    = parseFloat(item.margen_porcentaje) || 0
-        var q         = parseInt(item.quantity) || 1
-        if (q < 1) q = 1
-        var T = costoBase * (1 + markup / 100)
-        var totalSinIgv = T * q
-        return {
-          productoUnit: Math.round(T * 100) / 100, productoTotal: Math.round(totalSinIgv * 100) / 100,
-          muestra: 0, movilidad: 0, impresion: 0, imprColores: 1, imprLados: 1, imprMillar: 1,
-          empaque: 0, sctr: 0, sctrPctEfectivo: 0, ganancia: 0,
-          totalSinIgv: totalSinIgv, unit: Math.round(T * 100) / 100,
-          resultadoMargenUnit: 0, totalProducto: totalSinIgv,
-          baseCostoReal: totalSinIgv, sctrCostoReal: 0, costoRealTotal: totalSinIgv,
-          utilidadReal: 0, margenRealPct: 0,
-          precioNecesario: totalSinIgv, cuantoSubir: 0, precioUnitObjetivo: Math.round(T * 100) / 100,
-          margenObjetivoPct: MARGEN_REAL_OBJETIVO_PCT, margenRequeridoPct: null,
-        }
-      }
+      // Servicio: el motor no tiene caso especial para 'service' (solo para
+      // 'comision'), así que se costea como un producto (con SCTR e IGV).
       var q = parseInt(item.quantity) || 1
       if (q < 1) q = 1
-      var costoBase = this.selectedQuoteCostValue(item)
+      var costoBase = costoBaseUsado
       var markup    = parseFloat(item.margen_porcentaje) || 0
       // Agosto 2026 (punto 4): N° muestras × precio de la muestra. Cae al costo
       // base cuando el ítem no tiene un precio propio (comportamiento histórico).
-      var muestra   = (parseInt(item.numero_muestras) || 0) * this.precioMuestraEfectivo(item)
+      var muestra   = (parseInt(item.numero_muestras) || 0) * this.precioMuestraEfectivo(item, costoBase)
       var movilidad = parseFloat(item.costo_movilidad) || 0
       var impresion = parseFloat(item.costo_impresion) || 0
       var empaque   = parseFloat(item.costo_empaque) || 0
@@ -2855,6 +2830,8 @@ export default {
       }
 
       var r2 = function (n) { return Math.round(n * 100) / 100 }
+      var igvTotal = r2(totalSinIgv * (this.igvPct / 100))
+      var totalConIgv = r2(totalSinIgv + igvTotal)
       return {
         productoUnit:  r2(T),
         productoTotal: r2(productoTotal),
@@ -2885,6 +2862,7 @@ export default {
         cuantoSubir:        r2(cuantoSubir),
         precioUnitObjetivo: r2(precioUnitObjetivo),
         margenObjetivoPct:  MARGEN_REAL_OBJETIVO_PCT,
+        totalConIgv: totalConIgv,
         // Agosto 2026 (punto 7). null = costo base en 0, no hay margen posible.
         margenRequeridoPct: margenRequeridoPct === null ? null : r2(margenRequeridoPct),
       }
@@ -3516,13 +3494,12 @@ export default {
     },
     // [NUEVO FLUJO 2026-10-21] Valor unitario del ÍTEM: usa el costo base del
     // proveedor SELECCIONADO (mismo criterio que el de la comparativa).
+    // Unitario final de venta = Total sin IGV / Cantidad (con muestras,
+    // movilidad, impresión, empaque y SCTR repartidos).
     itemUnitValue(item) {
-      var costo = this.selectedQuoteCostValue(item)
-      var markup = 0
-      if (!this.isService(item) && !this.isComision(item)) {
-        markup = parseFloat(item && item.margen_porcentaje) || 0
-      }
-      return 'S/ ' + (costo * (1 + markup / 100)).toFixed(2)
+      var bd = this.costeoBreakdown(item)
+      if (!bd) return 'S/ ' + (parseFloat(item && item.valor_unitario) || 0).toFixed(2)
+      return 'S/ ' + (parseFloat(bd.unit) || 0).toFixed(2)
     },
     // [NUEVO FLUJO 2026-10-21] Costo base (número) del proveedor SELECCIONADO.
     selectedQuoteCostValue(item) {
@@ -3538,15 +3515,25 @@ export default {
       var costo = this.selectedQuoteCostValue(item)
       return 'S/ ' + costo.toFixed(2)
     },
-    // [NUEVO FLUJO 2026-10-21] Valor unitario de un PROVEEDOR: mismo criterio
-    // que el del item (costo × (1 + margen%)), salvo servicio/comisión (sin margen).
+    // Unitario del PROVEEDOR (columna "V. unit." de la comparativa): el que
+    // saldría si ESE proveedor fuera el ganador (misma cadena del motor, con
+    // su costo base).
     quoteUnitValue(item, quote) {
-      var costo = parseFloat(quote && quote.costo_base) || 0
-      var markup = 0
-      if (!this.isService(item) && !this.isComision(item)) {
-        markup = parseFloat(item && item.margen_porcentaje) || 0
-      }
-      return 'S/ ' + (costo * (1 + markup / 100)).toFixed(2)
+      var bd = this.costeoBreakdown(item, parseFloat(quote && quote.costo_base) || 0)
+      if (!bd) return 'S/ 0.00'
+      return 'S/ ' + (parseFloat(bd.unit) || 0).toFixed(2)
+    },
+    // Total de la línea (CON IGV, tal como lo guarda el motor en `total_item`).
+    itemTotalValue(item) {
+      var bd = this.costeoBreakdown(item)
+      if (!bd) return 'S/ ' + (parseFloat(item && item.total_item) || 0).toFixed(2)
+      return 'S/ ' + (parseFloat(bd.totalConIgv) || 0).toFixed(2)
+    },
+    // Ganancia de la línea (Q × costo del proveedor SELECCIONADO × margen%).
+    itemGainValue(item) {
+      var bd = this.costeoBreakdown(item)
+      if (!bd) return 'S/ ' + (parseFloat(item && item.ganancia_absoluta) || 0).toFixed(2)
+      return 'S/ ' + (parseFloat(bd.ganancia) || 0).toFixed(2)
     },
     // [NUEVO FLUJO 2026-10-21] ¿Esta fila es la ELEGIDA (seleccionado = 1)?
     // Es la que refleja el nombre del producto y la que define el Costo Base
@@ -3802,16 +3789,13 @@ export default {
       this.$message.info('La función de catálogo no está disponible en este flujo.')
     },
     supplierOptionsFor(quote) {
-      // [FIX 2026-10-21] Usa la lista GLOBAL precargada (todos los proveedores)
-      // + los extras buscados. Antes, con el combo en modo "remote", el listado
-      // dependia de lo que devolvia el server en ese momento y se veian solo
-      // algunos proveedores.
+      // Lista GLOBAL precargada (todos los proveedores) + los extras buscados.
       var list = (this.allSuppliers || []).slice()
       var extras = this.supplierOptionsMap[quote.id] || []
       extras.forEach(function (s) {
         if (!list.some(function (m) { return Number(m.id) === Number(s.id) })) list.push(s)
       })
-      // [FIX 2026-10-21] Filtro local (nombre comercial, razón social o RUC).
+      // Filtro local (nombre comercial, razón social o RUC).
       var q = (this.supplierFilterQuery || '').toLowerCase()
       if (q) {
         list = list.filter(function (s) {
@@ -3826,10 +3810,8 @@ export default {
       }
       return list
     },
-    // [FIX 2026-10-21] Filtro LOCAL del combo de proveedores.
-    // Con "remote" el server filtraba y el backend exige 2+ caracteres, asi que
-    // con 1 letra no salia nada. Ahora el select filtra en el navegador.
-    // OJO: en Element 2.x el `filter-method` NO filra solo (su valor de retorno
+    // Filtro LOCAL del combo de proveedores.
+    // OJO: en Element 2.x el `filter-method` NO filtra solo (su valor de retorno
     // se ignora): hay que mutar la lista propia. Por eso guardamos el texto en
     // `supplierFilterQuery` y `supplierOptionsFor` lo aplica.
     filterSuppliers(query) {
@@ -4091,20 +4073,25 @@ export default {
       var members = this.kitMemberItems(kit)
       var costo = 0
       var margenS = 0
+      var vunit = 0
+      var total = 0
       members.forEach(function (it) {
         var q = parseFloat(it.quantity) || 0
         var cb = this.selectedQuoteCostValue(it)
         var mp = parseFloat(it.margen_porcentaje) || 0
         costo += q * cb
         margenS += q * cb * (mp / 100)
+        var bd = this.costeoBreakdown(it)
+        if (bd) {
+          vunit += parseFloat(bd.unit) || 0
+          total += parseFloat(bd.totalConIgv) || 0
+        }
       }, this)
-      var qty = Math.max(1, Number(kit.cantidad) || 0)
-      var total = costo + margenS
       return {
         costo: costo,
         margenS: margenS,
         margenPct: costo > 0 ? (margenS / costo) * 100 : 0,
-        vunit: total / qty,
+        vunit: vunit,
         total: total,
       }
     },

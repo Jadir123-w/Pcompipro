@@ -43,6 +43,7 @@ CAMBIOS EN V5:
                 placeholder="Busca y selecciona empresa"
                 filterable
                 remote
+                :disabled="!isNewRecord"
                 :remote-method="searchEmpresas"
                 :loading="loadingEmpresas"
                 @change="onEmpresaChange"

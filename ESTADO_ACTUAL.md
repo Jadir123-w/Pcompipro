@@ -46,6 +46,11 @@ motor de cálculo). Pendiente: validación visual en navegador por parte del jef
   `product_reference` (se sincroniza al cargar, al renombrar y al guardar).
 - **En la fila del ítem** (tabla de items), el **Costo Base y el V. Unit. son
   solo lectura** y muestran el del proveedor seleccionado.
+- **Toda la fila de la tabla de items es EN VIVO** (2026-10-21 (7)): "Costo Base",
+  "V. Unit.", "Margen (S/)" y "Total" se calculan con el proveedor seleccionado
+  aunque no se haya guardado. "Total" = con IGV (igual que `total_item` del motor).
+  Los totales del **encabezado** (Subtotal / IGV / Total) siguen siendo los
+  persistidos: se actualizan al guardar.
 - `user_id` de las filas = **usuario de apoyo** del requerimiento
   (`requerimiento.usuario_apoyo_cotizacion`), no el usuario de sesión.
 
@@ -74,7 +79,21 @@ motor de cálculo). Pendiente: validación visual en navegador por parte del jef
    filtra en local y el backend exige 2+ caracteres) → ahora precarga todos y filtra local.
 9. **`user_id` NULL** en la fila de proveedor automática → ahora es el usuario de apoyo.
 10. **Kit duplicado** por cadena `v-if`/`v-else-if` rota (se renderizaban input +
-    span) → cadena única.
+     span) → cadena única.
+11. **"Total" de la fila desactualizado**: pintaba el `total_item` PERSISTIDO, así
+    que al cambiar el proveedor ganador sin guardar seguía mostrando el total
+    del ganador anterior → ahora es EN VIVO (`costeoBreakdown().totalConIgv`).
+12. **"Margen (S/)" con el costo equivocado**: `ganancia_absoluta` se calculaba
+    con la columna vieja `quotation_prequote_items.costo_base` (residuo) →
+    ahora usa el costo del proveedor SELECCIONADO (`PreQuoteItem::getGananciaAbsolutaAttribute`).
+13. **"V. Unit." de la comparativa no comparable**: mostraba `costo × (1+margin%)`
+    (sin costos fijos ni SCTR) mientras la tarjeta mostraba el unitario final →
+    ahora cada proveedor muestra el unitario final si fuera el ganador
+    (`costeoBreakdown(item, costoDeEseProveedor).unit`), igual que el mockup V24.
+14. **"V. unit." con dos significados**: la fila del ítem mostraba `costo×(1+margin%)`
+    (9.10) y la tarjeta el unitario final (9.25). Ahora es **un solo concepto**
+    (Total sin IGV ÷ Q) en la fila del ítem, en la del proveedor ganador y en la
+    tarjeta → la fila cierra `V. unit. × Q = Total sin IGV` y `Total = × (1+IGV)`.
 
 ---
 
@@ -155,3 +174,8 @@ bootstrap de Laravel 8) y forzar la conexión tenant a `tenancy_prueba`.
    Si se quiere limpiar o migrar, se decide aparte.
 5. Prueba pendiente del flujo de **conversión a proyecto** con la comparativa (el
    proveedor elegido debe seguir alimentando `proyecto_productos`).
+6. **El motor no tiene caso especial para `service`** (solo para `comision`): un
+   servicio se guarda CON SCTR e IGV, aunque el changelog del 2026-10-16 dice que
+   debe guardarse "sin IGV, sin SCTR". El front ya previsualiza lo que el motor
+   guarda (2026-10-21 (7)); decidir si se agrega el caso `service` al motor
+   (cambia los totales ya guardados de los servicios existentes).
