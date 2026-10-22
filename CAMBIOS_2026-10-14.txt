@@ -889,3 +889,121 @@ ARCHIVOS MODIFICADOS
 - modules/Comercial/.../view/requerimientos/index.vue
 - modules/Marketing/Models/PreQuoteItem.php
 - AGENTS.md, ESTADO_ACTUAL.md, CAMBIOS_2026-10-14.txt
+
+====================================================================================
+2026-10-22 - Validacion de proveedor de pre-cotizacion desde la comparativa vigente
+====================================================================================
+
+CAUSA RAIZ
+- Validar/Aprobar contaba `item.supplier_id`, un campo legado que ya no es la fuente
+  de verdad tras migrar la comparativa a `quotation_items_supplier`. Por eso seguia
+  indicando que faltaba proveedor aunque estuviera asignado en la fila elegida.
+- Los servicios y las comisiones no requieren proveedor; ahora se excluyen ambos
+  tipos del conteo del front, como ya hacia el conteo del backend para proyectos.
+
+CAMBIO
+- El bloqueo y el contador de la pre-cotizacion consultan la fila elegida persistida
+  con `seleccionado = 1` y un `supplier_id` real, sin aceptar cambios no guardados.
+- Se actualizaron los avisos y el comentario de refresco del requerimiento para
+  referirse a la comparativa por producto, no a la pestaña oculta "Proveedores".
+
+ARCHIVOS MODIFICADOS
+- modules/Comercial/Resources/assets/js/view/requerimientos/TabPreCotizacion.vue
+- modules/Comercial/Resources/assets/js/view/requerimientos/index.vue
+- AGENTS.md
+- ESTADO_ACTUAL.md
+- CAMBIOS_2026-10-14.txt
+
+VERIFICACION
+- `npm run development` compila correctamente.
+
+====================================================================================
+2026-10-22 - Evitar reutilizar correlativo unico de proyecto
+====================================================================================
+
+CAUSA RAIZ
+- `Proyecto::generarCodigo()` miraba el ultimo proyecto visible por id y extraia
+  solamente sus ultimos cuatro caracteres. Los proyectos eliminados logicamente
+  quedaban fuera de la consulta aunque su codigo seguia reservado por el indice
+  unique, lo que podia generar de nuevo `PRY-...-0001`.
+- El orden por id tampoco garantizaba elegir el correlativo mas alto.
+
+CAMBIO
+- Se toma el mayor sufijo numerico entre todos los codigos PRY existentes,
+  incluyendo proyectos con soft delete. El correlativo global sigue sin reiniciarse.
+- El fallback para proyectos con codigos previos al formato PRY tambien cuenta
+  registros eliminados logicamente.
+
+ARCHIVOS MODIFICADOS
+- modules/Comercial/Models/Proyecto.php
+- ESTADO_ACTUAL.md
+- CAMBIOS_2026-10-14.txt
+
+VERIFICACION
+- `php -l` con PHP 7.4: sin errores de sintaxis.
+
+====================================================================================
+2026-10-22 - Renderizado por tipo de linea en detalles de pre-cotizacion
+====================================================================================
+
+CAMBIO
+- Producto conserva los detalles tecnicos y paneles de costeo.
+- Comision permite editar Costo Base en la fila; Guardar detalles lo persiste
+  en `quotation_prequote_items`, y el motor usa ese valor como costo fijo. Su
+  acordeon solo muestra la descripcion.
+- Servicio conserva Descripcion, Observaciones y Comparativa de proveedores en
+  el acordeon; se quitaron de esa vista detalles tecnicos y paneles de costeo.
+
+ARCHIVOS MODIFICADOS
+- modules/Comercial/Resources/assets/js/view/requerimientos/TabPreCotizacion.vue
+- modules/Marketing/Http/Controllers/Api/QuotationPreQuoteController.php
+- modules/Marketing/Services/QuotationCalculationEngine.php
+- AGENTS.md
+- ESTADO_ACTUAL.md
+- CAMBIOS_2026-10-14.txt
+
+VERIFICACION
+- `npm run development` compila correctamente.
+- `php -l` con PHP 7.4: controller y motor sin errores de sintaxis.
+
+====================================================================================
+2026-10-22 - Trasladar esquema de kits de migracion a SQL manual
+====================================================================================
+
+CAUSA / CAMBIO
+- Por convencion del proyecto, los cambios de esquema se entregan en `sql/*.sql`
+  para ejecucion manual por tenant, no como migraciones Laravel.
+- Se reemplazo el archivo PHP de migracion por un SQL idempotente que crea las
+  dos tablas de kits y conserva sus columnas y claves foraneas.
+
+ARCHIVOS
+- Eliminado: database/migrations/tenant/2026_10_15_000001_create_quotation_proposal_kit_tables.php
+- Creado: sql/quotation_proposal_kit_tables.sql
+- AGENTS.md
+- ESTADO_ACTUAL.md
+- CAMBIOS_2026-10-14.txt
+
+VERIFICACION
+- Revisado contra el esquema de la migracion original.
+- SQL no ejecutado en ninguna base de datos; queda para ejecucion manual.
+
+====================================================================================
+2026-10-22 - Agregar SQL manual para tipo_linea
+====================================================================================
+
+CAMBIO
+- Se agrego SQL idempotente que crea `quotation_prequote_items.tipo_linea` como
+  VARCHAR(20) NOT NULL DEFAULT 'product', con comentario de los valores validos.
+- Las filas preexistentes reciben `product`; el SQL solo consulta metadatos y
+  altera la tabla si la columna todavia no existe.
+
+ARCHIVOS
+- sql/quotation_prequote_items_tipo_linea.sql
+- AGENTS.md
+- ESTADO_ACTUAL.md
+- CAMBIOS_2026-10-14.txt
+
+VERIFICACION
+- Revisada la estructura original de `quotation_prequote_items` y la convención
+  del repositorio de ejecutar los SQL manualmente por tenant.
+- No ejecutado en ninguna base de datos.

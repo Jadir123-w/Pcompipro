@@ -672,7 +672,7 @@
                   style="margin-top: 8px;"
                 >
                   <span slot="title" style="font-size: 12px; line-height: 1.35;">
-                    {{ detail.productos_sin_proveedor }} de {{ detail.total_productos }} producto(s) sin proveedor asignado. Asígnalos en la pestaña <strong>Proveedores</strong> y el botón se habilitará automáticamente.
+                    {{ detail.productos_sin_proveedor }} de {{ detail.total_productos }} producto(s) sin proveedor asignado. Asígnalos en la comparativa de proveedores de la pre-cotización y el botón se habilitará automáticamente.
                   </span>
                 </el-alert>
               </div>
@@ -1214,8 +1214,8 @@ export default {
     },
 
     // Refresca el contador de productos sin proveedor al cambiar de pestaña, para
-    // que el botón "Crear proyecto" se habilite apenas se asignen los proveedores
-    // (en la pestaña Proveedores) sin necesidad de reabrir el requerimiento.
+    // que el botón "Crear proyecto" se habilite tras asignarlos en la comparativa
+    // de la pre-cotización sin necesidad de reabrir el requerimiento.
     async onDetailTabClick() {
       if (!this.selectedId) return;
       try {

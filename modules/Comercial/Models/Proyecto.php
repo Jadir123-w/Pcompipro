@@ -142,18 +142,24 @@ class Proyecto extends ModelTenant implements Auditable
         $mes = $meses[(int)date('m')];
         $dia = date('d');
 
-        // Correlativo global: buscar el último proyecto con formato PRY-
-        $ultimo = static::where('codigo', 'like', 'PRY-%')
-            ->orderBy('id', 'desc')
-            ->first();
+        // Incluir proyectos eliminados logicamente: el codigo sigue protegido
+        // por el indice unique y no se puede reutilizar.
+        $codigos = static::withTrashed()
+            ->where('codigo', 'like', 'PRY-%')
+            ->pluck('codigo');
 
-        if ($ultimo) {
-            // Extraer los últimos 4 dígitos del código
-            $correlativo = intval(substr($ultimo->codigo, -4)) + 1;
+        $ultimoCorrelativo = 0;
+        foreach ($codigos as $codigoExistente) {
+            if (preg_match('/-(\d+)$/', $codigoExistente, $coincidencia)) {
+                $ultimoCorrelativo = max($ultimoCorrelativo, (int) $coincidencia[1]);
+            }
+        }
+
+        if ($ultimoCorrelativo > 0) {
+            $correlativo = $ultimoCorrelativo + 1;
         } else {
-            // Si no hay proyectos con formato nuevo, contar todos los existentes
-            $totalExistentes = static::count();
-            $correlativo = $totalExistentes + 1;
+            // Compatibilidad con proyectos previos al formato PRY.
+            $correlativo = static::withTrashed()->count() + 1;
         }
 
         return "PRY-{$anio}-{$mes}-{$dia}-" . str_pad($correlativo, 4, '0', STR_PAD_LEFT);

@@ -350,6 +350,15 @@ class QuotationPreQuoteController extends Controller
         if (!in_array($tipoLinea, ['product', 'service', 'comision'], true)) $tipoLinea = 'product';
         $updates['tipo_linea'] = $tipoLinea;
         if ($tipoLinea === 'comision') {
+            if (array_key_exists('costo_base', $request->all())) {
+                $vc = Validator::make($request->all(), [
+                    'costo_base' => ['required', 'numeric', 'min:0'],
+                ]);
+                if ($vc->fails()) {
+                    return response()->json(['ok' => false, 'errors' => $vc->errors()], 422);
+                }
+                $updates['costo_base'] = (float) $request->input('costo_base');
+            }
             // Comisión = línea propia del requerimiento (ya NO referencia al
             // ítem 271 del catálogo): sin match, sin revisión, costo fijo.
             $updates['item_id'] = null;

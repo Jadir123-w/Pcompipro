@@ -302,9 +302,9 @@
               <div class="ai-inferred-details__header">
                 <span class="ai-inferred-details__title">
                   <i class="el-icon-document-copy"></i>
-                  <strong>Detalles técnicos del producto</strong>
+                  <strong>{{ isComision(props.row) ? 'Descripción de la comisión' : (isService(props.row) ? 'Descripción y observaciones del servicio' : 'Detalles técnicos del producto') }}</strong>
                 </span>
-                <span v-if="inferredFields(props.row).length > 0"
+                <span v-if="!isComision(props.row) && !isService(props.row) && inferredFields(props.row).length > 0"
                       class="ai-inferred-details__warning">
                   <i class="el-icon-warning-outline"></i>
                   {{ inferredFields(props.row).length }} campo(s) inferido(s) por la IA — confirma con el cliente antes de emitir
@@ -515,63 +515,8 @@
                 </div>
               </div>
 
-              <!-- Servicio: solo Costo Base, Cantidad y Margen editables -->
-              <div class="costeo-section erp-cost" v-if="props.row.tipo_linea === 'service'">
-                <div class="costeo-section__title">
-                  <i class="el-icon-coin"></i> <strong>Mi Costeo del ítem (Servicio)</strong>
-                  <span class="costeo-section__hint">Costo base fijo sin IGV ni SCTR. Solo se editan Costo Base, Cantidad y Margen.</span>
-                </div>
-                <div class="erp-cost-media-grid">
-                  <div class="erp-costgrid">
-                    <div class="ai-field">
-                      <label class="lbl-help" title="Costo unitario base del servicio.">Costo Base (S/) <i class="el-icon-info field-tip-icon"></i></label>
-                      <el-input-number v-model="props.row.costo_base" size="mini" :precision="2" :step="0.5" :min="0"
-                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
-                    </div>
-                    <div class="ai-field">
-                      <label class="lbl-help" title="Cantidad de unidades del servicio.">Cantidad <i class="el-icon-info field-tip-icon"></i></label>
-                      <el-input-number v-model="props.row.quantity" size="mini" :precision="0" :step="1" :min="1"
-                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
-                    </div>
-                    <div class="ai-field">
-                      <label class="lbl-help" title="Porcentaje de margen sobre el costo base.">Margen % <i class="el-icon-info field-tip-icon"></i></label>
-                      <el-input-number v-model="props.row.margen_porcentaje" size="mini" :precision="1" :step="5" :min="0" :max="999"
-                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
-                    </div>
-                  </div>
-                  <div class="detail-photo-drop" style="display:none;"></div>
-                </div>
-                <div class="erp-costcard">
-                  <div class="costtitle">▣ Mi Resultado del costeo (Servicio)</div>
-                  <template v-for="bd in [costeoBreakdown(props.row)]">
-                    <div class="costeo-breakdown" :key="'bd-' + props.row.id">
-                      <div class="costeo-breakdown__row">
-                        <span>Resultado margen unitario</span>
-                        <span class="costeo-breakdown__val">S/ {{ bd.resultadoMargenUnit.toFixed(2) }}</span>
-                      </div>
-                      <div class="costeo-breakdown__row costeo-breakdown__margen">
-                        <span>Margen Ganancia</span>
-                        <span class="costeo-breakdown__val">S/ {{ bd.ganancia.toFixed(2) }}</span>
-                      </div>
-                      <div class="costeo-breakdown__row">
-                        <span>Total (S/) = Costo Base + Resultado</span>
-                        <span class="costeo-breakdown__val">S/ {{ bd.productoUnit.toFixed(2) }}</span>
-                      </div>
-                      <div class="costeo-breakdown__row costeo-breakdown__unit">
-                        <span>Costo unitario (sin IGV)</span>
-                        <span class="costeo-breakdown__val">S/ {{ bd.unit.toFixed(2) }} / u</span>
-                      </div>
-                      <div class="costeo-breakdown__row costeo-breakdown__total">
-                        <span>Total sin IGV</span>
-                        <span class="costeo-breakdown__val">S/ {{ bd.totalSinIgv.toFixed(2) }}</span>
-                      </div>
-                    </div>
-                  </template>
-                </div>
-              </div>
-
                 </div><!-- /.erp-detail-main -->
-                <div class="erp-costcard">
+                <div class="erp-costcard" v-if="!isComision(props.row) && !isService(props.row)">
                   <div class="costtitle">▣ Mi Resultado del costeo</div>
                   <!-- Desglose en vivo: el v-for calcula el desglose UNA sola vez
                        y lo expone como `bd` (truco de Vue 2 para variable local). -->
@@ -887,9 +832,9 @@
               <div class="ai-inferred-details__header">
                 <span class="ai-inferred-details__title">
                   <i class="el-icon-document-copy"></i>
-                  <strong>Detalles técnicos del producto</strong>
+                  <strong>{{ isComision(props.row) ? 'Descripción de la comisión' : (isService(props.row) ? 'Descripción y observaciones del servicio' : 'Detalles técnicos del producto') }}</strong>
                 </span>
-                <span v-if="inferredFields(props.row).length > 0"
+                <span v-if="!isComision(props.row) && !isService(props.row) && inferredFields(props.row).length > 0"
                       class="ai-inferred-details__warning">
                   <i class="el-icon-warning-outline"></i>
                   {{ inferredFields(props.row).length }} campo(s) inferido(s) por la IA — confirma con el cliente antes de emitir
@@ -1100,63 +1045,8 @@
                 </div>
               </div>
 
-              <!-- Servicio: solo Costo Base, Cantidad y Margen editables -->
-              <div class="costeo-section erp-cost" v-if="props.row.tipo_linea === 'service'">
-                <div class="costeo-section__title">
-                  <i class="el-icon-coin"></i> <strong>Mi Costeo del ítem (Servicio)</strong>
-                  <span class="costeo-section__hint">Costo base fijo sin IGV ni SCTR. Solo se editan Costo Base, Cantidad y Margen.</span>
-                </div>
-                <div class="erp-cost-media-grid">
-                  <div class="erp-costgrid">
-                    <div class="ai-field">
-                      <label class="lbl-help" title="Costo unitario base del servicio.">Costo Base (S/) <i class="el-icon-info field-tip-icon"></i></label>
-                      <el-input-number v-model="props.row.costo_base" size="mini" :precision="2" :step="0.5" :min="0"
-                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
-                    </div>
-                    <div class="ai-field">
-                      <label class="lbl-help" title="Cantidad de unidades del servicio.">Cantidad <i class="el-icon-info field-tip-icon"></i></label>
-                      <el-input-number v-model="props.row.quantity" size="mini" :precision="0" :step="1" :min="1"
-                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
-                    </div>
-                    <div class="ai-field">
-                      <label class="lbl-help" title="Porcentaje de margen sobre el costo base.">Margen % <i class="el-icon-info field-tip-icon"></i></label>
-                      <el-input-number v-model="props.row.margen_porcentaje" size="mini" :precision="1" :step="5" :min="0" :max="999"
-                                       controls-position="right" :disabled="!isEditable" style="width:100%;"></el-input-number>
-                    </div>
-                  </div>
-                  <div class="detail-photo-drop" style="display:none;"></div>
-                </div>
-                <div class="erp-costcard">
-                  <div class="costtitle">▣ Mi Resultado del costeo (Servicio)</div>
-                  <template v-for="bd in [costeoBreakdown(props.row)]">
-                    <div class="costeo-breakdown" :key="'bd-' + props.row.id">
-                      <div class="costeo-breakdown__row">
-                        <span>Resultado margen unitario</span>
-                        <span class="costeo-breakdown__val">S/ {{ bd.resultadoMargenUnit.toFixed(2) }}</span>
-                      </div>
-                      <div class="costeo-breakdown__row costeo-breakdown__margen">
-                        <span>Margen Ganancia</span>
-                        <span class="costeo-breakdown__val">S/ {{ bd.ganancia.toFixed(2) }}</span>
-                      </div>
-                      <div class="costeo-breakdown__row">
-                        <span>Total (S/) = Costo Base + Resultado</span>
-                        <span class="costeo-breakdown__val">S/ {{ bd.productoUnit.toFixed(2) }}</span>
-                      </div>
-                      <div class="costeo-breakdown__row costeo-breakdown__unit">
-                        <span>Costo unitario (sin IGV)</span>
-                        <span class="costeo-breakdown__val">S/ {{ bd.unit.toFixed(2) }} / u</span>
-                      </div>
-                      <div class="costeo-breakdown__row costeo-breakdown__total">
-                        <span>Total sin IGV</span>
-                        <span class="costeo-breakdown__val">S/ {{ bd.totalSinIgv.toFixed(2) }}</span>
-                      </div>
-                    </div>
-                  </template>
-                </div>
-              </div>
-
                 </div><!-- /.erp-detail-main -->
-                <div class="erp-costcard">
+                <div class="erp-costcard" v-if="!isComision(props.row) && !isService(props.row)">
                   <div class="costtitle">▣ Mi Resultado del costeo</div>
                   <!-- Desglose en vivo: el v-for calcula el desglose UNA sola vez
                        y lo expone como `bd` (truco de Vue 2 para variable local). -->
@@ -1547,13 +1437,14 @@
         </el-table-column>
         <el-table-column label="Costo Base" width="118" align="right">
           <template slot="header">
-            <span class="col-tip" title="Costo unitario base del producto, antes de aplicar el margen. Se toma del proveedor seleccionado en la comparativa (solo lectura).">Costo Base <i class="el-icon-info"></i></span>
+            <span class="col-tip" title="En comisiones es editable y se guarda con el ítem. Para productos y servicios, se toma del proveedor seleccionado en la comparativa.">Costo Base <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
             <template v-if="!scope.row._isKit">
-            <!-- [NUEVO FLUJO 2026-10-21] Solo lectura: el costo base del item es
-                 el del proveedor SELECCIONADO en la comparativa (se edita allá). -->
-            <span class="campo-calculado">{{ selectedQuoteCost(scope.row) }}</span>
+            <el-input-number v-if="isComision(scope.row)" v-model="scope.row.costo_base" size="mini"
+                             :precision="2" :step="0.5" :min="0" controls-position="right"
+                             :disabled="!isEditable" class="campo-precio"></el-input-number>
+            <span v-else class="campo-calculado">{{ selectedQuoteCost(scope.row) }}</span>
             <!-- Fase C — Badge "Escalón aplicado" cuando el costo viene de item_unit_types -->
             <div v-if="scope.row.tier_aplicado" class="tier-aplicado-badge">
               <el-tooltip
@@ -1636,10 +1527,10 @@
         </el-table-column>
       </el-table>
 
-      <!-- Aviso: faltan proveedores para Validar/Aprobar (requisito de conversion a proyecto) -->
+      <!-- La asignación del proveedor vive en la comparativa por ítem. -->
       <el-alert v-if="hayProductosSinProveedor && !prequote.quotation_id"
                 type="warning" :closable="false" show-icon class="mt-2"
-                :title="productosSinProveedor + ' producto(s) sin proveedor. Asigna un proveedor a cada producto en la pestaña \'Proveedores\' para poder Validar y Aprobar la pre-cotizacion.'">
+                :title="productosSinProveedor + ' producto(s) sin proveedor. Asigna un proveedor en la comparativa de cada producto para poder Validar y Aprobar la pre-cotización.'">
       </el-alert>
 
       <!-- Acciones -->
@@ -1951,13 +1842,18 @@ export default {
       }).length
     },
     // Productos sin proveedor asignado: bloquean Validar/Aprobar.
-    // (Requisito para que el requerimiento pueda convertirse luego en proyecto.)
-    // La comisión no lleva proveedor: se excluye del conteo.
+    // La comparativa persistida es la fuente de verdad; no contar cambios sin guardar.
+    // Comisión y servicio no requieren proveedor.
     productosSinProveedor() {
       if (!this.prequote || !this.prequote.items) return 0
+      var self = this
       return this.prequote.items.filter(function (it) {
-        if (String((it && it.tipo_linea) || '').toLowerCase() === 'comision') return false
-        return !it.supplier_id
+        var tipoLinea = String((it && it.tipo_linea) || '').toLowerCase()
+        if (tipoLinea === 'comision' || tipoLinea === 'service') return false
+        var quotes = self.supplierQuotesMap[it.id] || []
+        return !quotes.some(function (quote) {
+          return Number(quote.seleccionado) === 1 && Number(quote.supplier_id) > 0
+        })
       }).length
     },
     hayProductosSinProveedor() {
@@ -2266,8 +2162,8 @@ export default {
     isComision(item) {
       return String((item && item.tipo_linea) || '').toLowerCase() === 'comision'
     },
-    // Servicio = línea propia del requerimiento: solo Descripción, Costo Base,
-    // Cantidad y Margen editables. Sin match, sin proveedores, sin catálogo.
+    // Servicio = línea propia del requerimiento: sin match ni catálogo, con
+    // comparativa de proveedores y detalles limitados a descripción/observaciones.
     isService(item) {
       return String((item && item.tipo_linea) || '').toLowerCase() === 'service'
     },
@@ -2294,9 +2190,8 @@ export default {
           cantidad_colores: item.cantidad_colores,
           cantidad_lados: item.cantidad_lados,
           observaciones: item.observaciones,
-          // [NUEVO FLUJO 2026-10-21] costo_base NO se manda: ya no se edita en el
-          // item (es el del proveedor SELECCIONADO en la comparativa) y el motor
-          // lo resuelve desde quotation_items_supplier.
+          // Para producto/servicio, el costo se resuelve desde la comparativa.
+          // Comisión lo envía aparte porque su costo fijo vive en el ítem.
           margen_porcentaje: item.margen_porcentaje,
           // Componentes de costo (Fase A — motor de costeo ampliado)
           numero_muestras: item.numero_muestras,
@@ -2315,9 +2210,15 @@ export default {
           // SCTR unitario (override por ítem; null = hereda el % de la cotización).
           sctr_porcentaje: (item.sctr_porcentaje === '' || item.sctr_porcentaje === undefined) ? null : item.sctr_porcentaje,
         }
+        // Comisión no tiene comparativa de proveedores: su costo fijo vive en
+        // costo_base del ítem y se persiste al presionar Guardar detalles.
+        if (this.isComision(item)) {
+          payload.costo_base = parseFloat(item.costo_base) || 0
+        }
 
-        // Servicio = línea propia del requerimiento. Solo Costo Base, Cantidad y Margen.
-        // Todo lo demás va en 0 para que el backend no los sume en el costo.
+        // Servicio = línea propia del requerimiento. Cantidad y Margen se editan
+        // en la fila; el Costo Base proviene del proveedor elegido.
+        // Los costos técnicos van en 0; se conserva Observaciones.
         if (String((item.tipo_linea || '').toLowerCase()) === 'service') {
           payload.personalizacion = ''
           payload.tecnica_impresion = ''
@@ -2326,7 +2227,6 @@ export default {
           payload.empaque = ''
           payload.cantidad_colores = 1
           payload.cantidad_lados = 1
-          payload.observaciones = ''
           payload.numero_muestras = 0
           payload.precio_muestra = null
           payload.costo_movilidad = 0
@@ -3503,6 +3403,7 @@ export default {
     },
     // [NUEVO FLUJO 2026-10-21] Costo base (número) del proveedor SELECCIONADO.
     selectedQuoteCostValue(item) {
+      if (this.isComision(item)) return parseFloat(item && item.costo_base) || 0
       var quotes = this.supplierQuotesOf(item) || []
       for (var i = 0; i < quotes.length; i++) {
         if (Number(quotes[i].seleccionado) === 1) return parseFloat(quotes[i].costo_base) || 0

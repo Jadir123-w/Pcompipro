@@ -154,6 +154,10 @@ class QuotationCalculationEngine
      */
     public function resolveCostoBase(PreQuoteItem $item)
     {
+        if (strtolower(trim((string) ($item->tipo_linea ?? ''))) === 'comision') {
+            return (float) $item->costo_base;
+        }
+
         $selected = $item->itemSuppliers()
             ->where('seleccionado', 1)
             ->orderBy('id')
