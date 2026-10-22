@@ -1,5 +1,5 @@
 <template>
-    <div>
+    <div class="vista-factura">
         <Keypress
             key-event="keyup"
 
@@ -1436,7 +1436,8 @@
     width: 50% !important;
 }
 
-.el-textarea__inner {
+/* Solo en esta pantalla: sin el prefijo fijaba la altura de todos los textarea del sistema. */
+.vista-factura .el-textarea__inner {
     height: 65px !important;
     min-height: 65px !important;
 }

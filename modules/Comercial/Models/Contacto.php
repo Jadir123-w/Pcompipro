@@ -125,6 +125,8 @@ class Contacto extends ModelTenant implements Auditable
             'id' => $this->id,
             'empresa_id' => $this->empresa_id,
             'razon_social' => $this->empresa->razon_social ?? null,
+            'nombre_comercial' => $this->empresa->nombre_comercial ?? null,
+            'empresa_nombre' => $this->empresa ? $this->empresa->nombreVisible() : null,
             'nombres' => $this->nombres,
             'apellidos' => $this->apellidos,
             'dni' => $this->dni,
@@ -140,6 +142,11 @@ class Contacto extends ModelTenant implements Auditable
             'estado' => $this->estado,
             'created_at' => $this->created_at ? $this->created_at->format('Y-m-d') : null,
             'updated_at' => $this->updated_at ? $this->updated_at->format('Y-m-d H:i:s') : null,
+            'ultimo_usuario' => $this->ultimo_usuario ?? null,
+            // Solo lectura en la tabla; se informa cuando la relación viene cargada (listado).
+            'responsable_comercial' => $this->relationLoaded('responsableComercial')
+                ? optional($this->responsableComercial)->name
+                : null,
             
             // Backward compatibility (deprecated)
             'telefono' => $this->telefono,
@@ -147,11 +154,17 @@ class Contacto extends ModelTenant implements Auditable
         ];
 
         if ($withDetails) {
-            $data['emails'] = $this->emails->map(function ($email) {
+            // Un contacto inactivo muestra sus datos suspendidos (estado 0 sin fecha de baja)
+            // para que al editarlo no se pierdan.
+            $activo = (int) $this->estado === 1;
+            $emails = $activo ? $this->emails : $this->emailsTodos()->whereNull('deleted_at')->get();
+            $telefonos = $activo ? $this->telefonos : $this->telefonosTodos()->whereNull('deleted_at')->get();
+
+            $data['emails'] = $emails->map(function ($email) {
                 return $email->getCollectionData();
             });
 
-            $data['telefonos'] = $this->telefonos->map(function ($telefono) {
+            $data['telefonos'] = $telefonos->map(function ($telefono) {
                 return $telefono->getCollectionData();
             });
         } else {

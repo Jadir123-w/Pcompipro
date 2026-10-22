@@ -18,43 +18,34 @@
                     <el-tab-pane label="Datos" name="datos">
                         <form autocomplete="off" @submit.prevent="submit">
                             <div class="form-body">
-                                
-                                <!-- ID Contacto (solo en edición) -->
-                                <div class="row" v-if="recordId">
-                                    <div class="col-md-12">
-                                        <div class="form-group">
-                                            <label class="control-label">ID Contacto</label>
-                                            <el-input :value="form.id" disabled></el-input>
-                                        </div>
+                                <!-- Distribución en 3 columnas. Teléfonos y correos: tipo + valor (+ anexo) como un solo campo. -->
+                                <div class="form-grid">
+                                    <!-- ID Contacto (solo en edición) -->
+                                    <div v-if="recordId" class="form-group">
+                                        <label class="control-label">ID Contacto</label>
+                                        <el-input :value="form.id" disabled></el-input>
                                     </div>
-                                </div>
 
-                                <!-- Fila 1: Empresa, Nombres, Apellidos -->
-                                <div class="row">
-                                    <!-- Mostrar nombre de empresa como campo disabled cuando viene desde empresas -->
-                                    <div class="col-md-5" v-if="context === 'empresas'">
-                                        <div class="form-group">
+                                    <div :class="recordId ? 'span-2' : 'span-3'">
+                                        <!-- Desde Empresas: nombre fijo -->
+                                        <div class="form-group" v-if="context === 'empresas'">
                                             <label class="control-label">Empresa</label>
                                             <div style="display: flex; align-items: center; padding: 10px 15px; background: #f5f7fa; border: 1px solid #dcdfe6; border-radius: 4px;">
                                                 <i class="fa fa-building" style="color: #606266; margin-right: 10px;"></i>
                                                 <span style="color: #303133; font-weight: 500;">
-                                                    {{ currentEmpresa ? currentEmpresa.razon_social : 'Cargando...' }}
+                                                    {{ currentEmpresa ? nombreEmpresa(currentEmpresa) : 'Cargando...' }}
                                                 </span>
                                             </div>
                                         </div>
-                                    </div>
-                                    
-                                    <!-- Solo mostrar selector de empresa si NO viene desde contexto de empresas -->
-                                    <div class="col-md-5" v-else>
-                                        <div :class="{'has-danger': errors.empresa_id}"
-                                             class="form-group">
-                                            <label class="control-label">
-                                                Empresa <span class="text-danger">*</span>
-                                                <el-button 
-                                                    v-if="!empresaId"
-                                                    type="text" 
-                                                    size="mini" 
-                                                    style="padding: 0; margin-left: 10px;">
+                                        <div v-else :class="{'has-danger': errors.empresa_id}" class="form-group">
+                                            <label class="control-label label-con-accion">
+                                                <span>Empresa <span class="text-danger">*</span></span>
+                                                <el-button
+                                                    v-if="!empresaId && !recordId"
+                                                    type="text"
+                                                    size="mini"
+                                                    style="padding: 0; margin-left: 10px;"
+                                                    @click="abrirNuevaEmpresa">
                                                     + Nuevo
                                                 </el-button>
                                             </label>
@@ -67,14 +58,17 @@
                                                 :remote-method="getEmpresas"
                                                 :loading="loading"
                                                 :automatic-dropdown="false"
-                                                :disabled="!!empresaId"
+                                                :disabled="!!empresaId || !!recordId"
+                                                style="width: 100%;"
                                                 @focus="handleFocus"
                                             >
                                                 <el-option
                                                     v-for="option in list_empresas"
                                                     :key="option.id"
-                                                    :label="option.razon_social"
+                                                    :label="nombreEmpresa(option)"
                                                     :value="option.id">
+                                                    <span>{{ nombreEmpresa(option) }}</span>
+                                                    <span v-if="nombreEmpresa(option) !== option.razon_social" class="opcion-razon-social">{{ option.razon_social }}</span>
                                                 </el-option>
 
                                                 <div slot="empty" class="text-center p-2">
@@ -91,200 +85,154 @@
                                                    v-text="errors.empresa_id[0]"></small>
                                         </div>
                                     </div>
-                                    <!-- Ajustar tamaño de columnas -->
-                                    <div class="col-md-4">
-                                        <div class="form-group" :class="{'has-danger': errors.nombres}">
-                                            <label class="control-label">Nombres <span class="text-danger">*</span></label>
-                                            <el-input v-model="form.nombres"></el-input>
-                                            <small class="form-control-feedback" v-if="errors.nombres" v-text="errors.nombres[0]"></small>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <div class="form-group" :class="{'has-danger': errors.apellidos}">
-                                            <label class="control-label">Apellidos</label>
-                                            <el-input v-model="form.apellidos"></el-input>
-                                            <small class="form-control-feedback" v-if="errors.apellidos" v-text="errors.apellidos[0]"></small>
-                                        </div>
-                                    </div>
-                                </div>
 
-                                <!-- Fila 2: Cargo, DNI, Tipo contacto -->
-                                <div class="row">
-                                    <div class="col-md-4">
-                                        <div class="form-group" :class="{'has-danger': errors.cargo}">
-                                            <label class="control-label">Cargo</label>
-                                            <el-input v-model="form.cargo"></el-input>
-                                            <small class="form-control-feedback" v-if="errors.cargo" v-text="errors.cargo[0]"></small>
-                                        </div>
+                                    <div class="form-group" :class="{'has-danger': errors.nombres}">
+                                        <label class="control-label">Nombres <span class="text-danger">*</span></label>
+                                        <el-input v-model="form.nombres"></el-input>
+                                        <small class="form-control-feedback" v-if="errors.nombres" v-text="errors.nombres[0]"></small>
                                     </div>
-                                    <!-- DNI oculto temporalmente -->
-                                    <!--
-                                    <div class="col-md-4">
-                                        <div class="form-group" :class="{'has-danger': errors.dni}">
-                                            <label class="control-label">Nº Identidad (DNI)</label>
-                                            <el-input v-model="form.dni" maxlength="20"></el-input>
-                                            <small class="form-control-feedback" v-if="errors.dni" v-text="errors.dni[0]"></small>
-                                        </div>
+                                    <div class="form-group" :class="{'has-danger': errors.apellidos}">
+                                        <label class="control-label">Apellidos</label>
+                                        <el-input v-model="form.apellidos" placeholder="Apellidos"></el-input>
+                                        <small class="form-control-feedback" v-if="errors.apellidos" v-text="errors.apellidos[0]"></small>
                                     </div>
-                                    -->
-                                    <div class="col-md-4">
-                                        <div class="form-group" :class="{'has-danger': errors.tipo_contacto}">
-                                            <label class="control-label">Detalle de contacto</label>
-                                            <el-input v-model="form.tipo_contacto"></el-input>
-                                            <small class="form-control-feedback" v-if="errors.tipo_contacto" v-text="errors.tipo_contacto[0]"></small>
-                                        </div>
+                                    <div class="form-group" :class="{'has-danger': errors.cargo}">
+                                        <label class="control-label">Cargo</label>
+                                        <el-input v-model="form.cargo" placeholder="Cargo"></el-input>
+                                        <small class="form-control-feedback" v-if="errors.cargo" v-text="errors.cargo[0]"></small>
                                     </div>
-                                </div>
 
-                                <!-- Fila 3: Origen, Fecha cumpleaños -->
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="form-group" :class="{'has-danger': errors.origen}">
-                                            <label class="control-label">Origen</label>
-                                            <el-select v-model="form.origen" clearable filterable placeholder="Seleccione" style="width: 100%;">
-                                                <el-option 
-                                                    v-for="option in list_origenes" 
-                                                    :key="option.id" 
-                                                    :label="option.name" 
-                                                    :value="option.id">
-                                                </el-option>
+                                    <div class="form-group" :class="{'has-danger': errors.origen}">
+                                        <label class="control-label">Origen</label>
+                                        <el-select v-model="form.origen" clearable filterable placeholder="Seleccione" style="width: 100%;">
+                                            <el-option
+                                                v-for="option in list_origenes"
+                                                :key="option.id"
+                                                :label="option.name"
+                                                :value="option.id">
+                                            </el-option>
+                                        </el-select>
+                                        <small class="form-control-feedback" v-if="errors.origen" v-text="errors.origen[0]"></small>
+                                    </div>
+                                    <div class="form-group" :class="{'has-danger': errors.fecha_cumpleanos}">
+                                        <label class="control-label">Fecha cumpleaños</label>
+                                        <el-date-picker
+                                            v-model="form.fecha_cumpleanos"
+                                            type="date"
+                                            value-format="yyyy-MM-dd"
+                                            format="dd/MM/yyyy"
+                                            :clearable="true"
+                                            placeholder="dd/mm/aaaa"
+                                            style="width: 100%;">
+                                        </el-date-picker>
+                                        <small class="form-control-feedback" v-if="errors.fecha_cumpleanos" v-text="errors.fecha_cumpleanos[0]"></small>
+                                    </div>
+                                    <!-- Detalle de contacto: baja por las filas de origen, teléfonos y email -->
+                                    <div class="form-group celda-alta row-span-3" :class="{'has-danger': errors.tipo_contacto}">
+                                        <label class="control-label">Detalle de contacto</label>
+                                        <el-input type="textarea" v-model="form.tipo_contacto" resize="vertical" placeholder="Escribir detalle de contacto..."></el-input>
+                                        <small class="form-control-feedback" v-if="errors.tipo_contacto" v-text="errors.tipo_contacto[0]"></small>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label class="control-label">Celular principal</label>
+                                        <div class="campo-grupo" :class="{ 'campo-grupo--error': esTelefonoDuplicado(celularPrincipal) }">
+                                            <el-select v-model="celularTipo" class="campo-grupo__tipo">
+                                                <el-option label="Trab." value="trabajo">Trabajo</el-option>
+                                                <el-option label="Pers." value="personal">Personal</el-option>
                                             </el-select>
-                                            <small class="form-control-feedback" v-if="errors.origen" v-text="errors.origen[0]"></small>
+                                            <el-input :value="celularPrincipal" @input="v => celularPrincipal = formatearTelefono(v)" placeholder="Celular" class="campo-grupo__valor"></el-input>
                                         </div>
+                                        <small v-if="esTelefonoDuplicado(celularPrincipal)" class="texto-duplicado">Ya registrado en {{ duplicado.contacto_nombre }}<template v-if="duplicado.empresa_nombre"> · {{ duplicado.empresa_nombre }}</template></small>
                                     </div>
-                                    <div class="col-md-6">
-                                        <div class="form-group" :class="{'has-danger': errors.fecha_cumpleanos}">
-                                            <label class="control-label">Fecha cumpleaños</label>
-                                            <el-date-picker 
-                                                v-model="form.fecha_cumpleanos" 
-                                                type="date" 
-                                                value-format="yyyy-MM-dd" 
-                                                format="dd/MM/yyyy" 
-                                                :clearable="true"
-                                                placeholder="dd/mm/aaaa"
-                                                style="width: 100%;">
-                                            </el-date-picker>
-                                            <small class="form-control-feedback" v-if="errors.fecha_cumpleanos" v-text="errors.fecha_cumpleanos[0]"></small>
+                                    <div class="form-group">
+                                        <label class="control-label">Teléfono fijo</label>
+                                        <div class="campo-grupo" :class="{ 'campo-grupo--error': esTelefonoDuplicado(telefonoFijo) }">
+                                            <el-select v-model="telefonoTipo" class="campo-grupo__tipo">
+                                                <el-option label="Trab." value="trabajo">Trabajo</el-option>
+                                                <el-option label="Pers." value="personal">Personal</el-option>
+                                            </el-select>
+                                            <el-input :value="telefonoFijo" @input="v => telefonoFijo = formatearTelefono(v)" placeholder="Teléfono" class="campo-grupo__valor"></el-input>
+                                            <span class="campo-grupo__texto">Anexo</span>
+                                            <el-input :value="telefonoFijoAnexo" @input="v => telefonoFijoAnexo = soloDigitos(v)" class="campo-grupo__anexo"></el-input>
                                         </div>
+                                        <small v-if="esTelefonoDuplicado(telefonoFijo)" class="texto-duplicado">Ya registrado en {{ duplicado.contacto_nombre }}<template v-if="duplicado.empresa_nombre"> · {{ duplicado.empresa_nombre }}</template></small>
                                     </div>
-                                </div>
 
-                                <!-- Fila 4: Celular, Teléfono fijo, Email principal -->
-                                <div class="row">
-                                    <div class="col-md-4">
-                                        <div class="form-group">
-                                            <label class="control-label">Celular principal</label>
-                                            <div class="input-with-select">
-                                                <el-select v-model="celularTipo" style="width: 100px;" size="small">
-                                                    <el-option label="Trabajo" value="trabajo"></el-option>
-                                                    <el-option label="Personal" value="personal"></el-option>
-                                                </el-select>
-                                                <el-input v-model="celularPrincipal" placeholder="Celular"></el-input>
-                                            </div>
+                                    <div class="form-group span-2">
+                                        <label class="control-label">Email principal</label>
+                                        <div class="campo-grupo" :class="{ 'campo-grupo--error': esCorreoDuplicado(emailPrincipal) }">
+                                            <el-select v-model="emailTipo" class="campo-grupo__tipo">
+                                                <el-option label="Trab." value="trabajo">Trabajo</el-option>
+                                                <el-option label="Pers." value="personal">Personal</el-option>
+                                            </el-select>
+                                            <el-input v-model="emailPrincipal" placeholder="correo@empresa.com" class="campo-grupo__valor"></el-input>
                                         </div>
+                                        <small v-if="esCorreoDuplicado(emailPrincipal)" class="texto-duplicado">Ya registrado en {{ duplicado.contacto_nombre }}<template v-if="duplicado.empresa_nombre"> · {{ duplicado.empresa_nombre }}</template></small>
                                     </div>
-                                    <div class="col-md-4">
-                                        <div class="form-group">
-                                            <label class="control-label">Teléfono fijo</label>
-                                            <div class="input-with-select">
-                                                <el-select v-model="telefonoTipo" style="width: 100px;" size="small">
-                                                    <el-option label="Trabajo" value="trabajo"></el-option>
-                                                    <el-option label="Personal" value="personal"></el-option>
-                                                </el-select>
-                                                <el-input v-model="telefonoFijo" placeholder="Teléfono fijo"></el-input>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <div class="form-group">
-                                            <label class="control-label">Email principal</label>
-                                            <div class="input-with-select">
-                                                <el-select v-model="emailTipo" style="width: 90px;" size="small">
-                                                    <el-option label="Trabajo" value="trabajo"></el-option>
-                                                    <el-option label="Personal" value="personal"></el-option>
-                                                </el-select>
-                                                <el-input v-model="emailPrincipal" placeholder="Email principal"></el-input>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
 
-                                <!-- Fila 5: Dirección (textarea) -->
-                                <div class="row">
-                                    <div class="col-md-12">
-                                        <div class="form-group" :class="{'has-danger': errors.direccion}">
-                                            <label class="control-label">Dirección oficina del contacto</label>
-                                            <el-input
-                                                type="textarea"
-                                                v-model="form.direccion"
-                                                :rows="2"
-                                                resize="vertical"
-                                                placeholder="Dirección oficina del contacto"></el-input>
-                                            <small class="form-control-feedback" v-if="errors.direccion" v-text="errors.direccion[0]"></small>
-                                        </div>
+                                    <div class="form-group" :class="{'has-danger': errors.direccion}">
+                                        <label class="control-label">Dirección oficina del contacto</label>
+                                        <el-input type="textarea" v-model="form.direccion" :rows="3" maxlength="255" resize="vertical" placeholder="Dirección"></el-input>
+                                        <small class="form-control-feedback" v-if="errors.direccion" v-text="errors.direccion[0]"></small>
                                     </div>
-                                </div>
-
-                                <!-- Fila 6: Referencia -->
-                                <div class="row">
-                                    <div class="col-md-12">
-                                        <div class="form-group">
-                                            <label class="control-label">Referencia oficina del contacto</label>
-                                            <el-input v-model="form.referencia" placeholder="Referencia oficina del contacto"></el-input>
-                                        </div>
+                                    <div class="form-group">
+                                        <label class="control-label">Referencia oficina del contacto</label>
+                                        <el-input type="textarea" v-model="form.referencia" :rows="3" maxlength="255" resize="vertical" placeholder="Referencia"></el-input>
                                     </div>
-                                </div>
-
-                                <!-- Fila 6b: Adicionales -->
-                                <div class="row">
-                                    <div class="col-md-12">
-                                        <div class="form-group">
-                                            <label class="control-label">Adicionales</label>
-                                            <el-input
-                                                type="textarea"
-                                                v-model="form.adicionales"
-                                                :rows="2"
-                                                resize="vertical"
-                                                placeholder="Notas adicionales del contacto"></el-input>
-                                        </div>
+                                    <div class="form-group">
+                                        <label class="control-label">Adicionales</label>
+                                        <el-input type="textarea" v-model="form.adicionales" :rows="3" resize="vertical" placeholder="Notas adicionales"></el-input>
                                     </div>
                                 </div>
 
                                 <!-- Teléfonos adicionales y Emails adicionales -->
-                                <div class="row mt-3">
-                                    <div class="col-md-6">
+                                <div class="form-grid form-grid--2 seccion-adicionales">
+                                    <div>
                                         <div class="additional-section">
                                             <span class="section-label">Teléfonos adicionales</span>
                                             <el-button type="primary" size="mini" @click="clickAddTelefono">Agregar</el-button>
                                         </div>
+                                        <p v-if="form.telefonos.length === 0" class="texto-vacio">Sin teléfonos adicionales</p>
                                         <div v-for="(row, index) in form.telefonos" :key="'tel-' + index" class="additional-item">
-                                            <el-select v-model="row.tipo" style="width: 80px;" size="small">
-                                                <el-option v-for="option in list_tipos_telefono" :key="option.id" :label="option.name" :value="option.id"></el-option>
-                                            </el-select>
-                                            <el-input v-model="row.telefono" placeholder="Teléfono" size="small" style="flex: 1; margin: 0 5px;"></el-input>
+                                            <div class="campo-grupo campo-grupo--small" :class="{ 'campo-grupo--error': esTelefonoDuplicado(row.telefono) }">
+                                                <el-select v-model="row.tipo" size="small" class="campo-grupo__tipo">
+                                                    <el-option v-for="option in list_tipos_telefono" :key="option.id" :label="option.name" :value="option.id"></el-option>
+                                                </el-select>
+                                                <el-input :value="row.telefono" @input="v => row.telefono = formatearTelefono(v)" placeholder="Teléfono" size="small" class="campo-grupo__valor"></el-input>
+                                                <template v-if="row.tipo === 'fijo'">
+                                                    <span class="campo-grupo__texto">Anexo</span>
+                                                    <el-input :value="row.anexo" @input="v => row.anexo = soloDigitos(v)" size="small" class="campo-grupo__anexo"></el-input>
+                                                </template>
+                                            </div>
                                             <el-button type="danger" icon="el-icon-delete" size="mini" circle @click="clickRemoveTelefono(index)"></el-button>
+                                            <small v-if="esTelefonoDuplicado(row.telefono)" class="texto-duplicado">Ya registrado en {{ duplicado.contacto_nombre }}<template v-if="duplicado.empresa_nombre"> · {{ duplicado.empresa_nombre }}</template></small>
                                         </div>
                                     </div>
-                                    <div class="col-md-6">
+                                    <div>
                                         <div class="additional-section">
-                                            <span class="section-label">Emails adicionales (tipo / email)</span>
+                                            <span class="section-label">Emails adicionales</span>
                                             <el-button type="primary" size="mini" @click="clickAddEmail">Agregar</el-button>
                                         </div>
+                                        <p v-if="form.emails.length === 0" class="texto-vacio">Sin emails adicionales</p>
                                         <div v-for="(row, index) in form.emails" :key="'email-' + index" class="additional-item">
-                                            <el-select v-model="row.tipo" style="width: 90px;" size="small">
-                                                <el-option label="Trabajo" value="trabajo"></el-option>
-                                                <el-option label="Personal" value="personal"></el-option>
-                                            </el-select>
-                                            <el-input v-model="row.email" placeholder="Email" size="small" style="flex: 1; margin: 0 5px;"></el-input>
+                                            <div class="campo-grupo campo-grupo--small" :class="{ 'campo-grupo--error': esCorreoDuplicado(row.email) }">
+                                                <el-select v-model="row.tipo" size="small" class="campo-grupo__tipo">
+                                                    <el-option label="Trab." value="trabajo">Trabajo</el-option>
+                                                    <el-option label="Pers." value="personal">Personal</el-option>
+                                                </el-select>
+                                                <el-input v-model="row.email" placeholder="correo@empresa.com" size="small" class="campo-grupo__valor"></el-input>
+                                            </div>
                                             <el-button type="danger" icon="el-icon-delete" size="mini" circle @click="clickRemoveEmail(index)"></el-button>
+                                            <small v-if="esCorreoDuplicado(row.email)" class="texto-duplicado">Ya registrado en {{ duplicado.contacto_nombre }}<template v-if="duplicado.empresa_nombre"> · {{ duplicado.empresa_nombre }}</template></small>
                                         </div>
                                     </div>
                                 </div>
 
                             </div>
 
-                            <div class="form-actions text-right m-t-20">
-                                <el-button @click.prevent="close()">Cancelar</el-button>
+                            <div class="form-actions form-acciones-fijas text-right">
+                                <el-button @click.prevent="handleCloseDialog()">Cancelar</el-button>
                                 <el-button type="primary" native-type="submit" :loading="loading_submit">Guardar</el-button>
                             </div>
                         </form>
@@ -317,16 +265,27 @@
                 :related-entities="bitacoraRelatedEntities"
             ></bitacora-logs>
         </div>
+
+        <!-- "+ Nuevo" junto a Empresa: el mismo formulario de Empresas; al guardar queda seleccionada. -->
+        <empresas-form
+            v-if="mostrarNuevaEmpresa"
+            :showDialog.sync="mostrarNuevaEmpresa"
+            :recordId="null"
+            :external="true"
+        ></empresas-form>
     </el-dialog>
 </template>
 
 <script>
 import BitacoraLogs from './BitacoraLogs.vue'
 import TabInteraccionesContacto from './TabInteraccionesContacto.vue'
+import EmpresasForm from './Empresasform.vue'
+import { formatearTelefono, separarAnexo, soloDigitos } from '../helpers/telefono'
+import { nombreEmpresa } from '../helpers/texto'
 
 export default {
     props: ['showDialog', 'recordId', 'empresaId', 'context', 'empresaEntity'],
-    components: { BitacoraLogs, TabInteraccionesContacto },
+    components: { BitacoraLogs, TabInteraccionesContacto, EmpresasForm },
     data() {
         return {
             activeTab: 'datos',
@@ -340,6 +299,9 @@ export default {
             list_origenes: [],
             form: {},
             originalForm: '',
+            duplicado: null,
+            mostrarNuevaEmpresa: false,
+            esperandoEmpresaNueva: false,
             isInitialized: false,
             lastSearch: '',
             searchTimeout: null,
@@ -351,6 +313,7 @@ export default {
             telefonoFijo: '',
             telefonoTipo: 'trabajo',
             telefonoFijoId: null,
+            telefonoFijoAnexo: '',
             emailPrincipal: '',
             emailTipo: 'trabajo',
             emailPrincipalId: null,
@@ -375,6 +338,11 @@ export default {
     },
     created() {
         this.initForm()
+        // Empresasform (external) avisa por este evento el id de la empresa que acaba de crear.
+        this.$eventHub.$on('reloadDataPersons', this.empresaCreada)
+    },
+    beforeDestroy() {
+        this.$eventHub.$off('reloadDataPersons', this.empresaCreada)
     },
     watch: {
         showDialog: {
@@ -390,9 +358,16 @@ export default {
                     this.activeTab = 'datos'
                 }
             }
+        },
+        mostrarNuevaEmpresa(abierto) {
+            // Si se cierra sin guardar, deja de esperar la empresa nueva.
+            if (!abierto) this.esperandoEmpresaNueva = false
         }
     },
     methods: {
+        formatearTelefono,
+        soloDigitos,
+        nombreEmpresa,
         async onOpen() {
             if (this.isInitialized) return
             
@@ -426,7 +401,7 @@ export default {
 
                 // Guardar estado original
                 this.$nextTick(() => {
-                    this.originalForm = JSON.stringify(this.form)
+                    this.originalForm = this.fotoFormulario()
                 })
             } catch (error) {
                 this.$message.error('Error al cargar datos iniciales')
@@ -481,7 +456,7 @@ export default {
                 const celularPrincipal = telefonos.find(t => t.slot === 'celular_principal')
                     || telefonos.find(t => t.es_principal)  // fallback legacy
                 if (celularPrincipal) {
-                    this.celularPrincipal = celularPrincipal.telefono
+                    this.celularPrincipal = formatearTelefono(celularPrincipal.telefono)
                     this.celularTipo = mapTipo(celularPrincipal.tipo)
                     this.celularPrincipalId = celularPrincipal.id
                 }
@@ -489,7 +464,9 @@ export default {
                 const telefonoFijo = telefonos.find(t => t.slot === 'fijo')
                     || telefonos.filter(t => !t.es_principal && t.slot == null)[0]  // fallback legacy
                 if (telefonoFijo) {
-                    this.telefonoFijo = telefonoFijo.telefono
+                    const fijo = separarAnexo(telefonoFijo.telefono)
+                    this.telefonoFijo = formatearTelefono(fijo.numero)
+                    this.telefonoFijoAnexo = fijo.anexo
                     this.telefonoTipo = mapTipo(telefonoFijo.tipo)
                     this.telefonoFijoId = telefonoFijo.id
                 }
@@ -504,12 +481,16 @@ export default {
                         if (t.id === (telefonoFijo && telefonoFijo.id)) return false
                         return true
                     })
-                    .map(t => ({
-                        id: t.id,
-                        telefono: t.telefono,
-                        tipo: t.tipo,
-                        slot: 'adicional'
-                    }))
+                    .map(t => {
+                        const partes = separarAnexo(t.telefono)
+                        return {
+                            id: t.id,
+                            telefono: formatearTelefono(partes.numero),
+                            anexo: partes.anexo,
+                            tipo: t.tipo,
+                            slot: 'adicional'
+                        }
+                    })
 
                 // Procesar emails (mismo patrón que telefonos)
                 const emails = data.emails || []
@@ -535,12 +516,14 @@ export default {
                     if (!empresaExiste) {
                         this.list_empresas.unshift({
                             id: data.empresa_id,
-                            razon_social: data.razon_social
+                            razon_social: data.razon_social,
+                            nombre_comercial: data.nombre_comercial
                         })
                     }
                     this.empresaEntityLocal = { 
                         id: data.empresa_id, 
-                        razon_social: data.razon_social 
+                        razon_social: data.razon_social,
+                        nombre_comercial: data.nombre_comercial
                     }
                 }
             } catch (error) {
@@ -571,8 +554,80 @@ export default {
             this.$emit('update:recordId', null)
         },
 
+        fotoFormulario() {
+            return JSON.stringify({
+                form: this.form,
+                celular: [this.celularTipo, this.celularPrincipal],
+                fijo: [this.telefonoTipo, this.telefonoFijo, this.telefonoFijoAnexo],
+                email: [this.emailTipo, this.emailPrincipal]
+            })
+        },
+
+        // Dato repetido: marca la casilla, explica quién lo tiene y ofrece abrir ese contacto.
+        esTelefonoDuplicado(valor) {
+            if (!this.duplicado || this.duplicado.campo !== 'telefono' || !valor) return false
+            const buscado = String(this.duplicado.valor).replace(/\D/g, '')
+            const digitos = String(valor).replace(/\D/g, '')
+            return buscado.length >= 6 && digitos.slice(-buscado.length) === buscado
+        },
+
+        esCorreoDuplicado(valor) {
+            return !!(this.duplicado && this.duplicado.campo === 'email' && valor
+                && String(valor).trim().toLowerCase() === String(this.duplicado.valor).toLowerCase())
+        },
+
+        mostrarDuplicado(mensaje, duplicado) {
+            this.duplicado = duplicado
+            this.$confirm(mensaje, 'Dato ya registrado', {
+                confirmButtonText: 'Ver contacto',
+                cancelButtonText: 'Entendido',
+                type: 'warning',
+                distinguishCancelAndClose: true,
+                closeOnClickModal: false
+            }).then(() => this.verContactoDuplicado(duplicado)).catch(() => {})
+        },
+
+        // Abre ese contacto en la pantalla de Contactos; antes avisa si se perderían datos.
+        verContactoDuplicado(duplicado) {
+            const abrir = () => {
+                window.location.href = '/comercial/contactos/listado?ver=' + duplicado.contacto_id
+            }
+            if (!this.hasUnsavedChanges()) {
+                abrir()
+                return
+            }
+            this.$confirm(
+                'Tienes datos sin guardar en este formulario. Si abres el otro contacto, se perderán.',
+                'Datos sin guardar',
+                { confirmButtonText: 'Abrir de todos modos', cancelButtonText: 'Seguir editando', type: 'warning' }
+            ).then(abrir).catch(() => {})
+        },
+
         hasUnsavedChanges() {
-            return JSON.stringify(this.form) !== this.originalForm
+            return this.fotoFormulario() !== this.originalForm
+        },
+
+        abrirNuevaEmpresa() {
+            this.esperandoEmpresaNueva = true
+            this.mostrarNuevaEmpresa = true
+        },
+
+        // Empresa recién creada desde "+ Nuevo": se agrega a la lista y queda seleccionada.
+        async empresaCreada(empresaId) {
+            if (!this.esperandoEmpresaNueva || !empresaId) return
+            this.esperandoEmpresaNueva = false
+            try {
+                const response = await this.$http.get(`/comercial/empresas/record/${empresaId}`)
+                const empresa = response.data.data || response.data
+                this.list_empresas = [
+                    { id: empresa.id, razon_social: empresa.razon_social, nombre_comercial: empresa.nombre_comercial },
+                    ...this.list_empresas.filter(e => e.id !== empresa.id)
+                ]
+                this.form.empresa_id = empresa.id
+                this.$delete(this.errors, 'empresa_id')
+            } catch (e) {
+                this.$message.warning('La empresa se creó. Búscala en la lista para seleccionarla.')
+            }
         },
 
         async getEmpresas(query) {
@@ -647,15 +702,17 @@ export default {
             this.telefonoFijo = ''
             this.telefonoTipo = 'trabajo'
             this.telefonoFijoId = null
+            this.telefonoFijoAnexo = ''
             this.emailPrincipal = ''
             this.emailTipo = 'trabajo'
             this.emailPrincipalId = null
-            this.originalForm = JSON.stringify(this.form)
+            this.originalForm = this.fotoFormulario()
         },
 
         async submit() {
             // Evitar doble envío (doble clic / Enter repetido) que generaba contactos duplicados.
             if (this.loading_submit) return
+            this.duplicado = null
 
             // Construir arrays de teléfonos y emails
             const telefonos = []
@@ -678,6 +735,7 @@ export default {
                 telefonos.push({
                     id: this.telefonoFijoId,
                     telefono: this.telefonoFijo,
+                    anexo: this.telefonoFijoAnexo,
                     tipo: this.telefonoTipo,
                     slot: 'fijo'
                 })
@@ -688,6 +746,7 @@ export default {
                     telefonos.push({
                         id: t.id,
                         telefono: t.telefono,
+                        anexo: t.tipo === 'fijo' ? t.anexo : null,
                         tipo: t.tipo,
                         slot: 'adicional'
                     })
@@ -725,7 +784,7 @@ export default {
 
             // El celular principal y el teléfono fijo no pueden ser el mismo número.
             if (this.celularPrincipal && this.telefonoFijo
-                && this.celularPrincipal.trim() === this.telefonoFijo.trim()) {
+                && this.celularPrincipal.replace(/\D/g, '') === this.telefonoFijo.replace(/\D/g, '')) {
                 this.$message.warning('El celular principal y el teléfono fijo no pueden ser el mismo número.')
                 return
             }
@@ -755,7 +814,9 @@ export default {
                     this.$message.error(response.data.message)
                 }
             } catch (error) {
-                if (error.response && error.response.status === 422) {
+                if (error.response && error.response.status === 422 && error.response.data.duplicado) {
+                    this.mostrarDuplicado(error.response.data.message, error.response.data.duplicado)
+                } else if (error.response && error.response.status === 422) {
                     this.errors = error.response.data.errors || error.response.data
                     
                     if (error.response.data.message) {
@@ -781,6 +842,7 @@ export default {
             this.form.telefonos.push({
                 id: null,
                 telefono: '',
+                anexo: '',
                 tipo: 'movil',
                 es_principal: false
             })
@@ -834,26 +896,168 @@ export default {
     max-height: 70vh;
 }
 
-.input-with-select {
+/* Distribución del formulario en 3 columnas */
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0 16px;
+}
+.form-grid--2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.span-2 {
+    grid-column: span 2;
+}
+.span-3 {
+    grid-column: 1 / -1;
+}
+.row-span-3 {
+    grid-row: span 3;
+}
+.label-con-accion {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+.celda-alta {
+    display: flex;
+    flex-direction: column;
+}
+.celda-alta .el-textarea {
+    flex: 1;
+}
+.celda-alta >>> .el-textarea__inner {
+    min-height: 100% !important;
+}
+/* Cancelar / Guardar siempre visibles al pie del área con scroll */
+.form-acciones-fijas {
+    position: sticky;
+    bottom: -20px;
+    z-index: 3;
+    margin: 16px -20px -20px;
+    padding: 12px 20px;
+    background: #fff;
+    border-top: 1px solid #ebeef5;
+}
+/* El contenedor de pestañas trae overflow: hidden, que anula el sticky del pie */
+.form-main-content >>> .el-tabs__content {
+    overflow: visible;
+}
+.campo-grupo--error {
+    border-color: #f56c6c;
+}
+.texto-duplicado {
+    display: block;
+    margin-top: 4px;
+    color: #f56c6c;
+    font-size: 12px;
+}
+.additional-item {
+    flex-wrap: wrap;
+}
+.additional-item .texto-duplicado {
+    flex-basis: 100%;
+    margin-top: 2px;
+}
+.opcion-razon-social {
+    float: right;
+    margin-left: 12px;
+    color: #909399;
+    font-size: 12px;
+}
+/* Campos bloqueados (ID, empresa al editar): texto legible, no el gris tenue por defecto */
+.form-grid >>> .el-input.is-disabled .el-input__inner {
+    color: #303133;
+    -webkit-text-fill-color: #303133;
+    background-color: #f5f7fa;
+    cursor: not-allowed;
+}
+@media (max-width: 768px) {
+    .form-grid,
+    .form-grid--2 {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .span-2,
+    .row-span-3 {
+        grid-column: auto;
+        grid-row: auto;
+    }
+}
+
+/* Tipo + valor (+ "Anexo" + número de anexo) como un solo campo */
+.campo-grupo {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    align-items: stretch;
+    border: 1px solid #cac8f1;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #fff;
+}
+.campo-grupo:focus-within {
+    border-color: #409eff;
+}
+.campo-grupo >>> .el-input__inner {
+    border: none;
+    border-radius: 0;
+    padding: 0 8px;
+}
+.campo-grupo__tipo >>> .el-input__inner {
+    padding: 0 20px 0 6px;
+}
+.campo-grupo__anexo >>> .el-input__inner {
+    padding: 0 4px;
+    text-align: center;
+}
+.campo-grupo__tipo >>> .el-input__suffix {
+    right: 2px;
+}
+.campo-grupo__tipo {
+    flex: 0 0 62px;
+    border-right: 1px solid #cac8f1;
+}
+.campo-grupo--small .campo-grupo__tipo {
+    flex-basis: 92px;
+}
+.campo-grupo__valor {
+    flex: 1;
+    min-width: 0;
+}
+.campo-grupo__texto {
     display: flex;
     align-items: center;
+    padding: 0 6px;
+    color: #909399;
+    background: #f5f7fa;
+    border-left: 1px solid #cac8f1;
+    border-right: 1px solid #cac8f1;
+    white-space: nowrap;
+}
+.campo-grupo__anexo {
+    flex: 0 0 40px;
+}
+.campo-grupo--small .campo-grupo__texto {
+    font-size: 12px;
 }
 
-.input-with-select .el-select {
-    margin-right: 5px;
+.seccion-adicionales {
+    margin-top: 6px;
+    padding-top: 14px;
+    border-top: 1px solid #ebeef5;
 }
-
-.input-with-select .el-input {
-    flex: 1;
+.texto-vacio {
+    color: #909399;
+    font-size: 13px;
+    margin: 4px 0 0;
 }
 
 .additional-section {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 10px;
-    padding-bottom: 5px;
-    border-bottom: 1px solid #ebeef5;
+    margin-bottom: 8px;
 }
 
 .section-label {
@@ -865,16 +1069,11 @@ export default {
 .additional-item {
     display: flex;
     align-items: center;
+    gap: 6px;
     margin-bottom: 8px;
 }
 
-.mt-3 {
-    margin-top: 15px;
-}
 
-.m-t-20 {
-    margin-top: 20px;
-}
 
 .text-right {
     text-align: right;

@@ -68,10 +68,12 @@
                       <th>Celular</th>
                       <th>Telefono</th>
                       <th>Email</th>
+                      <th class="text-left"><el-tooltip content="Responsable comercial" placement="top"><span>Responsable</span></el-tooltip></th>
+                      <th class="text-left"><el-tooltip content="Usuario que hizo la última modificación" placement="top"><span>Modificado por</span></el-tooltip></th>
+                      <th><el-tooltip content="Fecha de la última modificación" placement="top"><span>Últ. modificación</span></el-tooltip></th>
                       <th>Estado</th>
-                      <th>Fecha última actualización</th>
 
-                      <th>Acciones</th>
+                      <th class="col-acciones-fija">Acciones</th>
                     </tr>
                     <tr slot-scope="{ index, row }" :key="index">
                         <td>
@@ -80,19 +82,34 @@
                             @change="handleSelectionChange(row)"
                           ></el-checkbox>
                         </td>
-                        <td>{{ row.razon_social }}</td>
+                        <td><el-tooltip :disabled="!esLargo(row.empresa_nombre)" :content="row.empresa_nombre" placement="top"><span>{{ recortar(row.empresa_nombre) }}</span></el-tooltip></td>
                         <td>{{ row.nombres }}</td>
                         <td>{{ row.apellidos }}</td>
-                        <td>{{ row.cargo }}</td>
-                        <td>{{ row.celular }}</td>
-                        <td>{{ row.telefono }}</td>
-                        <td>{{ row.email }}</td>
-                        <td>{{ row.estado_name }}</td>
+                        <td><el-tooltip :disabled="!esLargo(row.cargo)" :content="row.cargo" placement="top"><span>{{ recortar(row.cargo) }}</span></el-tooltip></td>
+                        <td>{{ mostrarTelefono(row.celular) }}</td>
+                        <td>{{ mostrarTelefono(row.telefono) }}</td>
+                        <td><el-tooltip :disabled="!esLargo(row.email)" :content="row.email" placement="top"><span>{{ recortar(row.email) }}</span></el-tooltip></td>
+                        <td class="text-left">
+                          <el-tooltip v-if="row.responsable_comercial" :disabled="!esLargo(row.responsable_comercial)" :content="row.responsable_comercial" placement="top"><span>{{ recortar(row.responsable_comercial) }}</span></el-tooltip>
+                          <span v-else style="color: #999; font-size: 12px;">Sin asignar</span>
+                        </td>
+                        <td class="text-left">
+                          <div v-if="row.ultimo_usuario" style="font-size: 12px;">
+                            <i class="fa fa-user" style="color: #666; margin-right: 4px;"></i>
+                            <strong>{{ row.ultimo_usuario }}</strong>
+                          </div>
+                          <div v-else style="color: #999; font-size: 12px;">
+                            <i class="fa fa-question-circle"></i> Sin información
+                          </div>
+                        </td>
                         <td>{{ formatFechaLegible(row.updated_at) }}</td>
+                        <td>{{ row.estado_name }}</td>
 
-                        <td class="text-right">
-                          <button type="button" class="btn waves-effect waves-light btn-xs btn-info" @click.prevent="clickCreate(row.id)">Editar</button>
-                          <button type="button" class="btn waves-effect waves-light btn-xs btn-danger" @click.prevent="clickDelete(row.id)">Eliminar</button>
+                        <td class="col-acciones-fija">
+                          <el-tooltip content="Editar" placement="top"><button type="button" class="btn waves-effect waves-light btn-xs btn-info" @click.prevent="clickCreate(row.id)"><i class="fas fa-edit"></i></button></el-tooltip>
+                          <el-tooltip v-if="row.estado === 1" content="Inactivar" placement="top"><button type="button" class="btn waves-effect waves-light btn-xs btn-warning" @click.prevent="clickInactivar(row)"><i class="fas fa-user-slash"></i></button></el-tooltip>
+                          <el-tooltip v-else content="Activar" placement="top"><button type="button" class="btn waves-effect waves-light btn-xs btn-success" @click.prevent="clickActivar(row)"><i class="fas fa-user-check"></i></button></el-tooltip>
+                          <el-tooltip content="Eliminar" placement="top"><button type="button" class="btn waves-effect waves-light btn-xs btn-danger" @click.prevent="clickDelete(row)"><i class="fas fa-trash-alt"></i></button></el-tooltip>
                         </td>
                     </tr>
                 </data-table>
@@ -123,10 +140,11 @@
 
 import ContactosForm from "../../components/Contactosform.vue";
 import DataTable from '../../components/Datatable.vue'
-import {deletable} from '../../../../../../../resources/js/mixins/deletable'
+import { formatearTelefono, separarAnexo } from '../../helpers/telefono'
+import { esLargo, recortar } from '../../helpers/texto'
+import { eliminarContacto, ejecutarAccionContacto } from '../../helpers/contacto'
 
 export default {
-    mixins: [deletable],
     components: {ContactosForm, DataTable },
     data() {
         return {
@@ -141,15 +159,49 @@ export default {
     created() {
       this.title = 'Contactos'
     },
+    mounted() {
+      // "Ver contacto" desde un dato repetido: abre ese contacto y limpia la URL.
+      const ver = Number(new URLSearchParams(window.location.search).get('ver'))
+      if (ver) {
+        window.history.replaceState({}, '', window.location.pathname)
+        this.clickCreate(ver)
+      }
+    },
     methods: {
+      esLargo,
+      recortar,
       clickCreate(recordId = null) {
         this.recordId = recordId;
         this.showDialog = true;
       },
-      clickDelete(id) {
-        this.destroy(`/${this.resource}/record/${id}`).then(() =>
-          this.$eventHub.$emit('reloadData')
+      mostrarTelefono(valor) {
+        if (!valor) return ''
+        const partes = separarAnexo(valor)
+        return formatearTelefono(partes.numero) + (partes.anexo ? ' anexo ' + partes.anexo : '')
+      },
+      clickDelete(row) {
+        eliminarContacto(this, row.id, () => this.$eventHub.$emit('reloadData'))
+      },
+      clickInactivar(row) {
+        this.accionContacto(
+          'post', `/${this.resource}/record/${row.id}/inactivar`, 'Inactivar',
+          'Úsalo cuando el contacto dejó la empresa o cambió de trabajo: conserva su historial y libera sus teléfonos y correos para otro contacto. Podrás activarlo de nuevo. ¿Inactivar?'
         )
+      },
+      clickActivar(row) {
+        this.accionContacto(
+          'post', `/${this.resource}/record/${row.id}/activar`, 'Activar',
+          'Se recuperan sus teléfonos y correos, salvo los que ya use otro contacto activo. ¿Activar?'
+        )
+      },
+      accionContacto(metodo, url, titulo, texto) {
+        this.$confirm(texto, titulo, {
+          confirmButtonText: titulo,
+          cancelButtonText: 'Cancelar',
+          type: 'warning'
+        }).then(() => {
+          ejecutarAccionContacto(this, metodo, url, titulo.toLowerCase(), () => this.$eventHub.$emit('reloadData'))
+        }).catch(() => {})
       },
       async handleSelectionChange(id) {
         this.$forceUpdate();
@@ -167,7 +219,9 @@ export default {
             })
               .then(res => {
                 if(res.data.success) {
-                  this.$message.success(res.data.message)
+                  // Si algunos no se eliminaron por tener historial, el aviso dura más.
+                  const conHistorial = res.data.con_historial > 0
+                  this.$message({ type: conHistorial ? 'warning' : 'success', message: res.data.message, duration: conHistorial ? 10000 : 3000, showClose: true })
                   this.selectedItems = []
                   this.$eventHub.$emit("reloadData")
                   resolve()
@@ -304,3 +358,16 @@ export default {
 
 }
 </script>
+
+<style scoped>
+/* Acciones fija a la derecha: siempre visible aunque la tabla se desplace */
+.col-acciones-fija {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    background: #fff;
+    box-shadow: -6px 0 8px -6px rgba(0, 0, 0, 0.15);
+    white-space: nowrap;
+    text-align: center;
+}
+</style>

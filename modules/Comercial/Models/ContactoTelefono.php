@@ -3,6 +3,7 @@
 namespace Modules\Comercial\Models;
 
 use App\Models\Tenant\ModelTenant;
+use Modules\Comercial\Models\Traits\EstadoDatoContacto;
 
 /**
  * Model ContactoTelefono
@@ -17,6 +18,8 @@ use App\Models\Tenant\ModelTenant;
  */
 class ContactoTelefono extends ModelTenant
 {
+    use EstadoDatoContacto;
+
     protected $table = 'contacto_telefonos';
 
     /**
@@ -35,6 +38,7 @@ class ContactoTelefono extends ModelTenant
         'es_principal',
         'slot',
         'estado',
+        'deleted_at',
     ];
 
     protected $casts = [
@@ -42,6 +46,8 @@ class ContactoTelefono extends ModelTenant
         'es_principal' => 'boolean',
         'estado' => 'integer',
     ];
+
+    protected $dates = ['deleted_at'];
 
     /**
      * Al modificar un teléfono, tocar al Contacto padre.
@@ -81,25 +87,5 @@ class ContactoTelefono extends ModelTenant
             'slot' => $this->slot,
             'estado' => $this->estado,
         ];
-    }
-
-    /**
-     * Borrado lógico
-     */
-    public function inactivar()
-    {
-        $this->estado = 0;
-        $this->updated_at = now();
-        return $this->save();
-    }
-
-    /**
-     * Reactivar
-     */
-    public function activar()
-    {
-        $this->estado = 1;
-        $this->updated_at = now();
-        return $this->save();
     }
 }

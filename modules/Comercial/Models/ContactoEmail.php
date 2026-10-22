@@ -3,6 +3,7 @@
 namespace Modules\Comercial\Models;
 
 use App\Models\Tenant\ModelTenant;
+use Modules\Comercial\Models\Traits\EstadoDatoContacto;
 
 /**
  * Model ContactoEmail
@@ -15,6 +16,8 @@ use App\Models\Tenant\ModelTenant;
  */
 class ContactoEmail extends ModelTenant
 {
+    use EstadoDatoContacto;
+
     protected $table = 'contacto_emails';
 
     protected $fillable = [
@@ -22,6 +25,7 @@ class ContactoEmail extends ModelTenant
         'email',
         'es_principal',
         'estado',
+        'deleted_at',
     ];
 
     protected $casts = [
@@ -29,6 +33,8 @@ class ContactoEmail extends ModelTenant
         'es_principal' => 'boolean',
         'estado' => 'integer',
     ];
+
+    protected $dates = ['deleted_at'];
 
     /**
      * Al modificar un email, tocar al Contacto padre.
@@ -66,25 +72,5 @@ class ContactoEmail extends ModelTenant
             'es_principal' => (bool) $this->es_principal,
             'estado' => $this->estado,
         ];
-    }
-
-    /**
-     * Borrado lógico
-     */
-    public function inactivar()
-    {
-        $this->estado = 0;
-        $this->updated_at = now();
-        return $this->save();
-    }
-
-    /**
-     * Reactivar
-     */
-    public function activar()
-    {
-        $this->estado = 1;
-        $this->updated_at = now();
-        return $this->save();
     }
 }

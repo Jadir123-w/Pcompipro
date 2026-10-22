@@ -411,6 +411,7 @@ import EmpresasForm from "../../components/Empresasform.vue";
 import ContactosForm from "../../components/Contactosform.vue";
 import DataTableExpandable from "../../components/DataTableExpandable.vue";
 import { esLargo, recortar } from '../../helpers/texto'
+import { eliminarContacto } from '../../helpers/contacto'
 import queryString from 'query-string'
 import { deletable } from '../../../../../../../resources/js/mixins/deletable'
 
@@ -544,24 +545,17 @@ export default {
         });
       });
     },
-    async clickDeleteContact(contactoId, empresaId) {
-      if (!confirm('¿Está seguro de eliminar este contacto?')) return;
-
-      try {
-        await this.destroy(`/comercial/contactos/record/${contactoId}`);
-        this.$message.success('Contacto eliminado correctamente');
-
+    clickDeleteContact(contactoId, empresaId) {
+      // Misma regla que en Contactos: con historial no se elimina y se ofrece inactivar.
+      eliminarContacto(this, contactoId, () => {
         // Limpiar cache y recargar solo los contactos de esa empresa
         this.$set(this.contactsList, empresaId, null);
 
         // Recargar forzadamente los contactos si la fila está expandida
         if (this.isRowExpanded(empresaId)) {
-          await this.clickViewContacts(empresaId, true); // forceReload = true
+          this.clickViewContacts(empresaId, true); // forceReload = true
         }
-
-      } catch (error) {
-        this.$message.error('Error al eliminar el contacto');
-      }
+      });
     },
     handleContactSaved(empresaId) {
       // Limpiar cache

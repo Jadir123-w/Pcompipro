@@ -16,13 +16,19 @@ use Modules\Comercial\Models\ContactoEmail;
 use Modules\Comercial\Models\ContactoTelefono;
 use Modules\Comercial\Models\Empresa;
 use Modules\Comercial\Models\ContactoInteraccion;
+use Modules\Comercial\Http\Controllers\Traits\BusquedaPorPalabra;
+use Modules\Comercial\Support\Correo;
+use Modules\Comercial\Support\Telefono;
 use App\Models\Tenant\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 
 class ContactosController extends Controller
 {
+    use BusquedaPorPalabra;
+
     /**
      * Display a listing of the resource.
      * @return Response
@@ -34,12 +40,15 @@ class ContactosController extends Controller
 
     public function columns()
     {
+        // El primero es el filtro por defecto.
         return [
+            'todos' => 'Todos',
             'razon_social' => 'Empresa',
             'nombres' => 'Nombres',
             'apellidos' => 'Apellidos',
+            'cargo' => 'Cargo',
             'celular' => 'Celular',
-            'telefono' => 'Telefono',
+            'telefono' => 'Teléfono',
             'email' => 'Email',
         ];
     }
@@ -98,8 +107,20 @@ class ContactosController extends Controller
     public function records(Request $request)
     {
         $records = Contacto::query()->whereNull('deleted_at')
+            // Usuario de la última modificación: último cambio registrado en la auditoría.
+            ->select('contacto.*')
+            ->selectSub(function ($q) {
+                $q->from('audits')
+                  ->join('users', 'users.id', '=', 'audits.user_id')
+                  ->select('users.name')
+                  ->whereColumn('audits.auditable_id', 'contacto.id')
+                  ->where('audits.auditable_type', Contacto::class)
+                  ->orderByDesc('audits.id')
+                  ->limit(1);
+            }, 'ultimo_usuario')
             ->with([
-                'empresa:id,razon_social',
+                'empresa:id,razon_social,nombre_comercial',
+                'responsableComercial:id,name',
                 'emails',      // Solo activos (estado = 1)
                 'telefonos'    // Solo activos (estado = 1)
             ])
@@ -107,49 +128,60 @@ class ContactosController extends Controller
             ->orderBy('updated_at', 'desc')
             ->orderBy('id', 'desc');
 
-        if ($request->get('column') && $request->get('value')) {
-            $column = $request->get('column');
-            $value = $request->get('value');
-
-            if ($column === 'razon_social') {
-                // Buscar empresa por razón social Y por nombre comercial
-                // (requerimiento del cliente: los ejecutivos identifican
-                // empresas por nombre comercial más rápido).
-                $records->whereHas('empresa', function ($q) use ($value) {
-                    $q->where('razon_social', 'LIKE', "%{$value}%")
-                      ->orWhere('nombre_comercial', 'LIKE', "%{$value}%");
-                });
-            } elseif (in_array($column, ['nombres', 'apellidos', 'cargo'])) {
-                $records->where($column, 'LIKE', "%{$value}%");
-            } elseif ($column === 'celular') {
-                // Buscar en campo directo Y en contacto_telefonos (tipos movil/casa)
-                $records->where(function ($q) use ($value) {
-                    $q->where('celular', 'LIKE', "%{$value}%")
-                      ->orWhereHas('telefonos', function ($q2) use ($value) {
-                          $q2->where('telefono', 'LIKE', "%{$value}%")
-                             ->whereIn('tipo', ['movil', 'casa']);
-                      });
-                });
-            } elseif ($column === 'telefono') {
-                // Buscar en campo directo Y en contacto_telefonos
-                $records->where(function ($q) use ($value) {
-                    $q->where('telefono', 'LIKE', "%{$value}%")
-                      ->orWhereHas('telefonos', function ($q2) use ($value) {
-                          $q2->where('telefono', 'LIKE', "%{$value}%");
-                      });
-                });
-            } elseif ($column === 'email') {
-                // Buscar en campo directo Y en contacto_emails
-                $records->where(function ($q) use ($value) {
-                    $q->where('email', 'LIKE', "%{$value}%")
-                      ->orWhereHas('emails', function ($q2) use ($value) {
-                          $q2->where('email', 'LIKE', "%{$value}%");
-                      });
-                });
-            }
+        $column = $request->get('column');
+        $value = trim((string) $request->get('value'));
+        if ($value !== '' && array_key_exists($column, $this->columns())) {
+            $this->buscarContactos($records, $column, $value);
         }
 
         return new ContactosCollection($records->paginate(config('tenant.items_per_page')));
+    }
+
+    /**
+     * Búsqueda por palabra (cada palabra en alguno de los campos de la opción elegida).
+     * Un teléfono escrito con espacios, +51 o (01) se busca como un solo número normalizado.
+     */
+    private function buscarContactos($query, $column, $value)
+    {
+        $todos = $column === 'todos';
+        $patrones = Telefono::pareceTelefono($value) && in_array($column, ['todos', 'celular', 'telefono'], true)
+            ? ['%' . addcslashes(Telefono::normalizarNumero(Telefono::separarAnexo($value)['numero']), '%_\\') . '%']
+            : $this->patronesPorPalabra($value);
+
+        foreach ($patrones as $like) {
+            $query->where(function ($q) use ($column, $todos, $like) {
+                if ($todos || $column === 'razon_social') {
+                    // Razón social y nombre comercial: los ejecutivos identifican así a las empresas.
+                    $q->orWhereHas('empresa', function ($e) use ($like) {
+                        $e->whereRaw("REPLACE(razon_social, '.', '') LIKE ?", [$like])
+                          ->orWhereRaw("REPLACE(nombre_comercial, '.', '') LIKE ?", [$like]);
+                    });
+                }
+                foreach (['nombres', 'apellidos', 'cargo'] as $campo) {
+                    if ($todos || $column === $campo) {
+                        $q->orWhereRaw("REPLACE(contacto.{$campo}, '.', '') LIKE ?", [$like]);
+                    }
+                }
+                if ($todos || $column === 'celular') {
+                    $q->orWhere('contacto.celular', 'LIKE', $like)
+                      ->orWhereHas('telefonos', function ($t) use ($like) {
+                          $t->where('telefono', 'LIKE', $like)->whereIn('tipo', ['movil', 'casa']);
+                      });
+                }
+                if ($todos || $column === 'telefono') {
+                    $q->orWhere('contacto.telefono', 'LIKE', $like)
+                      ->orWhereHas('telefonos', function ($t) use ($like) {
+                          $t->where('telefono', 'LIKE', $like);
+                      });
+                }
+                if ($todos || $column === 'email') {
+                    $q->orWhere('contacto.email', 'LIKE', $like)
+                      ->orWhereHas('emails', function ($m) use ($like) {
+                          $m->where('email', 'LIKE', $like);
+                      });
+                }
+            });
+        }
     }
 
     public function store(Request $request)
@@ -175,6 +207,7 @@ class ContactosController extends Controller
             'telefonos' => ['nullable', 'array'],
             'telefonos.*.id' => ['nullable', 'integer'],
             'telefonos.*.telefono' => ['required_with:telefonos', 'string', 'max:50'],
+            'telefonos.*.anexo' => ['nullable', 'string', 'max:10'],
             'telefonos.*.tipo' => ['nullable', 'string', 'in:movil,fijo,trabajo,personal,casa,otro'],
             'telefonos.*.es_principal' => ['nullable', 'boolean'],
             'telefonos.*.estado' => ['nullable', 'integer', 'in:0,1'],
@@ -203,7 +236,7 @@ class ContactosController extends Controller
         $celPrincipal = null;
         $telFijo      = null;
         foreach ($telefonosInput as $t) {
-            $num = trim($t['telefono'] ?? '');
+            $num = Telefono::normalizarNumero(Telefono::separarAnexo($t['telefono'] ?? '')['numero']);
             if ($num === '') continue;
             if (($t['slot'] ?? '') === 'celular_principal') $celPrincipal = $num;
             if (($t['slot'] ?? '') === 'fijo')              $telFijo      = $num;
@@ -215,74 +248,27 @@ class ContactosController extends Controller
             ], 422);
         }
 
-        // 2) Unicidad: el telefono no puede estar registrado en otro contacto.
-        //    Se revisa tanto en contacto_telefonos como en el campo directo
-        //    contacto.telefono (contactos antiguos sin fila en contacto_telefonos).
-        $numeros = [];
+        // 2) Unicidad del celular: no puede estar activo en otro contacto activo.
+        //    El fijo no se valida (la central de la empresa se registra en Empresas).
+        $celulares = [];
         foreach ($telefonosInput as $t) {
-            $num = trim($t['telefono'] ?? '');
-            if ($num !== '') $numeros[] = $num;
+            $num = Telefono::normalizar($t['telefono'] ?? '', $t['anexo'] ?? null);
+            if (Telefono::esCelular($num)) $celulares[] = $num;
         }
-        if (!empty($numeros)) {
-            $telDup = ContactoTelefono::whereIn('telefono', $numeros)
-                ->where('estado', 1)
-                ->where('contacto_id', '!=', $idContactoActual ?: 0)
-                ->first();
-            $telExistente = $telDup ? $telDup->telefono : null;
-
-            if (!$telExistente) {
-                // El numero directo puede estar en contacto.celular o contacto.telefono.
-                $contactoTelDup = Contacto::where(function ($q) use ($numeros) {
-                        $q->whereIn('telefono', $numeros)
-                          ->orWhereIn('celular', $numeros);
-                    })
-                    ->where('estado', 1)
-                    ->where('id', '!=', $idContactoActual ?: 0)
-                    ->first();
-                if ($contactoTelDup) {
-                    $telExistente = in_array($contactoTelDup->celular, $numeros, true)
-                        ? $contactoTelDup->celular
-                        : $contactoTelDup->telefono;
-                }
-            }
-
-            if ($telExistente) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Ya existe otro contacto con el telefono ' . $telExistente . '.',
-                ], 422);
-            }
+        $celularExistente = $this->celularEnOtroContacto($celulares, $idContactoActual);
+        if ($celularExistente) {
+            return $this->respuestaDuplicado('telefono', $celularExistente);
         }
 
-        // 3) Unicidad: el correo no puede estar registrado en otro contacto.
-        //    Se revisa tanto en contacto_emails como en el campo directo
-        //    contacto.email (contactos antiguos sin fila en contacto_emails).
+        // 3) Unicidad del correo (sin espacios y sin distinguir mayúsculas).
         $correos = [];
         foreach ($emailsInput as $e) {
-            $em = trim($e['email'] ?? '');
+            $em = Correo::normalizar($e['email'] ?? '');
             if ($em !== '') $correos[] = $em;
         }
-        if (!empty($correos)) {
-            $emailDup = ContactoEmail::whereIn('email', $correos)
-                ->where('estado', 1)
-                ->where('contacto_id', '!=', $idContactoActual ?: 0)
-                ->first();
-            $correoExistente = $emailDup ? $emailDup->email : null;
-
-            if (!$correoExistente) {
-                $contactoEmailDup = Contacto::whereIn('email', $correos)
-                    ->where('estado', 1)
-                    ->where('id', '!=', $idContactoActual ?: 0)
-                    ->first();
-                $correoExistente = $contactoEmailDup ? $contactoEmailDup->email : null;
-            }
-
-            if ($correoExistente) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Ya existe otro contacto con el correo ' . $correoExistente . '.',
-                ], 422);
-            }
+        $correoExistente = $this->correoEnOtroContacto($correos, $idContactoActual);
+        if ($correoExistente) {
+            return $this->respuestaDuplicado('email', $correoExistente);
         }
 
         // La transaccion DEBE ir en la conexion del TENANT: los modelos usan
@@ -318,6 +304,8 @@ class ContactosController extends Controller
 
             // ACTUALIZAR CONTACTO EXISTENTE
             $contacto = Contacto::query()->findOrFail($idContacto);
+            // La empresa de un contacto no se cambia al editar (solo sus datos).
+            unset($data['empresa_id']);
             
             // ✅ CORRECCIÓN 1: No establecer manualmente updated_at
             // Laravel lo hará automáticamente, y así no interfiere con la auditoría
@@ -379,194 +367,223 @@ class ContactosController extends Controller
      */
     protected function saveTelefonos($contactoId, array $telefonos)
     {
-        if (empty($telefonos)) {
-            // Si no hay teléfonos, marcar todos como inactivos (borrado lógico)
-            ContactoTelefono::where('contacto_id', $contactoId)
-                ->where('estado', 1)
-                ->update(['estado' => 0, 'updated_at' => now()]);
-
-            // El contacto queda sin celular en el listado.
-            \Modules\Comercial\Models\Contacto::where('id', $contactoId)
-                ->update(['celular' => null]);
-            return;
-        }
-
-        // IDs a conservar (activos)
-        $idsAConservar = collect($telefonos)->pluck('id')->filter()->toArray();
-
-        // Marcar como inactivos los que ya no están en la lista
-        ContactoTelefono::where('contacto_id', $contactoId)
-            ->where('estado', 1)
-            ->whereNotIn('id', $idsAConservar)
-            ->update(['estado' => 0, 'updated_at' => now()]);
-
-        // Liberar transitoriamente los números de los teléfonos que se
-        // conservan (los que traen id), poniéndoles un valor temporal único.
-        // Esto permite INTERCAMBIAR (swap) los números entre dos teléfonos
-        // del mismo contacto en un solo guardado sin chocar con el índice
-        // único (contacto_id, telefono, estado). Sin este paso, reasignar el
-        // número de un teléfono al que todavía tiene otro produce el error
-        // 1062 ("teléfono repetido"). Todo ocurre dentro de la transacción
-        // abierta en store(), así que estos valores temporales nunca quedan
-        // persistidos: el loop siguiente los reescribe con el valor final.
-        foreach ($telefonos as $row) {
-            if (!empty($row['id']) && trim($row['telefono'] ?? '') !== '') {
-                ContactoTelefono::where('id', $row['id'])
-                    ->where('contacto_id', $contactoId)
-                    ->update(['telefono' => '__tmp_' . $row['id']]);
-            }
-        }
-
-        // Slots válidos (defensa frente a payload corrupto: cae a 'adicional').
         $slotsValidos = [
             ContactoTelefono::SLOT_CELULAR_PRINCIPAL,
             ContactoTelefono::SLOT_FIJO,
             ContactoTelefono::SLOT_ADICIONAL,
         ];
+        // Un contacto inactivo guarda sus teléfonos suspendidos (se recuperan al activarlo).
+        $estado = (int) Contacto::query()->where('id', $contactoId)->value('estado') === 1 ? 1 : 0;
+        $existentes = ContactoTelefono::where('contacto_id', $contactoId)->orderBy('id')->get();
+        $usados = [];
 
-        // Actualizar o crear cada teléfono
         foreach ($telefonos as $row) {
-            $telefono = trim($row['telefono'] ?? '');
-
-            if (empty($telefono)) {
+            $valor = Telefono::normalizar($row['telefono'] ?? '', $row['anexo'] ?? null);
+            if ($valor === '' || $this->yaUsado($usados, 'telefono', $valor)) {
                 continue;
             }
 
-            $slot = $row['slot'] ?? null;
-            if (!in_array($slot, $slotsValidos, true)) {
-                $slot = ContactoTelefono::SLOT_ADICIONAL;
-            }
+            $slot = in_array($row['slot'] ?? null, $slotsValidos, true) ? $row['slot'] : ContactoTelefono::SLOT_ADICIONAL;
+            $registro = $this->registroParaGuardar($existentes, $usados, 'telefono', $valor, $row['id'] ?? null)
+                ?: new ContactoTelefono(['contacto_id' => $contactoId]);
 
-            $esPrincipal = ($slot === ContactoTelefono::SLOT_CELULAR_PRINCIPAL);
-            $tipo = $row['tipo'] ?? 'movil';
-            $estado = (int)($row['estado'] ?? 1);
-
-            // Actualizar o crear
-            if (!empty($row['id'])) {
-                // Actualizar existente
-                ContactoTelefono::where('id', $row['id'])
-                    ->where('contacto_id', $contactoId)
-                    ->update([
-                        'telefono' => $telefono,
-                        'tipo' => $tipo,
-                        'es_principal' => $esPrincipal ? 1 : 0,
-                        'slot' => $slot,
-                        'estado' => $estado,
-                        'updated_at' => now(),
-                    ]);
-            } else {
-                // Crear nuevo
-                ContactoTelefono::create([
-                    'contacto_id' => $contactoId,
-                    'telefono' => $telefono,
-                    'tipo' => $tipo,
-                    'es_principal' => $esPrincipal ? 1 : 0,
-                    'slot' => $slot,
-                    'estado' => $estado,
-                ]);
-            }
+            $registro->fill([
+                'telefono'     => $valor,
+                'tipo'         => $row['tipo'] ?? 'movil',
+                'es_principal' => $slot === ContactoTelefono::SLOT_CELULAR_PRINCIPAL ? 1 : 0,
+                'slot'         => $slot,
+                'estado'       => $estado,
+                'deleted_at'   => null,
+            ])->save();
+            $usados[$registro->id] = $registro;
         }
 
-        // Sincronizar contacto.celular con el slot='celular_principal' activo.
-        // Si no hay celular principal, queda en null (el listado muestra vacío).
-        // NO se hace auto-promote de otro teléfono — los slots son explícitos.
-        $principal = ContactoTelefono::where('contacto_id', $contactoId)
-            ->where('estado', 1)
-            ->where('slot', ContactoTelefono::SLOT_CELULAR_PRINCIPAL)
-            ->first();
+        $this->darDeBajaNoUsados($existentes, $usados);
 
-        \Modules\Comercial\Models\Contacto::where('id', $contactoId)
-            ->update(['celular' => $principal ? $principal->telefono : null]);
+        // contacto.celular = celular principal (sin auto-promote de otro teléfono).
+        $principal = collect($usados)->first(function ($t) {
+            return $t->slot === ContactoTelefono::SLOT_CELULAR_PRINCIPAL;
+        });
+        Contacto::where('id', $contactoId)->update(['celular' => $principal ? $principal->telefono : null]);
     }
 
     /**
-     * Guardar emails del contacto con borrado lógico
+     * Guardar emails del contacto (normalizados; reactiva el que la persona ya tuvo).
      */
     protected function saveEmails($contactoId, array $emails)
     {
-        if (empty($emails)) {
-            // Si no hay emails, marcar todos como inactivos (borrado lógico)
-            ContactoEmail::where('contacto_id', $contactoId)
-                ->where('estado', 1)
-                ->update(['estado' => 0, 'updated_at' => now()]);
-            return;
-        }
+        $estado = (int) Contacto::query()->where('id', $contactoId)->value('estado') === 1 ? 1 : 0;
+        $existentes = ContactoEmail::where('contacto_id', $contactoId)->orderBy('id')->get();
+        $usados = [];
+        $principalId = null;
 
-        // IDs a conservar (activos)
-        $idsAConservar = collect($emails)->pluck('id')->filter()->toArray();
-
-        // Marcar como inactivos los que ya no están en la lista
-        ContactoEmail::where('contacto_id', $contactoId)
-            ->where('estado', 1)
-            ->whereNotIn('id', $idsAConservar)
-            ->update(['estado' => 0, 'updated_at' => now()]);
-
-        // Actualizar o crear cada email
         foreach ($emails as $row) {
-            $email = trim($row['email'] ?? '');
-            
-            if (empty($email)) {
+            $valor = Correo::normalizar($row['email'] ?? '');
+            if ($valor === '' || $this->yaUsado($usados, 'email', $valor)) {
                 continue;
             }
 
-            $esPrincipal = (bool)($row['es_principal'] ?? false);
-            $estado = (int)($row['estado'] ?? 1);
+            $registro = $this->registroParaGuardar($existentes, $usados, 'email', $valor, $row['id'] ?? null)
+                ?: new ContactoEmail(['contacto_id' => $contactoId]);
+            $registro->fill([
+                'email'      => $valor,
+                'estado'     => $estado,
+                'deleted_at' => null,
+            ])->save();
+            $usados[$registro->id] = $registro;
 
-            // Si es principal, quitar la marca de principal de los demás
-            if ($esPrincipal) {
-                ContactoEmail::where('contacto_id', $contactoId)
-                    ->where('estado', 1)
-                    ->update(['es_principal' => 0]);
-            }
-
-            // Actualizar o crear
-            if (!empty($row['id'])) {
-                // Actualizar existente
-                ContactoEmail::where('id', $row['id'])
-                    ->where('contacto_id', $contactoId)
-                    ->update([
-                        'email' => $email,
-                        'es_principal' => $esPrincipal ? 1 : 0,
-                        'estado' => $estado,
-                        'updated_at' => now(),
-                    ]);
-            } else {
-                // Crear nuevo
-                ContactoEmail::create([
-                    'contacto_id' => $contactoId,
-                    'email' => $email,
-                    'es_principal' => $esPrincipal ? 1 : 0,
-                    'estado' => $estado,
-                ]);
+            if ($principalId === null && !empty($row['es_principal'])) {
+                $principalId = $registro->id;
             }
         }
 
-        // Si ninguno es principal, marcar el primero activo como principal
-        $principalExists = ContactoEmail::where('contacto_id', $contactoId)
-            ->where('estado', 1)
-            ->where('es_principal', 1)
-            ->exists();
+        $this->darDeBajaNoUsados($existentes, $usados);
 
-        if (!$principalExists) {
-            $first = ContactoEmail::where('contacto_id', $contactoId)
-                ->where('estado', 1)
-                ->orderBy('id')
-                ->first();
-            
-            if ($first) {
-                $first->es_principal = 1;
-                $first->save();
+        // Un solo principal: el marcado o, si no hay, el primero.
+        if ($principalId === null && !empty($usados)) {
+            $principalId = array_keys($usados)[0];
+        }
+        foreach ($usados as $id => $registro) {
+            $esPrincipal = $id === $principalId ? 1 : 0;
+            if ((int) $registro->es_principal !== $esPrincipal) {
+                $registro->es_principal = $esPrincipal;
+                $registro->save();
             }
         }
 
-        // Sincronizar el email principal al campo directo contacto.email
-        $principal = ContactoEmail::where('contacto_id', $contactoId)
+        Contacto::where('id', $contactoId)->update([
+            'email' => $principalId ? $usados[$principalId]->email : null,
+        ]);
+    }
+
+    /**
+     * ¿El valor ya se guardó en esta misma petición? (evita repetirlo).
+     */
+    private function yaUsado(array $usados, $campo, $valor)
+    {
+        foreach ($usados as $registro) {
+            if ($registro->{$campo} === $valor) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Registro a reutilizar: primero el que ya tiene ese valor (activo, suspendido o de baja:
+     * se reactiva); si no, el que se está editando (cambio de valor).
+     */
+    private function registroParaGuardar($existentes, array $usados, $campo, $valor, $idEditado)
+    {
+        $mismoValor = $existentes->first(function ($r) use ($usados, $campo, $valor) {
+            return !isset($usados[$r->id]) && $r->{$campo} === $valor;
+        });
+        if ($mismoValor || !$idEditado) {
+            return $mismoValor;
+        }
+
+        return $existentes->first(function ($r) use ($usados, $idEditado) {
+            return !isset($usados[$r->id]) && (int) $r->id === (int) $idEditado;
+        });
+    }
+
+    /**
+     * Lo que el usuario quitó queda de baja con fecha (las bajas anteriores conservan la suya).
+     */
+    private function darDeBajaNoUsados($existentes, array $usados)
+    {
+        foreach ($existentes as $registro) {
+            if (!isset($usados[$registro->id]) && $registro->deleted_at === null) {
+                $registro->cambiarEstado('baja');
+            }
+        }
+    }
+
+    /**
+     * Celular activo en otro contacto activo (no eliminado ni inactivo).
+     */
+    private function celularEnOtroContacto(array $celulares, $idContactoActual)
+    {
+        if (empty($celulares)) {
+            return null;
+        }
+
+        $dup = ContactoTelefono::whereIn('telefono', $celulares)
             ->where('estado', 1)
-            ->where('es_principal', 1)
+            ->whereNull('deleted_at')
+            ->where('contacto_id', '!=', $idContactoActual ?: 0)
+            ->whereHas('contacto', function ($q) {
+                $q->where('estado', 1);
+            })
+            ->first();
+        if ($dup) {
+            return ['valor' => $dup->telefono, 'contacto' => $dup->contacto];
+        }
+
+        // Contactos antiguos con el número solo en el campo directo.
+        $directo = Contacto::whereIn('celular', $celulares)
+            ->where('estado', 1)
+            ->where('id', '!=', $idContactoActual ?: 0)
             ->first();
 
-        \Modules\Comercial\Models\Contacto::where('id', $contactoId)
-            ->update(['email' => $principal ? $principal->email : null]);
+        return $directo ? ['valor' => $directo->celular, 'contacto' => $directo] : null;
+    }
+
+    /**
+     * 422 de dato repetido: mensaje que dice quién lo tiene y qué hacer, y los datos para que la
+     * pantalla marque la casilla y ofrezca "Ver contacto".
+     */
+    private function respuestaDuplicado($campo, array $existente)
+    {
+        $contacto = $existente['contacto'];
+        $nombre = trim($contacto->nombres . ' ' . $contacto->apellidos);
+        $empresa = $contacto->empresa ? $contacto->empresa->nombreVisible() : '';
+        $valor = $campo === 'telefono' ? Telefono::formatear($existente['valor']) : $existente['valor'];
+        $dato = $campo === 'telefono' ? 'El celular' : 'El correo';
+
+        return response()->json([
+            'success'   => false,
+            'message'   => "{$dato} {$valor} ya está registrado en el contacto {$nombre}"
+                . ($empresa !== '' ? " ({$empresa})" : '')
+                . '. Si esa persona cambió de empresa, inactiva ese contacto y vuelve a guardar.',
+            'duplicado' => [
+                'campo'           => $campo,
+                'valor'           => $existente['valor'],
+                'valor_formato'   => $valor,
+                'contacto_id'     => $contacto->id,
+                'contacto_nombre' => $nombre,
+                'empresa_nombre'  => $empresa,
+            ],
+        ], 422);
+    }
+
+    /**
+     * Correo activo en otro contacto activo (no eliminado ni inactivo).
+     */
+    private function correoEnOtroContacto(array $correos, $idContactoActual)
+    {
+        if (empty($correos)) {
+            return null;
+        }
+
+        $dup = ContactoEmail::whereIn('email', $correos)
+            ->where('estado', 1)
+            ->whereNull('deleted_at')
+            ->where('contacto_id', '!=', $idContactoActual ?: 0)
+            ->whereHas('contacto', function ($q) {
+                $q->where('estado', 1);
+            })
+            ->first();
+        if ($dup) {
+            return ['valor' => $dup->email, 'contacto' => $dup->contacto];
+        }
+
+        $directo = Contacto::whereIn('email', $correos)
+            ->where('estado', 1)
+            ->where('id', '!=', $idContactoActual ?: 0)
+            ->first();
+
+        return $directo ? ['valor' => $directo->email, 'contacto' => $directo] : null;
     }
 
     public function record($id)
@@ -574,13 +591,37 @@ class ContactosController extends Controller
         return new ContactoResource(Contacto::query()->findOrFail($id));
     }
 
+    /**
+     * Eliminar: solo para registros duplicados o mal hechos. Un contacto con actividad
+     * no se elimina (se inactiva). Da de baja, con fecha, sus teléfonos y correos.
+     */
     public function destroy($id)
     {
         try {
-            Contacto::query()->where('id', $id)->update([
-                'deleted_at' => now(),
-                'estado' => 0,
-            ]);
+            $contacto = Contacto::query()->findOrFail($id);
+
+            if (!empty($this->actividadDelContacto($contacto->id))) {
+                $nombre = trim($contacto->nombres . ' ' . $contacto->apellidos);
+                return [
+                    'success'       => false,
+                    'con_actividad' => true,
+                    'nombre'        => $nombre,
+                    'message'       => "{$nombre} tiene historial registrado y no se puede eliminar."
+                        . ' Si la persona dejó la empresa o ya no es el contacto, usa Inactivar.',
+                ];
+            }
+
+            DB::connection($contacto->getConnectionName())->transaction(function () use ($contacto) {
+                $ahora = now();
+                foreach ([ContactoTelefono::class, ContactoEmail::class] as $modelo) {
+                    $modelo::where('contacto_id', $contacto->id)
+                        ->whereNull('deleted_at')
+                        ->update(['estado' => 0, 'deleted_at' => $ahora, 'updated_at' => $ahora]);
+                }
+                $contacto->estado = 0;
+                $contacto->save();
+                $contacto->delete();
+            });
 
             return [
                 'success' => true,
@@ -595,15 +636,66 @@ class ContactosController extends Controller
         }
     }
 
-    protected function inactivar($id)
+    /**
+     * Tablas donde el contacto deja historial. Con alguna fila, no se elimina.
+     */
+    private function actividadDelContacto($contactoId)
+    {
+        $tablas = [
+            'requerimiento'        => 'requerimientos',
+            'quotation_prequotes'  => 'pre-cotizaciones',
+            'proyecto'             => 'proyectos',
+            'com07_oportunidades'  => 'oportunidades',
+            'contacto_interaccion' => 'interacciones',
+        ];
+        $conexion = (new Contacto)->getConnectionName();
+        $actividad = [];
+
+        foreach ($tablas as $tabla => $etiqueta) {
+            if (Schema::connection($conexion)->hasTable($tabla)
+                && DB::connection($conexion)->table($tabla)->where('contacto_id', $contactoId)->exists()) {
+                $actividad[] = $etiqueta;
+            }
+        }
+
+        return $actividad;
+    }
+
+    /**
+     * Antes de eliminar: la pantalla pregunta si el contacto tiene historial (solo lectura)
+     * para mostrar de entrada la ventana de "no se puede eliminar" con la opción de inactivar.
+     */
+    public function historial($id)
+    {
+        $contacto = Contacto::query()->findOrFail($id);
+
+        return [
+            'success'         => true,
+            'tiene_historial' => !empty($this->actividadDelContacto($contacto->id)),
+            'activo'          => (int) $contacto->estado === 1,
+            'nombre'          => trim($contacto->nombres . ' ' . $contacto->apellidos),
+        ];
+    }
+
+    /**
+     * Inactivar: el contacto dejó la empresa. Conserva su historial; sus teléfonos y
+     * correos quedan suspendidos (libres para otro contacto) y se recuperan al activarlo.
+     */
+    public function inactivar($id)
     {
         try {
             $contacto = Contacto::query()->findOrFail($id);
-            
-            // ✅ CORRECCIÓN 2: No establecer manualmente updated_at
-            $contacto->estado = 0;
-            // ❌ ELIMINADO: $contacto->updated_at = now();
-            $contacto->save();
+
+            DB::connection($contacto->getConnectionName())->transaction(function () use ($contacto) {
+                $contacto->estado = 0;
+                $contacto->save();
+                foreach ([ContactoTelefono::class, ContactoEmail::class] as $modelo) {
+                    $modelo::where('contacto_id', $contacto->id)
+                        ->where('estado', 1)
+                        ->whereNull('deleted_at')
+                        ->update(['estado' => 0, 'updated_at' => now()]);
+                }
+            });
 
             return [
                 'success' => true,
@@ -622,42 +714,55 @@ class ContactosController extends Controller
 
     public function disableMassive(Request $request)
     {
-        $selected = collect($request->selected);
-        $itemDisabled = 0;
-        $count = $selected->count();
-
-        if ($count == 0) {
-            return [
-                'success'  => false,
-                'message' => 'Tiene que seleccionar los items'
-            ];
-        }
-
-        $selected->each(function ($id) use (&$itemDisabled) {
-            $response = $this->inactivar($id);
-            if ($response['success']) $itemDisabled += 1;
-        });
-
-        return [
-            'success' => true,
-            'message' => "Se inactivaron {$itemDisabled} contactos de {$count} contactos seleccionados"
-        ];
+        return $this->accionMasiva($request, 'inactivar', 'Se inactivaron');
     }
 
-    protected function activar($id)
+    /**
+     * Activar: recupera los teléfonos y correos suspendidos. El celular o correo que ya
+     * usa otro contacto activo no se recupera (queda de baja) y se avisa.
+     */
+    public function activar($id)
     {
         try {
             $contacto = Contacto::query()->findOrFail($id);
-            
-            // ✅ CORRECCIÓN 3: No establecer manualmente updated_at
-            $contacto->estado = 1;
-            // ❌ ELIMINADO: $contacto->updated_at = now();
-            $contacto->save();
+            $omitidos = [];
 
-            return [
-                'success' => true,
-                'message' => 'Contacto activado con éxito'
-            ];
+            DB::connection($contacto->getConnectionName())->transaction(function () use ($contacto, &$omitidos) {
+                $contacto->estado = 1;
+                $contacto->save();
+
+                $suspendidos = ContactoTelefono::where('contacto_id', $contacto->id)
+                    ->where('estado', 0)->whereNull('deleted_at')->get();
+                foreach ($suspendidos as $telefono) {
+                    if (Telefono::esCelular($telefono->telefono)
+                        && $this->celularEnOtroContacto([$telefono->telefono], $contacto->id)) {
+                        $telefono->cambiarEstado('baja');
+                        $omitidos[] = Telefono::formatear($telefono->telefono);
+                        continue;
+                    }
+                    $telefono->cambiarEstado('activo');
+                }
+
+                $suspendidos = ContactoEmail::where('contacto_id', $contacto->id)
+                    ->where('estado', 0)->whereNull('deleted_at')->get();
+                foreach ($suspendidos as $email) {
+                    if ($this->correoEnOtroContacto([$email->email], $contacto->id)) {
+                        $email->cambiarEstado('baja');
+                        $omitidos[] = $email->email;
+                        continue;
+                    }
+                    $email->cambiarEstado('activo');
+                }
+
+                $this->sincronizarPrincipales($contacto->id);
+            });
+
+            $mensaje = 'Contacto activado con éxito';
+            if (!empty($omitidos)) {
+                $mensaje .= '. No se recuperaron (ya los usa otro contacto): ' . implode(', ', $omitidos);
+            }
+
+            return ['success' => true, 'message' => $mensaje];
 
         } catch (Exception $e) {
             Log::error("Error al activar el contacto: {$e->getMessage()}");
@@ -666,34 +771,36 @@ class ContactosController extends Controller
         }
     }
 
+    /**
+     * Campos directos contacto.celular / contacto.email = principales activos.
+     */
+    private function sincronizarPrincipales($contactoId)
+    {
+        $celular = ContactoTelefono::where('contacto_id', $contactoId)->where('estado', 1)
+            ->where('slot', ContactoTelefono::SLOT_CELULAR_PRINCIPAL)->value('telefono');
+        $email = ContactoEmail::where('contacto_id', $contactoId)->where('estado', 1)
+            ->orderByDesc('es_principal')->orderBy('id')->value('email');
+
+        Contacto::where('id', $contactoId)->update(['celular' => $celular, 'email' => $email]);
+    }
+
     public function enableMassive(Request $request)
     {
-        $selected = collect($request->selected);
-        $itemEnable = 0;
-        $count = $selected->count();
-
-        if ($count == 0) {
-            return [
-                'success'  => false,
-                'message' => 'Tiene que seleccionar los items'
-            ];
-        }
-
-        $selected->each(function ($id) use (&$itemEnable) {
-            $response = $this->activar($id);
-            if ($response['success']) $itemEnable += 1;
-        });
-
-        return [
-            'success' => true,
-            'message' => "Se activaron {$itemEnable} contactos de {$count} contactos seleccionados"
-        ];
+        return $this->accionMasiva($request, 'activar', 'Se activaron');
     }
 
     public function destroyMassive(Request $request)
     {
+        return $this->accionMasiva($request, 'destroy', 'Se eliminaron');
+    }
+
+    /**
+     * Aplica eliminar / inactivar / activar a los seleccionados y resume el resultado
+     * (incluye los avisos: contactos con actividad o datos no recuperados).
+     */
+    private function accionMasiva(Request $request, $accion, $verbo)
+    {
         $selected = collect($request->selected);
-        $itemDeleted = 0;
         $count = $selected->count();
 
         if ($count == 0) {
@@ -703,14 +810,38 @@ class ContactosController extends Controller
             ];
         }
 
-        $selected->each(function ($id) use (&$itemDeleted) {
-            $response = $this->destroy($id);
-            if ($response['success']) $itemDeleted += 1;
+        $hechos = 0;
+        $avisos = [];
+        $conHistorial = [];
+        $selected->each(function ($item) use ($accion, &$hechos, &$avisos, &$conHistorial) {
+            // La pantalla envía la fila completa del listado; también se acepta solo el id.
+            $id = is_array($item) ? ($item['id'] ?? null) : $item;
+            $response = $this->{$accion}($id);
+            if ($response['success']) {
+                $hechos += 1;
+            }
+            if (!empty($response['con_actividad'])) {
+                $conHistorial[] = $response['nombre'];
+                return;
+            }
+            if (!$response['success'] || strpos($response['message'], 'No se recuperaron') !== false) {
+                $avisos[] = $response['message'];
+            }
         });
 
+        $mensaje = "{$verbo} {$hechos} contactos de {$count} contactos seleccionados";
+        if (!empty($conHistorial)) {
+            $mensaje .= '. ' . count($conHistorial) . ' no se eliminaron porque tienen historial registrado ('
+                . implode(', ', $conHistorial) . '); puedes inactivarlos';
+        }
+        if (!empty($avisos)) {
+            $mensaje .= '. ' . implode(' ', $avisos);
+        }
+
         return [
-            'success' => true,
-            'message' => "Se eliminaron {$itemDeleted} contactos de {$count} contactos seleccionados"
+            'success'       => true,
+            'message'       => $mensaje,
+            'con_historial' => count($conHistorial),
         ];
     }
 
@@ -738,7 +869,7 @@ class ContactosController extends Controller
     public function list(Request $request)
     {
         $query = Contacto::query()
-            ->with(['empresa:id,razon_social', 'emails', 'telefonos'])
+            ->with(['empresa:id,razon_social,nombre_comercial', 'emails', 'telefonos'])
             ->select([
                 'id',
                 'empresa_id',
@@ -799,7 +930,7 @@ class ContactosController extends Controller
 
     public function show($id)
     {
-        $contacto = Contacto::with(['empresa:id,razon_social', 'emails', 'telefonos'])->find($id);
+        $contacto = Contacto::with(['empresa:id,razon_social,nombre_comercial', 'emails', 'telefonos'])->find($id);
         if (!$contacto) {
             return response()->json(['ok' => false, 'error' => 'Contacto no encontrado'], 404);
         }

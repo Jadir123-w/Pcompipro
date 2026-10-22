@@ -1,5 +1,5 @@
 <template>
-    <div :class="{ 'content-opacity': isVisible }" @click.self="toggleInformation">
+    <div class="vista-factura" :class="{ 'content-opacity': isVisible }" @click.self="toggleInformation">
         <Keypress key-event="keyup" @success="checkKey" />
         <Keypress
             key-event="keyup"
@@ -3722,7 +3722,8 @@
 .input-with-currency div .input-custom {
     width: 100% !important;
 }
-.el-textarea__inner {
+/* Solo en esta pantalla: sin el prefijo fijaba la altura de todos los textarea del sistema. */
+.vista-factura .el-textarea__inner {
     height: 65px !important;
     min-height: 65px !important;
 }

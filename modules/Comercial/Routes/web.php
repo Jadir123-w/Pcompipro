@@ -63,7 +63,10 @@ Route::middleware(['auth', 'redirect.module', 'locked.tenant', 'check.email.veri
 
             Route::post('/', [ContactosController::class, 'store'])->name('store');
             Route::get('record/{id}', [ContactosController::class, 'record'])->name('record');
+            Route::get('record/{id}/historial', [ContactosController::class, 'historial'])->name('historial');
             Route::delete('record/{id}', [ContactosController::class, 'destroy'])->name('destroy');
+            Route::post('record/{id}/inactivar', [ContactosController::class, 'inactivar'])->name('inactivar');
+            Route::post('record/{id}/activar', [ContactosController::class, 'activar'])->name('activar');
 
             Route::post('disableMassive', [ContactosController::class, 'disableMassive']);
             Route::post('enableMassive',  [ContactosController::class, 'enableMassive']);

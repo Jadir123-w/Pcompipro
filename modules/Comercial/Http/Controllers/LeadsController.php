@@ -12,6 +12,8 @@ use Modules\Comercial\Http\Resources\LeadsCollection;
 use Modules\Comercial\Models\Contacto;
 use Modules\Comercial\Models\ContactoEmail;
 use Modules\Comercial\Models\ContactoTelefono;
+use Modules\Comercial\Support\Correo;
+use Modules\Comercial\Support\Telefono;
 use Modules\Comercial\Models\Empresa;
 use Modules\Comercial\Models\Lead;
 use Modules\Comercial\Models\Requerimiento;
@@ -206,8 +208,9 @@ class LeadsController extends Controller
     if (empty($telefono)) {
       return null;
     }
-    // Quitar todo excepto dígitos
-    return preg_replace('/[^0-9]/', '', $telefono);
+    // Misma normalización que contactos (sin +51, Lima con 01, sin anexo), solo dígitos.
+    $numero = Telefono::normalizarNumero(Telefono::separarAnexo($telefono)['numero']);
+    return $numero !== '' ? preg_replace('/[^0-9]/', '', $numero) : null;
   }
 
   /**
@@ -217,7 +220,7 @@ class LeadsController extends Controller
   private function buscarContactosCoincidentes($lead)
   {
     $contactos = collect();
-    $emailLead = trim($lead->email ?? '');
+    $emailLead = Correo::normalizar($lead->email ?? '');
     $telefonoLead = $this->normalizarTelefono($lead->telefono);
 
     // Si no hay email ni teléfono, no hay nada que buscar
@@ -226,7 +229,7 @@ class LeadsController extends Controller
     }
 
     // 1) Buscar en tabla contacto (campos email y telefono directos)
-    $queryContactos = Contacto::query()->whereNull('deleted_at');
+    $queryContactos = Contacto::query()->whereNull('deleted_at')->where('estado', 1);
 
     $queryContactos->where(function($q) use ($emailLead, $telefonoLead) {
       // ✅ CORRECCIÓN: Usar OR correctamente
@@ -253,6 +256,7 @@ class LeadsController extends Controller
         $contacto = Contacto::query()
           ->where('id', $ce->contacto_id)
           ->whereNull('deleted_at')
+          ->where('estado', 1)
           ->first();
         
         if ($contacto && !$contactos->contains('id', $contacto->id)) {
@@ -273,6 +277,7 @@ class LeadsController extends Controller
           $contacto = Contacto::query()
             ->where('id', $ct->contacto_id)
             ->whereNull('deleted_at')
+            ->where('estado', 1)
             ->first();
           
           if ($contacto && !$contactos->contains('id', $contacto->id)) {
@@ -293,7 +298,7 @@ class LeadsController extends Controller
    */
   private function contactoCoincideConLead($contacto, $lead)
   {
-    $emailLead = trim($lead->email ?? '');
+    $emailLead = Correo::normalizar($lead->email ?? '');
     $telefonoLead = $this->normalizarTelefono($lead->telefono);
 
     // Si el lead no tiene ni email ni teléfono, no puede haber coincidencia
