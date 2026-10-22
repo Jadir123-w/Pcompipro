@@ -197,6 +197,13 @@ Route::middleware(['auth', 'redirect.module', 'locked.tenant', 'check.email.veri
             ->middleware('throttle:10,1')
             ->name('quotation.requerimientos.prequote.items.interpret');
 
+        // COM-02 — Ítem manual (alternativa sin IA a la referencia): agrega 1
+        // ítem vacío sin borrar. Mismo anclaje y bootstrap que interpret.
+        Route::post('/quotation/requerimientos/{requerimientoId}/prequote/items/manual',
+            [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'storeManualItem'])
+            ->middleware('throttle:10,1')
+            ->name('quotation.requerimientos.prequote.items.manual');
+
         Route::get('/quotation/prequotes/{id}/history', [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'history'])
             ->name('quotation.prequotes.history');
 
@@ -209,6 +216,65 @@ Route::middleware(['auth', 'redirect.module', 'locked.tenant', 'check.email.veri
         Route::post('/quotation/prequotes/{id}/items/{itemId}/apply-supplier',
             [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'applySupplier'])
             ->name('quotation.prequotes.items.apply-supplier');
+
+        // Comparativa de proveedores por ítem (mockup db): N cotizaciones
+        // por ítem; el ganador define supplier + costo base de la línea.
+        Route::get('/quotation/prequotes/{id}/items/{itemId}/quotes',
+            [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'supplierQuotes'])
+            ->name('quotation.prequotes.items.quotes.index');
+
+        Route::post('/quotation/prequotes/{id}/items/{itemId}/quotes',
+            [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'storeSupplierQuote'])
+            ->name('quotation.prequotes.items.quotes.store');
+
+        Route::put('/quotation/prequotes/{id}/items/{itemId}/quotes/{quoteId}',
+            [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'updateSupplierQuote'])
+            ->name('quotation.prequotes.items.quotes.update');
+
+        Route::delete('/quotation/prequotes/{id}/items/{itemId}/quotes/{quoteId}',
+            [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'destroySupplierQuote'])
+            ->name('quotation.prequotes.items.quotes.destroy');
+
+        Route::post('/quotation/prequotes/{id}/items/{itemId}/quotes/{quoteId}/winner',
+            [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'setWinnerSupplierQuote'])
+            ->name('quotation.prequotes.items.quotes.winner');
+
+        Route::post('/quotation/prequotes/{id}/items/{itemId}/quotes/{quoteId}/to-catalog',
+            [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'toCatalogSupplierQuote'])
+            ->name('quotation.prequotes.items.quotes.to-catalog');
+
+        // ── Kits/paquetes comerciales (mockup db) ──
+        Route::get('/quotation/prequotes/{id}/kits',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'index'])
+            ->name('quotation.prequotes.kits.index');
+
+        Route::post('/quotation/prequotes/{id}/kits',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'store'])
+            ->name('quotation.prequotes.kits.store');
+
+        Route::put('/quotation/prequotes/{id}/kits/{kitId}',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'update'])
+            ->name('quotation.prequotes.kits.update');
+
+        Route::delete('/quotation/prequotes/{id}/kits/{kitId}',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'destroy'])
+            ->name('quotation.prequotes.kits.destroy');
+
+        Route::post('/quotation/prequotes/{id}/kits/{kitId}/members',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'addMembers'])
+            ->name('quotation.prequotes.kits.members.store');
+
+        Route::delete('/quotation/prequotes/{id}/kits/{kitId}/members/{itemId}',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'removeMember'])
+            ->name('quotation.prequotes.kits.members.destroy');
+
+        Route::post('/quotation/prequotes/{id}/kits/{kitId}/photo',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'photo'])
+            ->name('quotation.prequotes.kits.photo.store');
+
+        Route::get('/quotation/prequotes/{id}/kits/{kitId}/photo',
+            [\Modules\Marketing\Http\Controllers\Api\ProposalKitController::class, 'showPhoto'])
+            ->name('quotation.prequotes.kits.photo.show');
 
         Route::post('/quotation/prequotes/{id}/convert', [\Modules\Marketing\Http\Controllers\Api\QuotationPreQuoteController::class, 'convert'])
             ->name('quotation.prequotes.convert');

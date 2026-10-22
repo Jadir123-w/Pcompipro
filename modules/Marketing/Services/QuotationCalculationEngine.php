@@ -142,6 +142,35 @@ class QuotationCalculationEngine
     }
 
     /**
+     * Costo base de un ítem.
+     *
+     * [NUEVO FLUJO 2026-10-21] La fuente de verdad es la tabla
+     * `quotation_items_supplier`: el costo del proveedor SELECCIONADO
+     * (seleccionado = 1). Si el ítem no tiene comparativa (comisión, servicio
+     * sin proveedor o ítem previo al flujo), cae al costo del ítem.
+     *
+     * @param  PreQuoteItem  $item
+     * @return float
+     */
+    public function resolveCostoBase(PreQuoteItem $item)
+    {
+        if (strtolower(trim((string) ($item->tipo_linea ?? ''))) === 'comision') {
+            return (float) $item->costo_base;
+        }
+
+        $selected = $item->itemSuppliers()
+            ->where('seleccionado', 1)
+            ->orderBy('id')
+            ->first();
+
+        if ($selected) {
+            return (float) $selected->costo_base;
+        }
+
+        return (float) $item->costo_base;
+    }
+
+    /**
      * Recalcular un ítem individual.
      *
      * @param  PreQuoteItem  $item
@@ -149,6 +178,26 @@ class QuotationCalculationEngine
      */
     public function recalculateItem(PreQuoteItem $item)
     {
+        // [NUEVO FLUJO 2026-10-21] El costo base sale del proveedor
+        // seleccionado en la comparativa (no de la columna del ítem).
+        $costoBaseItem = $this->resolveCostoBase($item);
+
+        // Comisión = costo fijo: el costo base ES el total directo, sin margen,
+        // SCTR, IGV ni adicionales. Se persiste así para que tabla, totales de
+        // la prequote y PDF cierren con el mismo número.
+        if (strtolower(trim((string) ($item->tipo_linea ?? ''))) === 'comision') {
+            $base = round($costoBaseItem, 2);
+            $item->update([
+                'costo_muestra'  => 0,
+                'valor_unitario' => $base,
+                'valor_total'    => $base,
+                'base_igv'       => $base,
+                'igv'            => 0,
+                'total_item'     => $base,
+            ]);
+            return $item->fresh();
+        }
+
         // COM09 — costo de muestra DERIVADO: N° de muestras × precio unitario de
         // la muestra. Sigue siendo un costo FIJO del pedido (no se multiplica por
         // la cantidad). Se persiste el valor derivado porque el PDF y los
@@ -165,7 +214,7 @@ class QuotationCalculationEngine
         // costo base.
         $precioMuestra = ($item->precio_muestra !== null && $item->precio_muestra !== '')
             ? (float) $item->precio_muestra
-            : (float) $item->costo_base;
+            : $costoBaseItem;
         $costoMuestra = (int) $item->numero_muestras * $precioMuestra;
 
         // COM-02 — SCTR unitario: % efectivo por CASCADA (ítem → cotización →
@@ -189,7 +238,7 @@ class QuotationCalculationEngine
             * $millar;
 
         $result = $this->computeItem(
-            (float) $item->costo_base,
+            $costoBaseItem,
             (float) $item->margen_porcentaje,
             max(1, (int) $item->quantity),
             $item->getTotalCostosAdicionales(),

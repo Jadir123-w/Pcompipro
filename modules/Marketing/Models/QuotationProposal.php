@@ -111,6 +111,14 @@ class QuotationProposal extends ModelTenant
         return $this->belongsTo(\App\Models\Tenant\User::class, 'ejecutiva_id');
     }
 
+    /**
+     * Kits/paquetes comerciales de la propuesta (mockup db).
+     */
+    public function kits()
+    {
+        return $this->hasMany(ProposalKit::class, 'proposal_id')->orderBy('id');
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Accesores / mutadores para campos JSON

@@ -527,9 +527,10 @@
     <!-- MODAL DETALLE (tabs) -->
     <el-dialog
       :visible.sync="detailDialog.visible"
-      width="1340px"
-      top="14vh"
+      width="96%"
+      top="3vh"
       :close-on-click-modal="false"
+      :before-close="beforeDetailDialogClose"
       class="req-dialog"
     >
       <span slot="title" class="req-dialog-title">
@@ -544,7 +545,7 @@
                cotizacion-final, cotizaciones) ocupa el ancho completo (md=24)
                porque la Bitácora se oculta para dejar espacio horizontal. -->
           <el-col :xs="24" :md="leftColSpan">
-            <el-tabs v-model="detailDialog.activeTab" type="card" @tab-click="onDetailTabClick">
+            <el-tabs v-model="detailDialog.activeTab" type="card" :before-leave="beforeDetailTabLeave" @tab-click="onDetailTabClick">
               <!-- Resumen -->
               <!-- ✅ PESTAÑA DATOS (antes "Resumen") -->
               <el-tab-pane label="Datos" name="datos">
@@ -580,8 +581,11 @@
                 />
               </el-tab-pane>
 
-              <!-- Proveedores (COM-02 E4 — IA sugiere proveedores por ítem) -->
-              <el-tab-pane label="Proveedores" name="proveedores">
+              <!-- [NUEVO FLUJO 2026-10-20] Proveedores OCULTA temporalmente.
+                   La asignación de proveedores ahora se maneja desde la
+                   comparativa dentro de Pre-Cotización (acordeón del ítem).
+                   El código se conserva por si se necesita reactivar. -->
+              <el-tab-pane label="Proveedores" name="proveedores" v-if="false">
                 <TabProveedores
                   v-if="detailDialog.activeTab === 'proveedores'"
                   :requerimientoId="detail.id"
@@ -668,7 +672,7 @@
                   style="margin-top: 8px;"
                 >
                   <span slot="title" style="font-size: 12px; line-height: 1.35;">
-                    {{ detail.productos_sin_proveedor }} de {{ detail.total_productos }} producto(s) sin proveedor asignado. Asígnalos en la pestaña <strong>Proveedores</strong> y el botón se habilitará automáticamente.
+                    {{ detail.productos_sin_proveedor }} de {{ detail.total_productos }} producto(s) sin proveedor asignado. Asígnalos en la comparativa de proveedores de la pre-cotización y el botón se habilitará automáticamente.
                   </span>
                 </el-alert>
               </div>
@@ -706,7 +710,7 @@
       </div>
 
       <span slot="footer" class="dialog-footer">
-        <el-button size="mini" @click="detailDialog.visible = false">
+        <el-button size="mini" @click="requestCloseDetailDialog">
           Cerrar
         </el-button>
       </span>
@@ -1147,9 +1151,71 @@ export default {
       }
     },
 
+    // ── Cambios sin guardar en Datos (TabDatos) ──────────────────────
+    // true si el formulario de Datos difiere de lo último guardado.
+    tabDatosHasChanges: function() {
+      var t = this.$refs.tabDatos;
+      return !!(t && typeof t.hasUnsavedChanges === 'function' && t.hasUnsavedChanges());
+    },
+
+    discardTabDatosChanges: function() {
+      var t = this.$refs.tabDatos;
+      if (t && typeof t.discardChanges === 'function') t.discardChanges();
+    },
+
+    // Confirmación común. Resuelve si puede continuar, rechaza si cancela.
+    confirmDiscardDatosChanges: function(accion) {
+      var self = this;
+      return new Promise(function(resolve, reject) {
+        self.$confirm(
+          'Tienes cambios sin guardar en Datos. Si continúas se perderán.',
+          'Cambios sin guardar',
+          {
+            confirmButtonText: accion || 'Descartar y continuar',
+            cancelButtonText: 'Seguir editando',
+            type: 'warning'
+          }
+        ).then(function() {
+          self.discardTabDatosChanges();
+          resolve();
+        }).catch(function() {
+          reject();
+        });
+      });
+    },
+
+    // El-tabs la llama antes de cambiar: devolver false/Promise rechazada
+    // mantiene la pestaña actual.
+    beforeDetailTabLeave: function(activeName, oldActiveName) {
+      if (oldActiveName !== 'datos' || !this.tabDatosHasChanges()) return true;
+      return this.confirmDiscardDatosChanges('Descartar y cambiar');
+    },
+
+    // El-dialog la llama al intentar cerrar (X, ESC). done() cierra de verdad.
+    beforeDetailDialogClose: function(done) {
+      var self = this;
+      if (!self.tabDatosHasChanges()) {
+        done();
+        return;
+      }
+      self.confirmDiscardDatosChanges('Descartar y cerrar').then(function() {
+        done();
+      }).catch(function() {
+        // El usuario decidió seguir editando: no se cierra.
+      });
+    },
+
+    // Botón "Cerrar" del footer: pasa por la misma validación.
+    requestCloseDetailDialog: function() {
+      var self = this;
+      self.beforeDetailDialogClose(function() {
+        self.detailDialog.visible = false;
+      });
+    },
+
     // Refresca el contador de productos sin proveedor al cambiar de pestaña, para
-    // que el botón "Crear proyecto" se habilite apenas se asignen los proveedores
-    // (en la pestaña Proveedores) sin necesidad de reabrir el requerimiento.
+    // que el botón "Crear proyecto" se habilite tras asignarlos en la comparativa
+    // de la pre-cotización sin necesidad de reabrir el requerimiento.
     async onDetailTabClick() {
       if (!this.selectedId) return;
       try {
@@ -1560,13 +1626,15 @@ export default {
 
     // ✅ MÉTODOS PARA LOS EVENTOS DE LOS COMPONENTES TAB
     onRequerimientoCreado(data) {
-      // Cuando TabDatos crea un nuevo requerimiento, convertir el dialog a modo edición
+      // Cuando TabDatos crea un nuevo requerimiento, cerrar el modal (ya quedó
+      // guardado) y refrescar los listados.
       if (data && data.id) {
         this.selectedId = data.id;
         this.detail = data;
         this.fetchKpis();
         this.fetchRequerimientos();
         this.loadLogs();
+        this.detailDialog.visible = false;
       }
     },
 
@@ -1807,13 +1875,59 @@ export default {
   font-size: 12px;
   color: #e5e7eb;
 }
-.req-dialog-body {
-  min-height: 60vh;
-  max-height: 120vh !important;
+.req-dialog >>> .el-dialog {
+  max-width: 1760px;
+  margin-top: 3vh;
+  margin-bottom: 3vh;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 6vh);
+}
+.req-dialog >>> .el-dialog__body {
+  padding: 16px 20px;
   overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.req-dialog-body {
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
 }
 .req-dialog-layout {
   margin-top: 0;
+}
+.req-dialog-layout > .el-col {
+  min-width: 0;
+}
+/* Letra general del modal a 10.5px (los tamaños propios de cada
+ * componente, si los fijan, se conservan). */
+.req-dialog >>> .el-dialog__body {
+  font-size: 10.5px;
+}
+.req-dialog >>> .el-table,
+.req-dialog >>> .el-input__inner,
+.req-dialog >>> .el-textarea__inner,
+.req-dialog >>> .el-button,
+.req-dialog >>> .el-tag,
+.req-dialog >>> .el-tabs__item,
+.req-dialog >>> .el-checkbox__label,
+.req-dialog >>> .el-alert__title,
+.req-dialog >>> .el-collapse-item__header,
+.req-dialog >>> .el-form-item__label,
+.req-dialog >>> .el-form-item__content {
+  font-size: 10.5px;
+}
+@media (max-width: 768px) {
+  .req-dialog >>> .el-dialog {
+    width: 98% !important;
+    max-width: none;
+  }
+  .req-dialog >>> .el-dialog__body {
+    padding: 12px;
+  }
 }
 
 /* Resumen */

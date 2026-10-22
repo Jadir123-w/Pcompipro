@@ -23,6 +23,9 @@ class PreQuoteItem extends ModelTenant
         // 2026_08_12_000001 para el motivo y para por qué igual se apunta a un
         // producto genérico en lugar de dejar item_id vacío.
         'excluir_catalogo',
+        // Tipo de línea (columna sin nombre en el Tab): product|service|comision.
+        // Lo usa el combo de la tabla; el backend ajusta item_id/review según el tipo.
+        'tipo_linea',
         // COM-02 — override manual del "Cód. Artíc." de la propuesta.
         // NULL = el ítem hereda el código del catálogo (items.internal_id).
         // Sin cast a propósito: un cast 'string' volvería el NULL en '' y se
@@ -190,6 +193,61 @@ class PreQuoteItem extends ModelTenant
         return $this->belongsTo(\App\Models\Tenant\Person::class, 'supplier_id');
     }
 
+    /**
+     * Comparativa de proveedores del ítem: N cotizaciones por ítem; el
+     * proveedor elegido define supplier_id/name + costo_base de la línea.
+     *
+     * [NUEVO FLUJO 2026-10-21] Apuntaba a `quotation_prequote_item_suppliers`
+     * (tabla que no existe). Ahora usa la tabla vigente
+     * `quotation_items_supplier` (misma relación que itemSuppliers()).
+     */
+    public function supplierQuotes()
+    {
+        return $this->itemSuppliers();
+    }
+
+    /**
+     * [NUEVO FLUJO 2026-10-21] Apuntaba a la tabla vieja (inexistente).
+     * Ahora es el proveedor ELEGIDO de `quotation_items_supplier`.
+     */
+    public function winningQuote()
+    {
+        return $this->winningItemSupplier();
+    }
+
+    /**
+     * [NUEVO FLUJO 2026-10-20] Comparativa de proveedores con la tabla nueva
+     * `quotation_items_supplier` (solución momentánea).
+     *
+     * A diferencia de supplierQuotes() (tabla vieja), esta relación:
+     *   - Usa `quotation_items_id` como FK
+     *   - Origen siempre 'manual' (sin match con catálogo)
+     *   - El front la usa al abrir el acordeón del ítem para listar proveedores
+     *
+     * [NUEVO FLUJO 2026-10-21] Ya no hay columna `orden`: el orden es por id.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function itemSuppliers()
+    {
+        return $this->hasMany(QuotationItemSupplier::class, 'quotation_items_id')
+            ->orderBy('id');
+    }
+
+    /**
+     * [NUEVO FLUJO 2026-10-20] El proveedor elegido de la tabla nueva.
+     * Define supplier_id/supplier_name/costo_base del ítem.
+     *
+     * [NUEVO FLUJO 2026-10-21] `es_ganador` → `seleccionado`.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     */
+    public function winningItemSupplier()
+    {
+        return $this->hasOne(QuotationItemSupplier::class, 'quotation_items_id')
+            ->where('seleccionado', 1);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Helpers
@@ -325,15 +383,24 @@ class PreQuoteItem extends ModelTenant
      *
      * Es la ganancia del producto por el markup; NO incluye los costos fijos
      * (muestra, movilidad, impresión, empaque) ni el SCTR. No se persiste ni
-     * requiere migración: se recalcula al vuelo desde los campos del ítem, así
-     * que siempre queda consistente con el costo_base y el margen actuales.
+     * requiere migración: se recalcula al vuelo, así que siempre queda
+     * consistente con el costo vigente y el margen actual.
      *
      * @return float
      */
     public function getGananciaAbsolutaAttribute()
     {
         $q = max(1, (int) $this->quantity);
-        return round($q * (float) $this->costo_base * ((float) $this->margen_porcentaje / 100), 2);
+
+        // Costo del proveedor SELECCIONADO (fuente de verdad del comparativo);
+        // si el ítem no tiene comparativa (comisión, servicio), cae al costo
+        // base del ítem. winningItemSupplier (propiedad de la relación)
+        // devuelve el MODELO elegido o null; winningQuote() devuelve la
+        // relación, no el modelo.
+        $winner = $this->winningItemSupplier;
+        $costoBase = $winner ? (float) $winner->costo_base : (float) $this->costo_base;
+
+        return round($q * $costoBase * ((float) $this->margen_porcentaje / 100), 2);
     }
 
     /**
