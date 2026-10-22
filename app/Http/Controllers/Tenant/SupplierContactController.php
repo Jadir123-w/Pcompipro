@@ -234,9 +234,8 @@ class SupplierContactController extends Controller
 
         $contactIds = SupplierContact::where('person_id', $supplier->id)->pluck('id')->all();
 
-        // Nota: owen-it/laravel-auditing guarda audits en la BD principal (no en tenant).
-        // Por eso usamos DB::table() con la conexión default.
-        $audits = DB::table('audits')
+        // La auditoría se guarda en la BD de la empresa (config/audit.php → conexión tenant).
+        $audits = DB::connection('tenant')->table('audits')
             ->leftJoin('users', 'users.id', '=', 'audits.user_id')
             ->where(function ($q) use ($supplier, $contactIds) {
                 $q->where(function ($q2) use ($supplier) {

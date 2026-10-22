@@ -55,7 +55,7 @@ class LogsController extends Controller
     public function records(Request $request)
     {
         try {
-            $query = DB::table('audits')
+            $query = DB::connection('tenant')->table('audits')
                 ->whereIn('auditable_type', self::AUDITABLE_TYPES)
                 ->leftJoin('users', 'audits.user_id', '=', 'users.id')
                 ->select([
@@ -184,7 +184,7 @@ class LogsController extends Controller
     public function show($id)
     {
         try {
-            $audit = DB::table('audits')
+            $audit = DB::connection('tenant')->table('audits')
                 ->where('audits.id', $id)
                 ->whereIn('auditable_type', self::AUDITABLE_TYPES)
                 ->leftJoin('users', 'audits.user_id', '=', 'users.id')
@@ -297,17 +297,17 @@ class LogsController extends Controller
     {
         try {
             $stats = [
-                'total' => DB::table('audits')
+                'total' => DB::connection('tenant')->table('audits')
                     ->whereIn('auditable_type', self::AUDITABLE_TYPES)
                     ->count(),
                 
-                'por_tipo' => DB::table('audits')
+                'por_tipo' => DB::connection('tenant')->table('audits')
                     ->whereIn('auditable_type', self::AUDITABLE_TYPES)
                     ->selectRaw('auditable_type, count(*) as total')
                     ->groupBy('auditable_type')
                     ->get(),
                 
-                'por_evento' => DB::table('audits')
+                'por_evento' => DB::connection('tenant')->table('audits')
                     ->whereIn('auditable_type', self::AUDITABLE_TYPES)
                     ->selectRaw('event, count(*) as total')
                     ->groupBy('event')
