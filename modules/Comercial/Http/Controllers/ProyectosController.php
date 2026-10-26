@@ -424,6 +424,10 @@ class ProyectosController extends Controller
                 // segunda columna del tipo "ya fue editado", que no justifica el
                 // costo para este caso.
                 foreach ($arr['proveedores'] as $i => $prov) {
+                    // El respaldo conserva el plazo que cotizó (no hereda el del ganador).
+                    if (!empty($prov['es_respaldo'])) {
+                        continue;
+                    }
                     $actual = isset($prov['tiempo_produccion']) ? trim((string) $prov['tiempo_produccion']) : '';
                     if ($actual === '') {
                         $arr['proveedores'][$i]['tiempo_produccion'] = $tiempoHeredado;
@@ -598,9 +602,11 @@ class ProyectosController extends Controller
                 return ['porItemId' => $porItemId, 'porNombre' => $porNombre];
             }
 
-            $items = \Modules\Marketing\Models\PreQuoteItem::where('prequote_id', $prequote->id)->get();
+            $items = \Modules\Marketing\Models\PreQuoteItem::with('winningItemSupplier')
+                ->where('prequote_id', $prequote->id)->get();
             foreach ($items as $it) {
-                $tiempo = trim((string) $it->tiempo_estimado_dias);
+                // Plazo del proveedor ganador de la comparativa (o el del ítem, antes).
+                $tiempo = $it->proveedorGanador()['tiempo'];
                 if ($tiempo === '') {
                     continue;
                 }
@@ -678,12 +684,16 @@ class ProyectosController extends Controller
                 return [];
             }
 
-            $items = \Modules\Marketing\Models\PreQuoteItem::where('prequote_id', $prequote->id)
+            $items = \Modules\Marketing\Models\PreQuoteItem::with(['winningItemSupplier', 'itemSuppliers'])
+                ->where('prequote_id', $prequote->id)
                 ->orderBy('item_order')
                 ->orderBy('id')
                 ->get();
 
             return $items->map(function ($it) use ($prequote) {
+                // Proveedor ganador de la comparativa (proveedor, costo y tiempo).
+                $ganador = $it->proveedorGanador();
+
                 $descripcion = $it->product_name;
                 if (!empty($it->product_description)) {
                     $descripcion .= ' — ' . $it->product_description;
@@ -695,7 +705,7 @@ class ProyectosController extends Controller
                 // Proveedor inicial sembrado desde la pre-cotización (el usuario lo
                 // ajusta luego con las cotizaciones reales de los proveedores).
                 $seedCant   = $it->quantity ?: 1;
-                $seedPrecio = (float) $it->costo_base;
+                $seedPrecio = $ganador['costo_base'];
                 $seedMontos = $this->calcularMontosProveedor($seedCant, $seedPrecio, 'exempt');
 
                 // Costos operativos heredados de la pre-cotización (solo lectura, #4).
@@ -707,8 +717,8 @@ class ProyectosController extends Controller
                     // COM-02 · Código con el que se cotizó el producto (manual de la
                     // cotización si lo tiene; si no, el del catálogo). Solo lectura.
                     'codigo_articulo'   => $it->codigo_articulo,
-                    'supplier_id'       => $it->supplier_id,
-                    'supplier_name'     => $it->supplier_name,
+                    'supplier_id'       => $ganador['supplier_id'],
+                    'supplier_name'     => $ganador['supplier_name'],
                     'descripcion'       => $descripcion,
                     // Especificaciones técnicas copiadas de la pre-cotización (solo lectura en el front).
                     'material'          => $it->material,
@@ -730,17 +740,19 @@ class ProyectosController extends Controller
                     'subtotal'          => $it->valor_total,
                     // Agosto 2026 (punto 19): si el ítem no traía observaciones, el
                     // producto arranca con la plantilla en vez de un campo en blanco.
-                    'observaciones'     => $this->observacionesConPlantilla($it->observaciones),
+                    // Solo la plantilla: las observaciones del ítem de la pre-cotización son
+                    // del producto, no "Observaciones / Preocupaciones del Cliente".
+                    'observaciones'     => $this->observacionesConPlantilla(null),
                     // Proveedor inicial (M2) para que la subtabla no arranque vacía.
-                    'proveedores'       => [[
+                    'proveedores'       => array_merge([[
                         'id'                        => null,
-                        'supplier_id'               => $it->supplier_id,
-                        'supplier_name'             => $it->supplier_name,
+                        'supplier_id'               => $ganador['supplier_id'],
+                        'supplier_name'             => $ganador['supplier_name'],
                         'concepto'                  => $it->product_name,
                         // Agosto 2026 (punto 20): plazo del proveedor, heredado de la
                         // pre-cotización. El usuario lo ajusta cuando el proveedor le
                         // confirma un plazo distinto al que se estimó al cotizar.
-                        'tiempo_produccion'          => (string) $it->tiempo_estimado_dias,
+                        'tiempo_produccion'          => $ganador['tiempo'],
                         'cantidad'                  => $seedCant,
                         'precio_unitario_informado' => $seedPrecio,
                         'condicion_igv'             => 'exempt',
@@ -750,7 +762,31 @@ class ProyectosController extends Controller
                         'total_pagar'               => $seedMontos['total_pagar'],
                         'activo'                    => true,
                         'orden'                     => 0,
-                    ]],
+                    ]], array_map(function ($respaldo) use ($it, $seedCant) {
+                        // Respaldos de la comparativa (aún sin fila: al guardar se
+                        // crean; como no hay id del ganador, al usarlos se elige a
+                        // cuál reemplazan).
+                        $montos = $this->calcularMontosProveedor($seedCant, $respaldo['costo_base'], 'exempt');
+                        return [
+                            'id'                        => null,
+                            'supplier_id'               => $respaldo['supplier_id'],
+                            'supplier_name'             => $respaldo['supplier_name'],
+                            'concepto'                  => $it->product_name,
+                            'tiempo_produccion'          => $respaldo['tiempo'],
+                            'cantidad'                  => $seedCant,
+                            'precio_unitario_informado' => $respaldo['costo_base'],
+                            'condicion_igv'             => 'exempt',
+                            'precio_unitario_neto'      => $montos['precio_unitario_neto'],
+                            'subtotal_neto'             => $montos['subtotal_neto'],
+                            'igv_monto'                 => $montos['igv_monto'],
+                            'total_pagar'               => $montos['total_pagar'],
+                            'activo'                    => false,
+                            'es_respaldo'               => true,
+                            'respalda_a_id'             => null,
+                            'cotizado_el'               => $respaldo['cotizado_el'],
+                            'orden'                     => 1,
+                        ];
+                    }, $it->proveedoresRespaldo())),
                     '_from_prequote'    => true,                // flag informativo (front lo puede usar)
                 ];
             })->all();
@@ -777,7 +813,7 @@ class ProyectosController extends Controller
         // Verificar que la empresa existe en el tenant
         $empresa = Empresa::findOrFail($request->empresa_id);
 
-        DB::beginTransaction();
+        DB::connection('tenant')->beginTransaction();
         try {
             // Generar código
             $codigo = Proyecto::generarCodigo($request->empresa_id);
@@ -790,7 +826,7 @@ class ProyectosController extends Controller
             // Guardar relaciones
             $this->saveRelaciones($proyecto, $request);
 
-            DB::commit();
+            DB::connection('tenant')->commit();
 
             return response()->json([
                 'success' => true,
@@ -798,7 +834,7 @@ class ProyectosController extends Controller
                 'data'    => ['id' => $proyecto->id, 'codigo' => $proyecto->codigo],
             ]);
         } catch (\Exception $e) {
-            DB::rollBack();
+            DB::connection('tenant')->rollBack();
             return response()->json([
                 'success' => false,
                 'message' => 'Error al crear proyecto: ' . $e->getMessage(),
@@ -819,7 +855,7 @@ class ProyectosController extends Controller
 
         $proyecto = Proyecto::findOrFail($id);
 
-        DB::beginTransaction();
+        DB::connection('tenant')->beginTransaction();
         try {
             $this->fillProyecto($proyecto, $request);
             $proyecto->save();
@@ -827,14 +863,14 @@ class ProyectosController extends Controller
             // Actualizar relaciones
             $this->saveRelaciones($proyecto, $request);
 
-            DB::commit();
+            DB::connection('tenant')->commit();
 
             return response()->json([
                 'success' => true,
                 'message' => 'Proyecto actualizado correctamente',
             ]);
         } catch (\Exception $e) {
-            DB::rollBack();
+            DB::connection('tenant')->rollBack();
             return response()->json([
                 'success' => false,
                 'message' => 'Error al actualizar: ' . $e->getMessage(),
@@ -1223,6 +1259,11 @@ class ProyectosController extends Controller
                 $condicion = 'pending';
             }
             $activo = !isset($prov['activo']) || in_array($prov['activo'], [true, 1, '1', 'true'], true);
+            // Respaldo de la comparativa: no suma al costo hasta que se use.
+            $esRespaldo = isset($prov['es_respaldo']) && in_array($prov['es_respaldo'], [true, 1, '1', 'true'], true);
+            if ($esRespaldo) {
+                $activo = false;
+            }
 
             $montos = $this->calcularMontosProveedor($cantidad, $precioInf, $condicion);
 
@@ -1242,6 +1283,9 @@ class ProyectosController extends Controller
                 'igv_monto'                 => $montos['igv_monto'],
                 'total_pagar'               => $montos['total_pagar'],
                 'activo'                    => $activo ? 1 : 0,
+                'es_respaldo'               => $esRespaldo ? 1 : 0,
+                'respalda_a_id'             => !empty($prov['respalda_a_id']) ? $prov['respalda_a_id'] : null,
+                'cotizado_el'               => !empty($prov['cotizado_el']) ? substr((string) $prov['cotizado_el'], 0, 10) : null,
                 'reemplaza_a_id'            => !empty($prov['reemplaza_a_id']) ? $prov['reemplaza_a_id'] : null,
                 'motivo_reemplazo'          => isset($prov['motivo_reemplazo']) ? $prov['motivo_reemplazo'] : null,
                 'orden'                     => $orden++,
@@ -1264,9 +1308,12 @@ class ProyectosController extends Controller
             }
         }
 
-        // Conservar el historial: solo se borran proveedores ACTIVOS que ya no vienen.
+        // Conservar el historial: solo se borran proveedores ACTIVOS y RESPALDOS que
+        // ya no vienen (el usuario los quitó). Los reemplazados no se borran nunca.
         $producto->proveedores()
-            ->where('activo', 1)
+            ->where(function ($q) {
+                $q->where('activo', 1)->orWhere('es_respaldo', 1);
+            })
             ->whereNotIn('id', $idsRecibidos ?: [0])
             ->delete();
 

@@ -1027,7 +1027,7 @@ class ContactosController extends Controller
                 ], 422);
             }
 
-            DB::beginTransaction();
+            DB::connection('tenant')->beginTransaction();
 
             // Archivo
             $archivoPath = null;
@@ -1054,7 +1054,7 @@ class ContactosController extends Controller
                 'user_id'              => Auth::id(),
             ]);
 
-            DB::commit();
+            DB::connection('tenant')->commit();
 
             return response()->json([
                 'ok'   => true,
@@ -1063,7 +1063,7 @@ class ContactosController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            DB::rollBack();
+            DB::connection('tenant')->rollBack();
             Log::error('Error al crear interacción de contacto: ' . $e->getMessage());
 
             return response()->json([

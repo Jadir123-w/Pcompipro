@@ -370,7 +370,7 @@ class RequerimientosController extends Controller
         }
 
         try {
-            DB::beginTransaction();
+            DB::connection('tenant')->beginTransaction();
 
             $req = new Requerimiento();
             $req->empresa_id = $request->input('empresa_id');
@@ -413,7 +413,7 @@ class RequerimientosController extends Controller
                 'usuario'          => Auth::user() ? Auth::user()->name : 'Sistema',
             ]);
 
-            DB::commit();
+            DB::connection('tenant')->commit();
 
             return response()->json([
                 'ok'  => true,
@@ -425,7 +425,7 @@ class RequerimientosController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            DB::rollBack();
+            DB::connection('tenant')->rollBack();
             Log::error('Error al crear requerimiento: ' . $e->getMessage());
             
             return response()->json([
@@ -666,7 +666,7 @@ class RequerimientosController extends Controller
                 ], 422);
             }
 
-            DB::beginTransaction();
+            DB::connection('tenant')->beginTransaction();
 
             // Archivo
             $archivoPath = null;
@@ -713,7 +713,7 @@ class RequerimientosController extends Controller
                 'usuario'          => Auth::user() ? Auth::user()->name : 'Sistema',
             ]);
 
-            DB::commit();
+            DB::connection('tenant')->commit();
 
             return response()->json([
                 'ok'  => true,
@@ -722,7 +722,7 @@ class RequerimientosController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            DB::rollBack();
+            DB::connection('tenant')->rollBack();
             Log::error('Error al crear interacción: ' . $e->getMessage());
 
             return response()->json([
@@ -852,7 +852,7 @@ class RequerimientosController extends Controller
                 ], 422);
             }
 
-            DB::beginTransaction();
+            DB::connection('tenant')->beginTransaction();
 
             $archivoPath = $request->file('archivo')
                 ->store('requerimientos/cotizaciones', 'public');
@@ -901,7 +901,7 @@ class RequerimientosController extends Controller
                 'usuario'          => Auth::user() ? Auth::user()->name : 'Sistema',
             ]);
 
-            DB::commit();
+            DB::connection('tenant')->commit();
 
             return response()->json([
                 'ok'  => true,
@@ -910,7 +910,7 @@ class RequerimientosController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            DB::rollBack();
+            DB::connection('tenant')->rollBack();
             Log::error('Error al subir cotización: ' . $e->getMessage());
 
             return response()->json([
@@ -1018,12 +1018,12 @@ class RequerimientosController extends Controller
             if ($estadoProv['sin_proveedor'] > 0) {
                 return response()->json([
                     'ok'  => false,
-                    'msg' => 'No se puede crear el proyecto: hay ' . $estadoProv['sin_proveedor'] . ' de ' . $estadoProv['total'] . ' producto(s) sin proveedor asignado. Ve a la pestaña "Proveedores" y asigna un proveedor a cada producto antes de continuar.',
+                    'msg' => 'No se puede crear el proyecto: hay ' . $estadoProv['sin_proveedor'] . ' de ' . $estadoProv['total'] . ' producto(s) o servicio(s) sin proveedor ganador. Elígelo en la comparativa de proveedores de cada ítem (pestaña "Pre-Cotización") antes de continuar.',
                 ], 422);
             }
 
             // 3er requisito: la pre-cotizacion debe estar CONVERTIDA A COTIZACION FORMAL.
-            // El flujo Validar -> Aprobar -> Convertir genera la cotizacion formal y deja
+            // El flujo Emitir -> Cliente aprobó -> Convertir genera la cotizacion formal y deja
             // la PreQuote con quotation_id. Sin eso, no se permite crear el proyecto.
             $tieneCotizacionFormal = PreQuote::where('requerimiento_id', $req->id)
                 ->whereNotNull('quotation_id')
@@ -1031,11 +1031,12 @@ class RequerimientosController extends Controller
             if (!$tieneCotizacionFormal) {
                 return response()->json([
                     'ok'  => false,
-                    'msg' => 'No se puede crear el proyecto: la pre-cotizacion aun no se ha convertido a Cotizacion Formal. Ve a la pestaña "Pre-Cotizacion", valida, aprueba y convierte a Cotizacion Formal antes de continuar.',
+                    'msg' => 'No se puede crear el proyecto: la pre-cotizacion aun no se ha convertido a Cotizacion Formal. Ve a la pestaña "Pre-Cotización": cuando el cliente apruebe, convierte a cotización formal antes de continuar.',
                 ], 422);
             }
 
-            DB::beginTransaction();
+            // En la conexión del tenant: ahí se escriben el proyecto y sus productos.
+            DB::connection('tenant')->beginTransaction();
 
             // 1) Crear el proyecto
             $codigo = Proyecto::generarCodigo($req->empresa_id);
@@ -1123,7 +1124,7 @@ class RequerimientosController extends Controller
                 'usuario'          => Auth::user() ? Auth::user()->name : 'Sistema',
             ]);
 
-            DB::commit();
+            DB::connection('tenant')->commit();
 
             return response()->json([
                 'ok'       => true,
@@ -1136,7 +1137,7 @@ class RequerimientosController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            DB::rollBack();
+            DB::connection('tenant')->rollBack();
             Log::error('Error al crear proyecto: ' . $e->getMessage());
             return response()->json(['ok' => false, 'msg' => $e->getMessage()], 500);
         }
@@ -1295,7 +1296,8 @@ class RequerimientosController extends Controller
                 return 0;
             }
 
-            $items = PreQuoteItem::where('prequote_id', $prequote->id)
+            $items = PreQuoteItem::with(['winningItemSupplier', 'itemSuppliers'])
+                ->where('prequote_id', $prequote->id)
                 ->orderBy('item_order')
                 ->orderBy('id')
                 ->get();
@@ -1306,6 +1308,9 @@ class RequerimientosController extends Controller
 
             $copiados = 0;
             foreach ($items as $it) {
+                // Proveedor ganador de la comparativa (proveedor, costo y tiempo).
+                $ganador = $it->proveedorGanador();
+
                 $descripcion = $it->product_name;
                 if (!empty($it->product_description)) {
                     $descripcion .= ' — ' . $it->product_description;
@@ -1322,8 +1327,8 @@ class RequerimientosController extends Controller
                 $producto = ProyectoProducto::create([
                     'proyecto_id'      => $proyectoId,
                     'item_id'          => $it->item_id,
-                    'supplier_id'      => $it->supplier_id,
-                    'supplier_name'    => $it->supplier_name,
+                    'supplier_id'      => $ganador['supplier_id'],
+                    'supplier_name'    => $ganador['supplier_name'],
                     'descripcion'      => $descripcion,
                     // Especificaciones tecnicas heredadas de la pre-cotizacion (snapshot).
                     'material'          => $it->material,
@@ -1341,19 +1346,24 @@ class RequerimientosController extends Controller
                     'muestras'         => $it->numero_muestras ?: 0,
                     'precio_unitario'  => $it->valor_unitario,
                     'subtotal'         => $it->valor_total,
-                    'observaciones'    => $it->observaciones,
+                    // "Observaciones / Preocupaciones del Cliente" arranca vacío (al abrir
+                    // el proyecto se muestra su plantilla). Las observaciones del ítem de
+                    // la pre-cotización son del producto, no del cliente: no se copian.
+                    'observaciones'    => null,
                 ]);
 
                 // Proveedor inicial (M2): sembrado con el costo base de la pre-cotizacion
                 // (condicion 'exempt' = sin ajuste de IGV). El usuario lo ajusta luego con
                 // las cotizaciones reales de los proveedores durante la ejecucion.
                 $seedCant     = $it->quantity ?: 1;
-                $seedPrecio   = (float) $it->costo_base;
+                $seedPrecio   = $ganador['costo_base'];
                 $seedSubtotal = round($seedPrecio * $seedCant, 2);
-                $producto->proveedores()->create([
-                    'supplier_id'               => $it->supplier_id,
-                    'supplier_name'             => $it->supplier_name,
+                $filaGanador = $producto->proveedores()->create([
+                    'supplier_id'               => $ganador['supplier_id'],
+                    'supplier_name'             => $ganador['supplier_name'],
                     'concepto'                  => $it->product_name,
+                    // Plazo del proveedor ganador (lo ajusta el usuario si cambia).
+                    'tiempo_produccion'         => $ganador['tiempo'] !== '' ? $ganador['tiempo'] : null,
                     'cantidad'                  => $seedCant,
                     'precio_unitario_informado' => $seedPrecio,
                     'condicion_igv'             => 'exempt',
@@ -1364,6 +1374,31 @@ class RequerimientosController extends Controller
                     'activo'                    => 1,
                     'orden'                     => 0,
                 ]);
+
+                // Los demás proveedores de la comparativa pasan como respaldo del
+                // ganador: no suman al costo y se pueden usar en su lugar.
+                $orden = 1;
+                foreach ($it->proveedoresRespaldo() as $respaldo) {
+                    $subtotalRespaldo = round($respaldo['costo_base'] * $seedCant, 2);
+                    $producto->proveedores()->create([
+                        'supplier_id'               => $respaldo['supplier_id'],
+                        'supplier_name'             => $respaldo['supplier_name'],
+                        'concepto'                  => $it->product_name,
+                        'tiempo_produccion'         => $respaldo['tiempo'] !== '' ? $respaldo['tiempo'] : null,
+                        'cantidad'                  => $seedCant,
+                        'precio_unitario_informado' => $respaldo['costo_base'],
+                        'condicion_igv'             => 'exempt',
+                        'precio_unitario_neto'      => $respaldo['costo_base'],
+                        'subtotal_neto'             => $subtotalRespaldo,
+                        'igv_monto'                 => 0,
+                        'total_pagar'               => $subtotalRespaldo,
+                        'activo'                    => 0,
+                        'es_respaldo'               => 1,
+                        'respalda_a_id'             => $filaGanador->id,
+                        'cotizado_el'               => $respaldo['cotizado_el'],
+                        'orden'                     => $orden++,
+                    ]);
+                }
                 $copiados++;
             }
 
@@ -1374,7 +1409,9 @@ class RequerimientosController extends Controller
                 'proyecto_id'      => $proyectoId,
                 'error'            => $e->getMessage(),
             ]);
-            return 0;
+            // Antes devolvía 0 y el proyecto se creaba sin productos sin avisar. Ahora
+            // corta la creación: crearProyecto revierte todo y muestra el motivo.
+            throw new \RuntimeException('No se pudieron copiar los productos de la pre-cotización al proyecto: ' . $e->getMessage(), 0, $e);
         }
     }
 
@@ -1452,14 +1489,17 @@ class RequerimientosController extends Controller
             return ['total' => 0, 'sin_proveedor' => 0];
         }
 
-        $total = PreQuoteItem::where('prequote_id', $prequote->id)->count();
+        // El proveedor es el ganador de la comparativa (o el del ítem, en las
+        // pre-cotizaciones anteriores). La comisión no lleva proveedor.
+        $items = PreQuoteItem::with('winningItemSupplier')
+            ->where('prequote_id', $prequote->id)
+            ->where('tipo_linea', '!=', 'comision')
+            ->get();
 
-        $sinProveedor = PreQuoteItem::where('prequote_id', $prequote->id)
-            ->where(function ($q) {
-                $q->whereNull('supplier_id')->orWhere('supplier_id', 0);
-            })
-            ->count();
+        $sinProveedor = $items->filter(function ($it) {
+            return empty($it->proveedorGanador()['supplier_id']);
+        })->count();
 
-        return ['total' => $total, 'sin_proveedor' => $sinProveedor];
+        return ['total' => $items->count(), 'sin_proveedor' => $sinProveedor];
     }
 }

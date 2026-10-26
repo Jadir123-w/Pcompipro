@@ -9,6 +9,10 @@
  * varios proveedores. Cuando un proveedor se reemplaza, el anterior NO se borra:
  * queda con `activo = 0` para conservar el historial de cambios.
  *
+ * Respaldos (`es_respaldo = 1`, también con `activo = 0`): los demás proveedores
+ * cotizados en la comparativa. No suman al costo ni son historial; al usarse
+ * reemplazan al proveedor `respalda_a_id` con el precio que se confirme.
+ *
  * Los montos derivados (neto, IGV, total a pagar) se calculan en el backend a
  * partir de `precio_unitario_informado`, `cantidad` y `condicion_igv`.
  * ============================================================================
@@ -40,6 +44,9 @@ class ProyectoProductoProveedor extends ModelTenant
         'igv_monto',
         'total_pagar',
         'activo',
+        'es_respaldo',      // 1 = respaldo de la comparativa (no suma al costo)
+        'respalda_a_id',    // fila del proveedor al que reemplazaría
+        'cotizado_el',      // fecha en que el proveedor cotizó
         'reemplaza_a_id',
         'motivo_reemplazo',
         'orden',
@@ -55,6 +62,8 @@ class ProyectoProductoProveedor extends ModelTenant
         'igv_monto'                 => 'decimal:2',
         'total_pagar'               => 'decimal:2',
         'activo'                    => 'boolean',
+        'es_respaldo'               => 'boolean',
+        'respalda_a_id'             => 'integer',
         'reemplaza_a_id'            => 'integer',
         'orden'                     => 'integer',
     ];

@@ -424,6 +424,39 @@
             </span>
           </el-dialog>
 
+          <!-- Usar un respaldo: confirma el precio (pudo cambiar) y reemplaza al
+               proveedor que respalda, que pasa al historial con el motivo. -->
+          <el-dialog :visible.sync="usarRespaldo.visible" :title="'Usar ' + (usarRespaldo.respaldo ? (usarRespaldo.respaldo.supplier_name || 'proveedor') : '')"
+                     width="440px" append-to-body :close-on-click-modal="false">
+            <div v-if="usarRespaldo.objetivo" class="usar-respaldo__reemplaza">
+              Reemplaza a <strong>{{ usarRespaldo.objetivo.supplier_name || 'el proveedor actual' }}</strong>, que pasa al historial.
+            </div>
+            <div v-else class="usar-respaldo__campo">
+              <label>Proveedor que se reemplaza</label>
+              <el-select v-model="usarRespaldo.objetivoIndex" size="small" placeholder="Elige el proveedor" style="width:100%">
+                <el-option v-for="op in usarRespaldo.opciones" :key="op.index" :label="op.nombre" :value="op.index"></el-option>
+              </el-select>
+            </div>
+            <div class="usar-respaldo__campo">
+              <label>Precio unitario confirmado (cotizado: S/ {{ formatMonto(usarRespaldo.respaldo ? usarRespaldo.respaldo.precio_unitario_informado : 0) }})</label>
+              <el-input-number v-model="usarRespaldo.precio" size="small" :precision="2" :min="0" :controls="false" style="width:100%"></el-input-number>
+            </div>
+            <div class="usar-respaldo__campo">
+              <label>Tiempo de producción</label>
+              <el-input v-model="usarRespaldo.tiempo" size="small" placeholder="Ej.: 7 días útiles"></el-input>
+            </div>
+            <div class="usar-respaldo__campo">
+              <label>Motivo del cambio</label>
+              <el-input v-model="usarRespaldo.motivo" size="small" type="textarea" :autosize="{minRows:2,maxRows:4}"
+                        placeholder="Ej.: el proveedor actual no tiene stock" @input="usarRespaldo.error = ''"></el-input>
+            </div>
+            <div v-if="usarRespaldo.error" class="usar-respaldo__error">{{ usarRespaldo.error }}</div>
+            <span slot="footer">
+              <el-button size="small" @click="usarRespaldo.visible = false">Cancelar</el-button>
+              <el-button size="small" type="primary" @click="confirmarUsarRespaldo">Usar proveedor</el-button>
+            </span>
+          </el-dialog>
+
           <el-row :gutter="20" class="mt-3">
             <el-col :span="8">
               <div class="form-group">
@@ -638,12 +671,12 @@
                   <div class="proveedores-head">
                     <div>
                       <div class="producto-specs__title" style="margin:0;">Proveedores y costos del producto</div>
-                      <div class="proveedores-hint">El concepto describe qué producto o servicio realiza cada proveedor. Al cambiar un proveedor, el anterior queda como historial (atenuado).</div>
+                      <div class="proveedores-hint">El concepto describe qué producto o servicio realiza cada proveedor. Al cambiar un proveedor, el anterior queda como historial (atenuado). Los respaldos de la comparativa no suman al costo hasta que se usan.</div>
                     </div>
                     <el-button type="primary" size="mini" icon="el-icon-plus" @click="addProveedor(props.row)">Agregar proveedor</el-button>
                   </div>
 
-                  <el-table :data="props.row.proveedores" size="mini" border class="proveedores-tabla" :row-class-name="proveedorRowClass">
+                  <el-table :data="proveedoresPrincipales(props.row)" size="mini" border class="proveedores-tabla" :row-class-name="proveedorRowClass">
                     <el-table-column label="Proveedor" min-width="190">
                       <template slot-scope="s">
                         <el-select v-if="s.row.activo" v-model="s.row.supplier_id" size="mini" filterable remote clearable
@@ -719,13 +752,42 @@
                     <el-table-column width="120" align="center">
                       <template slot-scope="s">
                         <template v-if="s.row.activo">
-                          <el-button size="mini" type="text" title="Cambiar proveedor (conserva el anterior como historial)" @click="cambiarProveedor(props.row, s.row, s.$index)">Cambiar</el-button>
-                          <el-button size="mini" type="text" icon="el-icon-close" title="Quitar proveedor" @click="removeProveedor(props.row, s.$index)"></el-button>
+                          <el-button size="mini" type="text" title="Cambiar proveedor (conserva el anterior como historial)" @click="cambiarProveedor(props.row, s.row)">Cambiar</el-button>
+                          <el-button size="mini" type="text" icon="el-icon-close" title="Quitar proveedor" @click="removeProveedor(props.row, s.row)"></el-button>
                         </template>
                         <el-tag v-else size="mini" type="info">historial</el-tag>
                       </template>
                     </el-table-column>
                   </el-table>
+
+                  <!-- Respaldos de la comparativa de la pre-cotización: no suman al costo.
+                       "Usar este proveedor" reemplaza al proveedor que respaldan. -->
+                  <template v-if="respaldosDe(props.row).length">
+                    <div class="proveedores-respaldo__titulo">Respaldos de la comparativa · no suman al costo</div>
+                    <el-table :data="respaldosDe(props.row)" size="mini" border class="proveedores-tabla">
+                      <el-table-column label="Estado" width="90" align="center">
+                        <template slot-scope="s"><el-tag size="mini" type="warning">Respaldo</el-tag></template>
+                      </el-table-column>
+                      <el-table-column label="Proveedor" min-width="190">
+                        <template slot-scope="s">{{ s.row.supplier_name || '—' }}</template>
+                      </el-table-column>
+                      <el-table-column label="Precio cotizado" width="170">
+                        <template slot-scope="s">
+                          S/ {{ formatMonto(s.row.precio_unitario_informado) }}
+                          <span v-if="s.row.cotizado_el" class="prov-historial">({{ fechaCorta(s.row.cotizado_el) }})</span>
+                        </template>
+                      </el-table-column>
+                      <el-table-column label="Tiempo de producción" min-width="140">
+                        <template slot-scope="s">{{ s.row.tiempo_produccion || '—' }}</template>
+                      </el-table-column>
+                      <el-table-column width="200" align="center">
+                        <template slot-scope="s">
+                          <el-button size="mini" type="text" @click="abrirUsarRespaldo(props.row, s.row)">Usar este proveedor</el-button>
+                          <el-button size="mini" type="text" icon="el-icon-close" title="Quitar respaldo" @click="quitarRespaldo(props.row, s.row)"></el-button>
+                        </template>
+                      </el-table-column>
+                    </el-table>
+                  </template>
 
                   <div class="producto-totales">
                     <span>Costo unitario acumulado: <strong>S/ {{ formatMonto(props.row.precio_unitario) }}</strong></span>
@@ -1311,6 +1373,11 @@ export default {
       imgVersion: Date.now(),           // cache-bust para refrescar la miniatura
       productoImageRow: null,           // fila objetivo del input de archivo compartido
 
+      // Ventana "Usar este proveedor" (respaldo de la comparativa).
+      usarRespaldo: {
+        visible: false, producto: null, respaldo: null, objetivo: null,
+        opciones: [], objetivoIndex: null, precio: 0, tiempo: '', motivo: '', error: '',
+      },
       // Estado del modal selector de contactos de facturación
       picker: {
         visible: false,
@@ -2339,6 +2406,89 @@ export default {
       var map = { included: 'Incluye IGV', excluded: 'No incluye IGV', exempt: 'No aplica IGV', pending: 'Por confirmar' };
       return map[cond] || cond || '—';
     },
+    // Activos e historial (tabla principal). Los respaldos se muestran aparte.
+    proveedoresPrincipales(row) {
+      return ((row && row.proveedores) || []).filter(function(p) { return !p.es_respaldo; });
+    },
+    respaldosDe(row) {
+      return ((row && row.proveedores) || []).filter(function(p) { return !!p.es_respaldo; });
+    },
+    fechaCorta(fecha) {
+      var f = String(fecha || '').substr(0, 10).split('-');
+      return f.length === 3 ? f[2] + '/' + f[1] : '';
+    },
+    /**
+     * Proveedor que reemplaza el respaldo: el ganador al que respalda o, si ese ya se
+     * cambió, el que lo reemplazó (siguiendo la cadena de cambios). Así nunca toca a
+     * otro proveedor activo del producto (p. ej., el del logo). null = no se pudo
+     * resolver y hay más de un activo: se pide elegir.
+     */
+    objetivoRespaldo(row, respaldo) {
+      var lista = (row && row.proveedores) || [];
+      var esActivo = function(p) { return p && p.activo && !p.es_respaldo; };
+      var id = respaldo.respalda_a_id ? Number(respaldo.respalda_a_id) : null;
+      for (var i = 0; id && i < 50; i++) {
+        var actual = lista.find(function(p) { return Number(p.id) === id; });
+        if (esActivo(actual)) return actual;
+        var siguiente = lista.find(function(p) { return !p.es_respaldo && Number(p.reemplaza_a_id) === id; });
+        if (!siguiente) break;
+        if (esActivo(siguiente) && !siguiente.id) return siguiente;
+        id = siguiente.id ? Number(siguiente.id) : null;
+      }
+      var activos = lista.filter(esActivo);
+      return activos.length === 1 ? activos[0] : null;
+    },
+    abrirUsarRespaldo(row, respaldo) {
+      var lista = row.proveedores || [];
+      var objetivo = this.objetivoRespaldo(row, respaldo);
+      var opciones = [];
+      lista.forEach(function(p, index) {
+        if (p.activo && !p.es_respaldo) {
+          opciones.push({ index: index, nombre: (p.supplier_name || 'Sin proveedor') + (p.concepto ? ' · ' + p.concepto : '') });
+        }
+      });
+      this.usarRespaldo = {
+        visible: true, producto: row, respaldo: respaldo, objetivo: objetivo,
+        opciones: opciones, objetivoIndex: null,
+        precio: parseFloat(respaldo.precio_unitario_informado) || 0,
+        tiempo: respaldo.tiempo_produccion || '', motivo: '', error: '',
+      };
+    },
+    confirmarUsarRespaldo() {
+      var u = this.usarRespaldo;
+      var row = u.producto;
+      var respaldo = u.respaldo;
+      var objetivo = u.objetivo || (u.objetivoIndex !== null ? row.proveedores[u.objetivoIndex] : null);
+      if (!objetivo) { u.error = 'Elige el proveedor que se reemplaza.'; return; }
+      if (!(Number(u.precio) > 0)) { u.error = 'Ingresa el precio unitario confirmado.'; return; }
+      if (!String(u.motivo || '').trim()) { u.error = 'Escribe el motivo del cambio.'; return; }
+
+      // El reemplazado pasa al historial; el respaldo queda activo con el precio confirmado.
+      this.$set(objetivo, 'activo', false);
+      this.$set(respaldo, 'es_respaldo', false);
+      this.$set(respaldo, 'activo', true);
+      this.$set(respaldo, 'respalda_a_id', null);
+      this.$set(respaldo, 'precio_unitario_informado', Number(u.precio));
+      this.$set(respaldo, 'tiempo_produccion', u.tiempo);
+      this.$set(respaldo, 'cantidad', objetivo.cantidad);
+      this.$set(respaldo, 'reemplaza_a_id', objetivo.id || null);
+      this.$set(respaldo, 'motivo_reemplazo', String(u.motivo).trim());
+      // Se muestra junto al que reemplaza, como en "Cambiar".
+      row.proveedores.splice(row.proveedores.indexOf(respaldo), 1);
+      row.proveedores.splice(row.proveedores.indexOf(objetivo) + 1, 0, respaldo);
+      this.recalcProducto(row);
+      u.visible = false;
+      this.$message.success('Proveedor cambiado. Guarda el proyecto para aplicar el cambio.');
+    },
+    quitarRespaldo(row, respaldo) {
+      var self = this;
+      this.$confirm('Se quitará ' + (respaldo.supplier_name || 'este proveedor') + ' de los respaldos del producto.', 'Quitar respaldo', {
+        confirmButtonText: 'Quitar', cancelButtonText: 'Cancelar', type: 'warning'
+      }).then(function() {
+        row.proveedores.splice(row.proveedores.indexOf(respaldo), 1);
+        self.recalcProducto(row);
+      }).catch(function() {});
+    },
     proveedorRowClass(obj) {
       return (obj && obj.row && !obj.row.activo) ? 'prov-row-historial' : '';
     },
@@ -2359,8 +2509,9 @@ export default {
      * Cambia un proveedor conservando el historial: el actual pasa a inactivo
      * (queda visible atenuado) y se agrega uno nuevo activo para elegir el reemplazo.
      */
-    cambiarProveedor(row, prov, index) {
+    cambiarProveedor(row, prov) {
       var self = this;
+      var index = row.proveedores.indexOf(prov);
       this.$prompt('Motivo del cambio (opcional):', 'Cambiar proveedor', {
         confirmButtonText: 'Cambiar',
         cancelButtonText: 'Cancelar',
@@ -2383,7 +2534,8 @@ export default {
         self.recalcProducto(row);
       }).catch(function() {});
     },
-    removeProveedor(row, index) {
+    removeProveedor(row, prov) {
+      var index = row.proveedores.indexOf(prov);
       var activos = (row.proveedores || []).filter(function(p) { return p.activo; });
       if (activos.length <= 1) {
         this.$message.warning('Debe quedar al menos un proveedor activo en el producto.');
@@ -2568,6 +2720,33 @@ export default {
   color: #a0a4ab;
   font-size: 12px;
   font-style: italic;
+}
+.proveedores-respaldo__titulo {
+  margin: 4px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #b26a00;
+}
+.usar-respaldo__reemplaza {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: #fdf6ec;
+  color: #8a5a00;
+  font-size: 13px;
+}
+.usar-respaldo__campo {
+  margin-bottom: 12px;
+}
+.usar-respaldo__campo label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: #606266;
+}
+.usar-respaldo__error {
+  color: #f56c6c;
+  font-size: 12px;
 }
 .proveedores-tabla >>> .prov-row-historial {
   background: #fafafa;
