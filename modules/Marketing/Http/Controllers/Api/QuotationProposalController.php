@@ -154,7 +154,7 @@ class QuotationProposalController extends Controller
         if (!$proposal->isEditable()) {
             return response()->json([
                 'ok'      => false,
-                'message' => 'La proposal ya fue emitida y no se puede editar. Crea una versión nueva si necesitas cambios.',
+                'message' => $this->motivoNoEditable($proposal, 'La proposal ya fue emitida y no se puede editar. Crea una versión nueva si necesitas cambios.'),
             ], 422);
         }
 
@@ -255,7 +255,7 @@ class QuotationProposalController extends Controller
         if (!$proposal->isEditable()) {
             return response()->json([
                 'ok'      => false,
-                'message' => 'La proposal ya fue emitida. No se puede regenerar con IA.',
+                'message' => $this->motivoNoEditable($proposal, 'La proposal ya fue emitida. No se puede regenerar con IA.'),
             ], 422);
         }
 
@@ -318,7 +318,7 @@ class QuotationProposalController extends Controller
         if (!$proposal->isEditable()) {
             return response()->json([
                 'ok'      => false,
-                'message' => 'La proposal ya fue emitida. Los items están congelados.',
+                'message' => $this->motivoNoEditable($proposal, 'La proposal ya fue emitida. Los items están congelados.'),
             ], 422);
         }
 
@@ -787,6 +787,32 @@ class QuotationProposalController extends Controller
         }
 
         return $secuencial;
+    }
+
+    /**
+     * Por qué no se puede editar: bloqueo por la pre-cotización (emitida, aprobada,
+     * rechazada o convertida) o, si no, el mensaje propio de la proposal emitida.
+     *
+     * @param  QuotationProposal $proposal
+     * @param  string            $siEmitida
+     * @return string
+     */
+    private function motivoNoEditable(QuotationProposal $proposal, $siEmitida)
+    {
+        if ($proposal->bloqueadaPorPreCotizacion()) {
+            $prequote = $proposal->prequote;
+            if ($prequote->isConverted()) {
+                return 'La cotización está bloqueada: la pre-cotización ya se convirtió a cotización formal.';
+            }
+            $pasos = [
+                PreQuote::ESTADO_PROPUESTA_EMITIDA => 'ya se emitió al cliente. Para editarla, marca "Pidió cambios" en la pestaña Pre-cotización.',
+                PreQuote::ESTADO_RECHAZADA         => 'fue rechazada por el cliente. Para editarla, marca "Reabrir" en la pestaña Pre-cotización.',
+                PreQuote::ESTADO_APROBADA          => 'fue aprobada por el cliente. El siguiente paso es "Convertir a cotización formal".',
+            ];
+            return 'La cotización está bloqueada: la pre-cotización '
+                 . (isset($pasos[$prequote->estado]) ? $pasos[$prequote->estado] : 'no se puede editar en estado ' . $prequote->estado . '.');
+        }
+        return $siEmitida;
     }
 
     /**

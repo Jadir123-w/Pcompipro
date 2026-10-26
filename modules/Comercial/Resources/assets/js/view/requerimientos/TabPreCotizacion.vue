@@ -7,7 +7,7 @@
       <div class="precot-totals__grid">
         <div class="precot-total">
           <span class="precot-total__label">Estado</span>
-          <el-tag :type="estadoTagType(prequote.estado)" size="mini">{{ prequote.estado }}</el-tag>
+          <span class="precot-estado" :class="'precot-estado--' + prequote.estado">{{ etiquetaEstado(prequote) }}</span>
         </div>
         <div class="precot-total">
           <span class="precot-total__label">Movilidad</span>
@@ -22,18 +22,18 @@
           <span :title="tituloEnVivo">S/ {{ resumenCostoReal.seguro.toFixed(2) }}</span>
         </div>
         <div class="precot-total precot-total--wide">
-          <span class="precot-total__label" title="Promedio simple del Margen % ingresado por ítem.">Prom. margen <i class="el-icon-info"></i></span>
+          <span class="precot-total__label">Prom. margen ingresado <i class="el-icon-info" title="Promedio simple de los porcentajes de margen ingresados por la ejecutiva en cada ítem (incluye los 0%). No es el margen real."></i></span>
           <span>{{ promedioMargenIngresado.toFixed(2) }}%</span>
         </div>
-        <div class="precot-total">
+        <div class="precot-total precot-total--ganancia">
           <span class="precot-total__label">Margen ganancia</span>
-          <span style="color:#67C23A;">S/ {{ parseFloat(prequote.ganancia_total || 0).toFixed(2) }}</span>
+          <span>S/ {{ parseFloat(prequote.ganancia_total || 0).toFixed(2) }}</span>
         </div>
-        <div class="precot-total">
+        <div class="precot-total precot-total--ganancia">
           <span class="precot-total__label">Utilidad real</span>
-          <span :title="tituloEnVivo" style="color:#67C23A;">S/ {{ resumenCostoReal.utilidadReal.toFixed(2) }}</span>
+          <span :title="tituloEnVivo">S/ {{ resumenCostoReal.utilidadReal.toFixed(2) }}</span>
         </div>
-        <div class="precot-total">
+        <div class="precot-total precot-total--ganancia">
           <span class="precot-total__label">Margen real</span>
           <span :title="tituloEnVivo">{{ margenRealTotalPct.toFixed(2) }}%</span>
         </div>
@@ -41,14 +41,14 @@
           <span class="precot-total__label">Subtotal</span>
           <span>S/ {{ parseFloat(prequote.subtotal).toFixed(2) }}</span>
         </div>
-        <div class="precot-total">
+        <div class="precot-total precot-total--ultimo">
           <span class="precot-total__label">IGV ({{ igvPct }}%)</span>
           <span>S/ {{ parseFloat(prequote.total_igv).toFixed(2) }}</span>
         </div>
-        <div class="precot-total precot-total--total">
-          <span class="precot-total__label">Total</span>
-          <strong>S/ {{ parseFloat(prequote.total).toFixed(2) }}</strong>
-        </div>
+      </div>
+      <div class="precot-total precot-total--total">
+        <span class="precot-total__label">Total</span>
+        <strong>S/ {{ parseFloat(prequote.total).toFixed(2) }}</strong>
       </div>
     </div>
 
@@ -81,7 +81,7 @@
             <!-- Modo IMAGEN: preview + quitar -->
             <div v-else style="display:flex; align-items:center; gap:14px; border:2px solid #34d399; border-radius:6px; padding:12px; background:#ecfdf5;">
               <img :src="referenceImagePreview" alt="Referencia"
-                   style="width:110px; height:82px; object-fit:cover; border-radius:6px; border:1px solid #d1d5db; background:#fff;"/>
+                   style="width:110px; height:82px; object-fit:contain; border-radius:6px; border:1px solid #d1d5db; background:#fff;"/>
               <div style="flex:1;">
                 <strong style="color:#065f46;">Imagen cargada como referencia</strong>
                 <p style="color:#6b7280; margin:4px 0; font-size:12px;">Se interpretará para generar un nuevo ítem. Para escribir texto, primero quitá la imagen.</p>
@@ -98,7 +98,7 @@
                       :type="referenceMode === 'texto' ? '' : (referenceMode === 'imagen' ? 'success' : 'info')">
                 {{ referenceMode === 'texto' ? 'Referencia detectada: Texto' : (referenceMode === 'imagen' ? 'Referencia detectada: Imagen' : 'Sin referencia') }}
               </el-tag>
-              <el-button icon="el-icon-plus" :loading="addingManual"
+              <el-button v-if="mostrarItemManual" icon="el-icon-plus" :loading="addingManual"
                          :disabled="addingManual || interpretingItem" @click="addManualItem">
                 {{ addingManual ? 'Agregando…' : 'Ítem manual' }}
               </el-button>
@@ -152,7 +152,7 @@
       <el-button type="primary" icon="el-icon-magic-stick" @click="generatePrequote" :loading="generating">
         Generar Pre-Cotización con IA
       </el-button>
-      <el-button icon="el-icon-plus" @click="addManualItem" :loading="addingManual" style="margin-left:8px;">
+      <el-button v-if="mostrarItemManual" icon="el-icon-plus" @click="addManualItem" :loading="addingManual" style="margin-left:8px;">
         {{ addingManual ? 'Agregando…' : 'Agregar ítem manual' }}
       </el-button>
     </div>
@@ -218,10 +218,11 @@
       </div>
 
       <!-- Tabla de items -->
-      <el-table :data="displayRows()" stripe border size="small" class="mb-2 items-table" row-key="displayId">
+      <el-table :data="displayRows()" stripe border size="small" class="mb-2 items-table" row-key="displayId"
+                @expand-change="onDetalleItemCambio">
 
         <!-- Fila expandible: detalles técnicos del ítem con badge "Inferido por IA" -->
-        <el-table-column type="expand" width="40">
+        <el-table-column :resizable="false" type="expand" width="36">
           <template slot-scope="props">
             <div v-if="props.row._isKit" class="kit-detail">
               <div class="kit-detail__header">
@@ -290,8 +291,9 @@
 
               <!-- Componentes -->
               <div class="kit-detail__subtitle"><strong>Componentes del kit</strong></div>
-              <el-table row-key="id" :data="kitMemberItems(props.row.kit)" size="mini" border style="width:100%;">
-                <el-table-column type="expand" width="40">
+              <el-table row-key="id" :data="kitMemberItems(props.row.kit)" size="mini" border style="width:100%;"
+                        @expand-change="onDetalleItemCambio">
+                <el-table-column :resizable="false" type="expand" width="36">
                   <template slot-scope="mscope">
                     <!-- MANTIENE SINCRONÍA: copia del detalle del ítem (ai-inferred-details).
                          memberDetailScope devuelve SIEMPRE el mismo envoltorio por
@@ -303,6 +305,11 @@
                 <span class="ai-inferred-details__title">
                   <i class="el-icon-document-copy"></i>
                   <strong>{{ isComision(props.row) ? 'Descripción de la comisión' : (isService(props.row) ? 'Descripción y observaciones del servicio' : 'Detalles técnicos del producto') }}</strong>
+                </span>
+                <span v-if="!isComision(props.row)" class="entrega-cliente"
+                      title="Compromiso de entrega de COMPIPRO al cliente; independiente del plazo del proveedor.">
+                  <label>Tiempo de entrega al cliente <i class="el-icon-info"></i></label>
+                  <campo-dias-utiles v-model="props.row.tiempo_entrega" :disabled="!isEditable"></campo-dias-utiles>
                 </span>
                 <span v-if="!isComision(props.row) && !isService(props.row) && inferredFields(props.row).length > 0"
                       class="ai-inferred-details__warning">
@@ -417,10 +424,10 @@
                         </el-input>
                       </div>
                       <div class="ai-field erp-obs" v-if="!isComision(props.row)">
-                        <label class="lbl-help" title="Notas internas de esta línea; no se muestran al cliente.">Observaciones <i class="el-icon-info field-tip-icon"></i></label>
+                        <label class="lbl-help" title="Observaciones o detalles adicionales del producto.">Observaciones <i class="el-icon-info field-tip-icon"></i></label>
                         <el-input v-model="props.row.observaciones" size="mini" :disabled="!isEditable"
                                   type="textarea" :autosize="{minRows: 2, maxRows: 6}"
-                                  placeholder="Notas internas para esta línea (opcional)">
+                                  placeholder="Observaciones o detalles adicionales del producto">
                         </el-input>
                       </div>
                     </div>
@@ -630,8 +637,15 @@
               <div class="supplier-quotes-section" v-if="!isComision(props.row)">
                 <div class="supplier-quotes__title">▣ Comparativa de proveedores</div>
                 <div class="supplier-quotes__hint">El proveedor ganador define el Costo Base de esta línea. El origen siempre es manual. Los cambios se guardan al presionar "Guardar detalles".</div>
-                <el-table :data="supplierQuotesOf(props.row)" size="mini" border style="width:100%;">
-                  <el-table-column label="Ganador" width="110" align="center">
+                <div v-if="isEditable" class="supplier-quotes__acciones">
+                  <el-button size="mini" type="warning" icon="el-icon-plus"
+                             :disabled="tieneFilaSinProveedor(props.row)"
+                             :title="tieneFilaSinProveedor(props.row) ? 'Elige primero el proveedor de la fila agregada' : ''"
+                             @click="addSupplierQuote(props.row)">Agregar proveedor</el-button>
+                </div>
+                <div v-if="!supplierQuotesOf(props.row).length" class="supplier-quotes__vacio">Aún no hay proveedores para este ítem.</div>
+                <el-table v-else :data="supplierQuotesOf(props.row)" size="mini" border style="width:100%;">
+                  <el-table-column :resizable="false" label="Ganador" width="70" align="center">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO 2026-10-21] el-radio de Element: el <input type="radio">
                            nativo lo oculta el CSS global (position:absolute; left:-9999px; opacity:0),
@@ -647,27 +661,36 @@
                       </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Proveedor" min-width="170">
+                  <el-table-column :resizable="false" label="Proveedor" min-width="220">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO] Al cambiar proveedor, limpia costo/tiempo/observaciones -->
+                      <!-- Proveedor obligatorio: sin opción "por definir". Al agregar la fila, el
+                           cursor llega aquí con la lista abierta (ref: proveedor-<id de fila>). -->
                       <el-select v-model="qscope.row.supplier_id" size="mini" filterable
-                                 placeholder="Proveedor por definir"
+                                 placeholder="Elige un proveedor"
+                                 :ref="'proveedor-' + qscope.row.id"
+                                 :class="{ 'supplier-quotes__sin-proveedor': qscope.row._sinProveedor }"
                                  :filter-method="filterSuppliers"
                                  :disabled="!isEditable" style="width:100%;"
+                                 popper-class="supplier-quotes__lista"
                                  @change="function (val) { onQuoteSupplierChange(props.row, qscope.row, val) }">
-                        <el-option :key="0" :label="'Proveedor por definir'" :value="0"></el-option>
                         <el-option v-for="s in supplierOptionsFor(qscope.row)" :key="s.id"
-                                   :label="s.nombre_comercial || s.razon_social" :value="s.id"></el-option>
+                                   :label="nombreEmpresa(s)" :value="s.id">
+                          <div class="supplier-quotes__opcion-nombre">{{ nombreEmpresa(s) }}</div>
+                          <div class="supplier-quotes__opcion-dato">{{ recortar(s.razon_social, 45) }}</div>
+                          <div class="supplier-quotes__opcion-dato">{{ s.ruc || 'Sin RUC' }}</div>
+                        </el-option>
                       </el-select>
+                      <div v-if="qscope.row._sinProveedor" class="supplier-quotes__error">Elige el proveedor o quita esta fila.</div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Origen" width="90" align="center">
+                  <el-table-column :resizable="false" label="Origen" width="80" align="center">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO] Origen siempre manual en esta tabla -->
                       <el-tag size="mini" effect="plain">Manual</el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Producto / referencia cotizada" min-width="200">
+                  <el-table-column :resizable="false" label="Producto / referencia cotizada" min-width="150">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO 2026-10-21] Solo lectura: es el MISMO campo
                            "Producto solicitado" de la fila del item (el-input__inner).
@@ -676,16 +699,18 @@
                       <span class="campo-calculado">{{ qscope.row.product_reference || props.row.product_name }}</span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Costo Base" width="110" align="right">
+                  <el-table-column :resizable="false" label="Costo Base" width="110" align="right">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO 2026-10-21] v-model: el input-number con
                            :value + @change perdía la edición (no se guardaba). -->
                       <el-input-number v-model="qscope.row.costo_base" size="mini" :precision="2" :step="1" :min="0"
                                        controls-position="right" :disabled="!isEditable" style="width:100%;"
-                                       @change="markSupplierQuoteDirty(props.row)"></el-input-number>
+                                       :class="{ 'supplier-quotes__campo-error': qscope.row._sinCosto }"
+                                       @change="function (v) { onQuoteCostoChange(props.row, qscope.row, v) }"></el-input-number>
+                      <div v-if="qscope.row._sinCosto" class="supplier-quotes__error">Ingresa el costo.</div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="V. Unit." width="86" align="right">
+                  <el-table-column :resizable="false" label="V. Unit." width="100" align="right">
                     <template slot="header">
                       <span class="col-tip" title="Unitario de venta que saldría si este proveedor fuera el ganador (Total sin IGV ÷ cantidad, con muestras, impresión, empaque y SCTR).">V. Unit. <i class="el-icon-info"></i></span>
                     </template>
@@ -693,32 +718,32 @@
                       <span class="campo-calculado">{{ quoteUnitValue(props.row, qscope.row) }}</span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Tiempo entrega" width="130">
+                  <el-table-column :resizable="false" label="Tiempo entrega" width="170">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO 2026-10-21] v-model: editable de verdad. -->
-                      <el-input v-model="qscope.row.tiempo_estimado_dias" size="mini" placeholder="Ej: 15 días útiles"
+                      <campo-dias-utiles v-model="qscope.row.tiempo_estimado_dias" placeholder="15" class="campo-dias-utiles--lleno"
+                                         :disabled="!isEditable" @input="onQuoteTiempoInput(props.row, qscope.row)"></campo-dias-utiles>
+                      <div v-if="qscope.row._sinTiempo" class="supplier-quotes__error">Escribe un número (8) o un rango (10 a 12), o déjalo vacío.</div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column :resizable="false" label="Observaciones" min-width="180">
+                    <template slot-scope="qscope">
+                      <!-- [NUEVO FLUJO 2026-10-21] v-model: editable de verdad. -->
+                      <el-input v-model="qscope.row.observaciones" type="textarea" size="mini" placeholder="Observaciones"
+                                :autosize="{ minRows: 1, maxRows: 5 }"
                                 :disabled="!isEditable" @input="markSupplierQuoteDirty(props.row)"></el-input>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Observaciones" min-width="150">
-                    <template slot-scope="qscope">
-                      <!-- [NUEVO FLUJO 2026-10-21] v-model: editable de verdad. -->
-                      <el-input v-model="qscope.row.observaciones" size="mini" placeholder="Observaciones"
-                                :disabled="!isEditable" @input="markSupplierQuoteDirty(props.row)"></el-input>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="Acción" width="60" align="center">
+                  <el-table-column :resizable="false" label="Acción" width="60" align="center">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO] Solo botón eliminar con confirmación. Sin "Agregar catálogo". -->
-                      <el-button v-if="isEditable" size="mini" type="danger" icon="el-icon-delete" circle
-                                 :disabled="supplierQuotesOf(props.row).length <= 1"
-                                 @click="removeSupplierQuote(props.row, qscope.row)"></el-button>
+                      <button v-if="isEditable" type="button" class="item-icon-btn item-danger supplier-quotes__quitar"
+                              title="Quitar proveedor" @click="removeSupplierQuote(props.row, qscope.row)">
+                        <i class="far fa-trash-alt"></i>
+                      </button>
                     </template>
                   </el-table-column>
                 </el-table>
-                <div style="margin-top:8px;">
-                  <el-button v-if="isEditable" size="mini" icon="el-icon-plus" @click="addSupplierQuote(props.row)">+ proveedor</el-button>
-                </div>
               </div>
 
               <!-- ─────── Fase C: Escalones de precio por volumen ─────── -->
@@ -734,14 +759,14 @@
                           row-key="id"
                           :row-class-name="(row) => tierRowClass(row, props.row)"
                           style="max-width:480px;">
-                  <el-table-column label="Desde" prop="quantity_unit" width="80" align="right">
+                  <el-table-column :resizable="false" label="Desde" prop="quantity_unit" width="80" align="right">
                     <template slot-scope="t">{{ formatTierQty(t.row.quantity_unit) }} u</template>
                   </el-table-column>
-                  <el-table-column label="Precio unitario" width="130" align="right">
+                  <el-table-column :resizable="false" label="Precio unitario" width="130" align="right">
                     <template slot-scope="t">S/ {{ t.row.price1.toFixed(2) }}</template>
                   </el-table-column>
-                  <el-table-column label="Descripción" prop="description"></el-table-column>
-                  <el-table-column label="" width="50" align="center">
+                  <el-table-column :resizable="false" label="Descripción" prop="description"></el-table-column>
+                  <el-table-column :resizable="false" label="" width="50" align="center">
                     <template slot-scope="t">
                       <i v-if="props.row.tier_aplicado && props.row.tier_aplicado.id === t.row.id"
                          class="el-icon-check" style="color:#67c23a; font-weight:bold;"
@@ -765,65 +790,57 @@
                     </template>
                   </template>
                 </el-table-column>
-                <el-table-column label="Kit" width="70" align="center">
+                <el-table-column :resizable="false" label="Kit" width="70" align="center">
                   <template slot-scope="mscope">
                     <el-button v-if="isEditable" size="mini" type="danger" plain
                                @click="removeKitMember(props.row.kit, mscope.row)">Quitar</el-button>
                   </template>
                 </el-table-column>
-                <el-table-column label="#" width="40" align="center">
+                <el-table-column :resizable="false" label="#" width="40" align="center">
                   <template slot-scope="mscope">{{ mscope.$index + 1 }}</template>
                 </el-table-column>
-                <el-table-column label="Producto solicitado" min-width="140">
+                <el-table-column :resizable="false" label="Producto solicitado" min-width="140">
                   <template slot-scope="mscope">{{ mscope.row.product_name }}</template>
                 </el-table-column>
-                <el-table-column label="Foto" width="60" align="center">
+                <el-table-column :resizable="false" label="Foto" width="60" align="center">
                   <template slot-scope="mscope">
                     <img v-if="itemImageUrl(mscope.row)" :src="itemImageUrl(mscope.row)" alt="foto"
                          class="item-foto-thumb"/>
                     <span v-else class="item-foto-empty"><i class="el-icon-picture-outline"></i></span>
                   </template>
                 </el-table-column>
-                <el-table-column label="Tipo" width="90" align="center">
+                <el-table-column :resizable="false" label="Tipo" width="90" align="center">
                   <template slot-scope="mscope">
                     <span style="font-size:11px;">{{ isComision(mscope.row) ? 'Comisión' : (String(mscope.row.tipo_linea || '').toLowerCase() === 'service' ? 'Servicio' : 'Producto') }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="Producto del catálogo" min-width="150">
+                <el-table-column :resizable="false" label="Producto del catálogo" min-width="150">
                   <template slot-scope="mscope">
                     <div v-if="!isComision(mscope.row)">
-                      <el-tag v-if="matchStatus(mscope.row) === 'matched'" size="mini" type="success" effect="plain">
-                        <i class="el-icon-success"></i>
-                        {{ mscope.row.catalog_item ? mscope.row.catalog_item.name : ('ID ' + mscope.row.item_id) }}
-                      </el-tag>
-                      <el-tag v-else-if="matchStatus(mscope.row) === 'review'" size="mini" type="warning" effect="dark"
-                              style="cursor:pointer;" @click="openMatchDialog(mscope.row)">
-                        <i class="el-icon-warning-outline"></i> Revisar producto
-                      </el-tag>
-                      <el-tag v-else size="mini" type="info" effect="plain"
-                              style="cursor:pointer;" @click="openMatchDialog(mscope.row)">
-                        <i class="el-icon-search"></i> Sin match — buscar
-                      </el-tag>
+                      <button type="button" class="catalogo-casilla" :class="'catalogo-casilla--' + matchStatus(mscope.row)"
+                      :title="catalogoCasilla(mscope.row).titulo" :disabled="!isEditable" @click="openMatchDialog(mscope.row)">
+                <i :class="catalogoCasilla(mscope.row).icono"></i><span>{{ catalogoCasilla(mscope.row).texto }}</span>
+              </button>
                     </div>
                     <el-tag v-else size="mini" type="info" effect="plain">Comisión</el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="Cant." width="80" align="center">
+                <el-table-column :resizable="false" label="Cant." width="80" align="center">
                   <template slot-scope="mscope">{{ mscope.row.quantity }}</template>
                 </el-table-column>
-                <el-table-column label="Costo Base" width="110" align="right">
+                <el-table-column :resizable="false" label="Costo Base" width="110" align="right">
                   <template slot-scope="mscope">{{ selectedQuoteCost(mscope.row) }}</template>
                 </el-table-column>
-                <el-table-column label="Margen %" width="90" align="right">
+                <el-table-column :resizable="false" label="Margen %" width="90" align="right">
                   <template slot-scope="mscope">{{ parseFloat(mscope.row.margen_porcentaje || 0).toFixed(1) }}%</template>
                 </el-table-column>
-                <el-table-column label="Margen S/" width="96" align="right">
+                <el-table-column :resizable="false" label="Margen S/" width="96" align="right">
                   <template slot-scope="mscope">S/ {{ parseFloat(mscope.row.ganancia_absoluta || 0).toFixed(2) }}</template>
                 </el-table-column>
-                <el-table-column label="V. Unit." width="86" align="right">
+                <el-table-column :resizable="false" label="V. Unit." width="86" align="right">
                   <template slot-scope="mscope">S/ {{ parseFloat(mscope.row.valor_unitario || 0).toFixed(2) }}</template>
                 </el-table-column>
-                <el-table-column label="Total" width="110" align="right">
+                <el-table-column :resizable="false" label="Total" width="110" align="right">
                   <template slot-scope="mscope"><strong>S/ {{ parseFloat(mscope.row.total_item || 0).toFixed(2) }}</strong></template>
                 </el-table-column>
               </el-table>
@@ -833,6 +850,11 @@
                 <span class="ai-inferred-details__title">
                   <i class="el-icon-document-copy"></i>
                   <strong>{{ isComision(props.row) ? 'Descripción de la comisión' : (isService(props.row) ? 'Descripción y observaciones del servicio' : 'Detalles técnicos del producto') }}</strong>
+                </span>
+                <span v-if="!isComision(props.row)" class="entrega-cliente"
+                      title="Compromiso de entrega de COMPIPRO al cliente; independiente del plazo del proveedor.">
+                  <label>Tiempo de entrega al cliente <i class="el-icon-info"></i></label>
+                  <campo-dias-utiles v-model="props.row.tiempo_entrega" :disabled="!isEditable"></campo-dias-utiles>
                 </span>
                 <span v-if="!isComision(props.row) && !isService(props.row) && inferredFields(props.row).length > 0"
                       class="ai-inferred-details__warning">
@@ -947,10 +969,10 @@
                         </el-input>
                       </div>
                       <div class="ai-field erp-obs" v-if="!isComision(props.row)">
-                        <label class="lbl-help" title="Notas internas de esta línea; no se muestran al cliente.">Observaciones <i class="el-icon-info field-tip-icon"></i></label>
+                        <label class="lbl-help" title="Observaciones o detalles adicionales del producto.">Observaciones <i class="el-icon-info field-tip-icon"></i></label>
                         <el-input v-model="props.row.observaciones" size="mini" :disabled="!isEditable"
                                   type="textarea" :autosize="{minRows: 2, maxRows: 6}"
-                                  placeholder="Notas internas para esta línea (opcional)">
+                                  placeholder="Observaciones o detalles adicionales del producto">
                         </el-input>
                       </div>
                     </div>
@@ -1160,8 +1182,15 @@
               <div class="supplier-quotes-section" v-if="!isComision(props.row)">
                 <div class="supplier-quotes__title">▣ Comparativa de proveedores</div>
                 <div class="supplier-quotes__hint">El proveedor ganador define el Costo Base de esta línea. El origen siempre es manual. Los cambios se guardan al presionar "Guardar detalles".</div>
-                <el-table :data="supplierQuotesOf(props.row)" size="mini" border style="width:100%;">
-                  <el-table-column label="Ganador" width="110" align="center">
+                <div v-if="isEditable" class="supplier-quotes__acciones">
+                  <el-button size="mini" type="warning" icon="el-icon-plus"
+                             :disabled="tieneFilaSinProveedor(props.row)"
+                             :title="tieneFilaSinProveedor(props.row) ? 'Elige primero el proveedor de la fila agregada' : ''"
+                             @click="addSupplierQuote(props.row)">Agregar proveedor</el-button>
+                </div>
+                <div v-if="!supplierQuotesOf(props.row).length" class="supplier-quotes__vacio">Aún no hay proveedores para este ítem.</div>
+                <el-table v-else :data="supplierQuotesOf(props.row)" size="mini" border style="width:100%;">
+                  <el-table-column :resizable="false" label="Ganador" width="70" align="center">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO 2026-10-21] el-radio de Element: el <input type="radio">
                            nativo lo oculta el CSS global (position:absolute; left:-9999px; opacity:0),
@@ -1177,27 +1206,36 @@
                       </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Proveedor" min-width="170">
+                  <el-table-column :resizable="false" label="Proveedor" min-width="220">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO] Al cambiar proveedor, limpia costo/tiempo/observaciones -->
+                      <!-- Proveedor obligatorio: sin opción "por definir". Al agregar la fila, el
+                           cursor llega aquí con la lista abierta (ref: proveedor-<id de fila>). -->
                       <el-select v-model="qscope.row.supplier_id" size="mini" filterable
-                                 placeholder="Proveedor por definir"
+                                 placeholder="Elige un proveedor"
+                                 :ref="'proveedor-' + qscope.row.id"
+                                 :class="{ 'supplier-quotes__sin-proveedor': qscope.row._sinProveedor }"
                                  :filter-method="filterSuppliers"
                                  :disabled="!isEditable" style="width:100%;"
+                                 popper-class="supplier-quotes__lista"
                                  @change="function (val) { onQuoteSupplierChange(props.row, qscope.row, val) }">
-                        <el-option :key="0" :label="'Proveedor por definir'" :value="0"></el-option>
                         <el-option v-for="s in supplierOptionsFor(qscope.row)" :key="s.id"
-                                   :label="s.nombre_comercial || s.razon_social" :value="s.id"></el-option>
+                                   :label="nombreEmpresa(s)" :value="s.id">
+                          <div class="supplier-quotes__opcion-nombre">{{ nombreEmpresa(s) }}</div>
+                          <div class="supplier-quotes__opcion-dato">{{ recortar(s.razon_social, 45) }}</div>
+                          <div class="supplier-quotes__opcion-dato">{{ s.ruc || 'Sin RUC' }}</div>
+                        </el-option>
                       </el-select>
+                      <div v-if="qscope.row._sinProveedor" class="supplier-quotes__error">Elige el proveedor o quita esta fila.</div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Origen" width="90" align="center">
+                  <el-table-column :resizable="false" label="Origen" width="80" align="center">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO] Origen siempre manual en esta tabla -->
                       <el-tag size="mini" effect="plain">Manual</el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Producto / referencia cotizada" min-width="200">
+                  <el-table-column :resizable="false" label="Producto / referencia cotizada" min-width="150">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO 2026-10-21] Solo lectura: es el MISMO campo
                            "Producto solicitado" de la fila del item (el-input__inner).
@@ -1206,16 +1244,18 @@
                       <span class="campo-calculado">{{ qscope.row.product_reference || props.row.product_name }}</span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Costo Base" width="110" align="right">
+                  <el-table-column :resizable="false" label="Costo Base" width="110" align="right">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO 2026-10-21] v-model: el input-number con
                            :value + @change perdía la edición (no se guardaba). -->
                       <el-input-number v-model="qscope.row.costo_base" size="mini" :precision="2" :step="1" :min="0"
                                        controls-position="right" :disabled="!isEditable" style="width:100%;"
-                                       @change="markSupplierQuoteDirty(props.row)"></el-input-number>
+                                       :class="{ 'supplier-quotes__campo-error': qscope.row._sinCosto }"
+                                       @change="function (v) { onQuoteCostoChange(props.row, qscope.row, v) }"></el-input-number>
+                      <div v-if="qscope.row._sinCosto" class="supplier-quotes__error">Ingresa el costo.</div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="V. Unit." width="86" align="right">
+                  <el-table-column :resizable="false" label="V. Unit." width="100" align="right">
                     <template slot="header">
                       <span class="col-tip" title="Unitario de venta que saldría si este proveedor fuera el ganador (Total sin IGV ÷ cantidad, con muestras, impresión, empaque y SCTR).">V. Unit. <i class="el-icon-info"></i></span>
                     </template>
@@ -1223,32 +1263,32 @@
                       <span class="campo-calculado">{{ quoteUnitValue(props.row, qscope.row) }}</span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Tiempo entrega" width="130">
+                  <el-table-column :resizable="false" label="Tiempo entrega" width="170">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO 2026-10-21] v-model: editable de verdad. -->
-                      <el-input v-model="qscope.row.tiempo_estimado_dias" size="mini" placeholder="Ej: 15 días útiles"
+                      <campo-dias-utiles v-model="qscope.row.tiempo_estimado_dias" placeholder="15" class="campo-dias-utiles--lleno"
+                                         :disabled="!isEditable" @input="onQuoteTiempoInput(props.row, qscope.row)"></campo-dias-utiles>
+                      <div v-if="qscope.row._sinTiempo" class="supplier-quotes__error">Escribe un número (8) o un rango (10 a 12), o déjalo vacío.</div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column :resizable="false" label="Observaciones" min-width="180">
+                    <template slot-scope="qscope">
+                      <!-- [NUEVO FLUJO 2026-10-21] v-model: editable de verdad. -->
+                      <el-input v-model="qscope.row.observaciones" type="textarea" size="mini" placeholder="Observaciones"
+                                :autosize="{ minRows: 1, maxRows: 5 }"
                                 :disabled="!isEditable" @input="markSupplierQuoteDirty(props.row)"></el-input>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Observaciones" min-width="150">
-                    <template slot-scope="qscope">
-                      <!-- [NUEVO FLUJO 2026-10-21] v-model: editable de verdad. -->
-                      <el-input v-model="qscope.row.observaciones" size="mini" placeholder="Observaciones"
-                                :disabled="!isEditable" @input="markSupplierQuoteDirty(props.row)"></el-input>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="Acción" width="60" align="center">
+                  <el-table-column :resizable="false" label="Acción" width="60" align="center">
                     <template slot-scope="qscope">
                       <!-- [NUEVO FLUJO] Solo botón eliminar con confirmación. Sin "Agregar catálogo". -->
-                      <el-button v-if="isEditable" size="mini" type="danger" icon="el-icon-delete" circle
-                                 :disabled="supplierQuotesOf(props.row).length <= 1"
-                                 @click="removeSupplierQuote(props.row, qscope.row)"></el-button>
+                      <button v-if="isEditable" type="button" class="item-icon-btn item-danger supplier-quotes__quitar"
+                              title="Quitar proveedor" @click="removeSupplierQuote(props.row, qscope.row)">
+                        <i class="far fa-trash-alt"></i>
+                      </button>
                     </template>
                   </el-table-column>
                 </el-table>
-                <div style="margin-top:8px;">
-                  <el-button v-if="isEditable" size="mini" icon="el-icon-plus" @click="addSupplierQuote(props.row)">+ proveedor</el-button>
-                </div>
               </div>
 
               <!-- ─────── Fase C: Escalones de precio por volumen ─────── -->
@@ -1264,14 +1304,14 @@
                           row-key="id"
                           :row-class-name="(row) => tierRowClass(row, props.row)"
                           style="max-width:480px;">
-                  <el-table-column label="Desde" prop="quantity_unit" width="80" align="right">
+                  <el-table-column :resizable="false" label="Desde" prop="quantity_unit" width="80" align="right">
                     <template slot-scope="t">{{ formatTierQty(t.row.quantity_unit) }} u</template>
                   </el-table-column>
-                  <el-table-column label="Precio unitario" width="130" align="right">
+                  <el-table-column :resizable="false" label="Precio unitario" width="130" align="right">
                     <template slot-scope="t">S/ {{ t.row.price1.toFixed(2) }}</template>
                   </el-table-column>
-                  <el-table-column label="Descripción" prop="description"></el-table-column>
-                  <el-table-column label="" width="50" align="center">
+                  <el-table-column :resizable="false" label="Descripción" prop="description"></el-table-column>
+                  <el-table-column :resizable="false" label="" width="50" align="center">
                     <template slot-scope="t">
                       <i v-if="props.row.tier_aplicado && props.row.tier_aplicado.id === t.row.id"
                          class="el-icon-check" style="color:#67c23a; font-weight:bold;"
@@ -1296,7 +1336,8 @@
         </el-table-column>
 
         <!-- Kit: check para agrupar (no en comisiones ni en filas kit) -->
-        <el-table-column label="Kit" width="118" align="center">
+        <!-- Kits ocultos en esta etapa (funcionalidad incompleta). -->
+        <el-table-column :resizable="false" v-if="mostrarKits" label="Kit" width="60" align="center">
           <template slot="header">
             <span class="col-tip" title="Marca 2 o más productos para crear un kit. La comisión no entra a kits.">Kit <i class="el-icon-info"></i></span>
           </template>
@@ -1315,11 +1356,11 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="item_order" label="#" width="40" align="center">
+        <el-table-column :resizable="false" prop="item_order" label="#" width="40" align="center">
           <template slot-scope="scope">{{ scope.row._isKit ? scope.row._displayNum : scope.row.item_order }}</template>
         </el-table-column>
 
-        <el-table-column label="Producto solicitado" min-width="110">
+        <el-table-column :resizable="false" label="Producto solicitado" width="175">
           <template slot-scope="scope">
             <!-- Cadena if/else-if ÚNICA: no agregar otro v-if aquí (ver AGENTS.md §5). -->
             <el-input v-if="!scope.row._isKit && !isComision(scope.row)" v-model="scope.row.product_name" size="mini"
@@ -1328,11 +1369,16 @@
                       @input="onItemNameChanged(scope.row, $event)"></el-input>
             <span v-else-if="!scope.row._isKit" style="font-size:12px;">{{ scope.row.product_name || 'COMISIÓN' }}</span>
             <el-input v-else v-model="scope.row.kit.nombre" size="mini" :disabled="!isEditable" maxlength="191"></el-input>
+            <div v-if="!scope.row._isKit && scope.row.cotizacion_anterior" class="item-cotizado-antes"
+                 :title="'Se tomaron el margen y el proveedor ganador de «' + scope.row.cotizacion_anterior.producto + '». Confirma el costo con el proveedor si la fecha es antigua.'">
+              <i class="el-icon-info"></i> Cotizado antes en {{ scope.row.cotizacion_anterior.codigo }}
+              ({{ scope.row.cotizacion_anterior.fecha }}) · {{ scope.row.cotizacion_anterior.similitud }}%
+            </div>
           </template>
         </el-table-column>
 
         <!-- Columna NUEVA: foto editable POR ÍTEM (multimodal). Mismo patrón que la imagen del requerimiento. -->
-        <el-table-column label="Foto" width="76" align="center">
+        <el-table-column :resizable="false" label="Foto" width="70" align="center">
           <template slot="header">
             <span class="col-tip" title="Imagen de referencia de este producto. La IA puede usarla para inferir mejor material, técnica y medidas.">Foto <i class="el-icon-info"></i></span>
           </template>
@@ -1369,12 +1415,14 @@
           </template>
         </el-table-column>
 
-        <!-- Columna sin nombre: tipo de línea (mockup db). En kit solo
-             producto/servicio (la comisión no entra a kits). -->
-        <el-table-column label="" width="112">
+        <!-- Tipo de línea (mockup db). En kit solo producto/servicio (la comisión no entra a kits). -->
+        <el-table-column :resizable="false" label="Tipo de ítem" width="122">
+          <template slot="header">
+            <span class="col-tip" title="Producto y Servicio usan la comparativa de proveedores; Comisión es un importe fijo sin proveedor ni margen.">Tipo de ítem <i class="el-icon-info"></i></span>
+          </template>
           <template slot-scope="scope">
-            <el-select v-if="!scope.row._isKit" v-model="scope.row.tipo_linea" size="mini" :disabled="!isEditable"
-                       title="Tipo de línea" @change="onTipoLineaChange(scope.row)"
+            <el-select v-if="!scope.row._isKit" :value="scope.row.tipo_linea" size="mini" :disabled="!isEditable"
+                       title="Tipo de línea" @change="function (v) { cambiarTipoLinea(scope.row, v) }"
                        style="width:100%;">
               <el-option label="Producto" value="product"></el-option>
               <el-option label="Servicio" value="service"></el-option>
@@ -1384,32 +1432,18 @@
         </el-table-column>
 
         <!-- Columna NUEVA: producto del catálogo + badge de matching -->
-        <el-table-column label="Producto del catálogo" min-width="150">
+        <el-table-column :resizable="false" label="Producto del catálogo" min-width="194">
           <template slot="header">
             <span class="col-tip" title="Producto del catálogo de Compipro asociado a lo que pidió el cliente (sugerido por la IA).">Producto del catálogo <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
             <div v-if="!scope.row._isKit && !isComision(scope.row) && !isService(scope.row)">
-              <!-- Estado: alta confianza -->
-              <el-tag v-if="matchStatus(scope.row) === 'matched'" size="mini" type="success" effect="plain">
-                <i class="el-icon-success"></i>
-                {{ scope.row.catalog_item ? scope.row.catalog_item.name : ('ID ' + scope.row.item_id) }}
-              </el-tag>
-              <!-- Estado: necesita review -->
-              <el-tag v-else-if="matchStatus(scope.row) === 'review'" size="mini" type="warning" effect="dark"
-                      style="cursor:pointer;" @click="openMatchDialog(scope.row)">
-                <i class="el-icon-warning-outline"></i> Revisar producto
-              </el-tag>
-              <!-- Estado: sin match -->
-              <el-tag v-else size="mini" type="info" effect="plain"
-                      style="cursor:pointer;" @click="openMatchDialog(scope.row)">
-                <i class="el-icon-search"></i> {{ isService(scope.row) ? 'Sin catálogo' : 'Sin match — buscar' }}
-              </el-tag>
-
-              <!-- Botón pequeño para abrir el dialog -->
-              <el-button v-if="matchStatus(scope.row) === 'matched'"
-                         size="mini" icon="el-icon-edit" type="text" style="padding:0; margin-left:4px;"
-                         @click="openMatchDialog(scope.row)" title="Cambiar producto"></el-button>
+              <!-- Casilla de una línea (como el mockup): nombre corto del producto, o el estado;
+                   clic = buscar en el catálogo. Nunca se sale de su columna. -->
+              <button type="button" class="catalogo-casilla" :class="'catalogo-casilla--' + matchStatus(scope.row)"
+                      :title="catalogoCasilla(scope.row).titulo" :disabled="!isEditable" @click="openMatchDialog(scope.row)">
+                <i :class="catalogoCasilla(scope.row).icono"></i><span>{{ catalogoCasilla(scope.row).texto }}</span>
+              </button>
 
               <!-- Confianza visual -->
               <div v-if="scope.row.product_match_confidence !== null && scope.row.product_match_confidence !== undefined"
@@ -1426,7 +1460,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="Cant." width="88">
+        <el-table-column :resizable="false" label="Cant." width="88">
           <template slot-scope="scope">
             <el-input-number v-if="!scope.row._isKit" v-model="scope.row.quantity" size="mini" :min="1" :max="999999"
                              controls-position="right" :disabled="!isEditable || isComision(scope.row)" class="campo-precio"></el-input-number>
@@ -1435,7 +1469,7 @@
                              title="Al guardar se aplica a todo el kit"></el-input-number>
           </template>
         </el-table-column>
-        <el-table-column label="Costo Base" width="118" align="right">
+        <el-table-column :resizable="false" label="Costo Base" width="118" align="right">
           <template slot="header">
             <span class="col-tip" title="En comisiones es editable y se guarda con el ítem. Para productos y servicios, se toma del proveedor seleccionado en la comparativa.">Costo Base <i class="el-icon-info"></i></span>
           </template>
@@ -1458,7 +1492,7 @@
             <span v-else class="campo-calculado">S/ {{ kitRowTotals(scope.row.kit).costo.toFixed(2) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="Margen %" width="108" align="right">
+        <el-table-column :resizable="false" label="Margen %" width="92" align="right">
           <template slot="header">
             <span class="col-tip" title="Porcentaje de ganancia aplicado sobre el costo base.">Margen % <i class="el-icon-info"></i></span>
           </template>
@@ -1479,7 +1513,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="Margen (S/)" width="96" align="right">
+        <el-table-column :resizable="false" label="Margen (S/)" width="105" align="right">
           <template slot="header">
             <span class="col-tip" title="Ganancia en soles del ítem (markup sobre el costo × cantidad). Solo lectura.">Margen (S/) <i class="el-icon-info"></i></span>
           </template>
@@ -1488,7 +1522,7 @@
             <span v-else class="campo-calculado campo-margen-soles">S/ {{ kitRowTotals(scope.row.kit).margenS.toFixed(2) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="V. Unit." width="86" align="right">
+        <el-table-column :resizable="false" label="V. Unit." width="86" align="right">
           <template slot="header">
             <span class="col-tip" title="Unitario de venta: Total sin IGV ÷ cantidad (ya incluye muestras, movilidad, impresión, empaque y SCTR). Es el mismo número que el del proveedor ganador en la comparativa.">V. Unit. <i class="el-icon-info"></i></span>
           </template>
@@ -1497,64 +1531,97 @@
             <span v-else class="campo-calculado">S/ {{ kitRowTotals(scope.row.kit).vunit.toFixed(2) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="Total" width="92" align="right">
+        <el-table-column :resizable="false" label="Total" width="92" align="right">
           <template slot-scope="scope">
             <span v-if="!scope.row._isKit" class="campo-calculado"><strong>{{ itemTotalValue(scope.row) }}</strong></span>
             <span v-else class="campo-calculado"><strong>S/ {{ kitRowTotals(scope.row.kit).total.toFixed(2) }}</strong></span>
           </template>
         </el-table-column>
-        <el-table-column label="" width="100" align="center">
+        <!-- Acciones fija a la derecha (sticky) con íconos de Font Awesome, como el mockup. -->
+        <el-table-column :resizable="false" label="Acciones" width="114" align="center"
+                         class-name="col-acciones-item" label-class-name="col-acciones-item">
+          <template slot="header">
+            <span class="col-tip" title="Guardar, duplicar o eliminar este ítem.">Acciones <i class="el-icon-info"></i></span>
+          </template>
           <template slot-scope="scope">
-            <el-button v-if="scope.row._isKit" size="mini" type="success" icon="el-icon-check" circle
-                       :loading="!!kitSaving[scope.row.kit._kid]"
-                       :disabled="!isEditable" @click="saveKit(scope.row.kit)"
-                       title="Guardar kit"></el-button>
-            <template v-if="!scope.row._isKit">
-            <el-button size="mini" type="success" icon="el-icon-check" circle
-                       @click="saveItem(scope.row)" :disabled="!isEditable"
-                       title="Guardar cambios del producto"></el-button>
-            <!-- Agosto 2026 (punto 5): duplicar para cotizaciones por escala —el
-                 mismo producto a 50, 100 y 300 unidades— sin cargarlo de cero. -->
-            <el-button size="mini" type="primary" icon="el-icon-document-copy" circle
-                       @click="duplicarItem(scope.row)"
-                       :disabled="!isEditable" :loading="duplicandoItemId === scope.row.id"
-                       title="Duplicar producto (copia imagen, descripción, personalización y costos)"></el-button>
-            <el-button size="mini" type="danger" icon="el-icon-delete" circle
-                       @click="deleteItem(scope.row)" :disabled="!isEditable"
-                       title="Eliminar producto"></el-button>
-            </template>
+            <div class="item-icon-actions">
+              <button v-if="scope.row._isKit" type="button" class="item-icon-btn" title="Guardar kit"
+                      :disabled="!isEditable || !!kitSaving[scope.row.kit._kid]" @click="saveKit(scope.row.kit)">
+                <i :class="kitSaving[scope.row.kit._kid] ? 'fas fa-spinner fa-spin' : 'far fa-save'"></i>
+              </button>
+              <template v-if="!scope.row._isKit">
+                <button type="button" class="item-icon-btn" title="Guardar cambios del producto"
+                        :disabled="!isEditable" @click="saveItem(scope.row)">
+                  <i class="far fa-save"></i>
+                </button>
+                <!-- Agosto 2026 (punto 5): duplicar para cotizaciones por escala —el
+                     mismo producto a 50, 100 y 300 unidades— sin cargarlo de cero. -->
+                <button type="button" class="item-icon-btn"
+                        title="Duplicar producto (copia imagen, descripción, personalización y costos)"
+                        :disabled="!isEditable || duplicandoItemId === scope.row.id" @click="duplicarItem(scope.row)">
+                  <i :class="duplicandoItemId === scope.row.id ? 'fas fa-spinner fa-spin' : 'far fa-copy'"></i>
+                </button>
+                <button type="button" class="item-icon-btn item-danger" title="Eliminar producto"
+                        :disabled="!isEditable" @click="deleteItem(scope.row)">
+                  <i class="far fa-trash-alt"></i>
+                </button>
+              </template>
+            </div>
           </template>
         </el-table-column>
       </el-table>
 
       <!-- La asignación del proveedor vive en la comparativa por ítem. -->
-      <el-alert v-if="hayProductosSinProveedor && !prequote.quotation_id"
+      <el-alert v-if="enPreparacion && faltantesParaEmitir.length && !prequote.quotation_id"
                 type="warning" :closable="false" show-icon class="mt-2"
-                :title="productosSinProveedor + ' producto(s) sin proveedor. Asigna un proveedor en la comparativa de cada producto para poder Validar y Aprobar la pre-cotización.'">
+                :title="'Para emitir al cliente falta completar: ' + faltantesParaEmitir.join('; ') + '.'">
       </el-alert>
 
-      <!-- Acciones -->
-      <el-row type="flex" justify="end" class="mt-2">
-        <el-button v-if="isEditable" type="warning" size="small" :disabled="hayProductosSinProveedor"
-                   @click="changeStatus('validada')" icon="el-icon-circle-check">
-          Validar
-        </el-button>
-        <el-button v-if="prequote.estado === 'validada'" type="success" size="small" :disabled="hayProductosSinProveedor"
-                   @click="changeStatus('aprobada')" icon="el-icon-check">
-          Aprobar
-        </el-button>
-        <el-button v-if="prequote.estado === 'aprobada' && !prequote.quotation_id"
+      <!-- Franja de estado: en qué etapa está, desde cuándo y quién la marcó -->
+      <div class="precot-etapa mt-2" :class="'precot-etapa--' + franjaEstado.tipo">
+        <i :class="franjaEstado.icono"></i><span>{{ franjaEstado.texto }}</span>
+      </div>
+
+      <!-- Acciones: un paso por etapa (borrador → emitida → aprobada → cotización formal) -->
+      <el-row v-if="!prequote.quotation_id" type="flex" justify="end" class="mt-2">
+        <template v-if="enPreparacion">
+          <el-button v-if="puedeRegenerar" size="small"
+                     @click="generatePrequote" :loading="generating" :disabled="generating" icon="el-icon-refresh">
+            Regenerar
+          </el-button>
+          <el-button type="primary" size="small" :disabled="cambiandoEstado"
+                     @click="emitirAlCliente" icon="el-icon-s-promotion">
+            Emitir al cliente
+          </el-button>
+        </template>
+        <template v-else-if="prequote.estado === 'propuesta_emitida'">
+          <el-button type="danger" plain size="small" :disabled="cambiandoEstado"
+                     @click="cambiarEstado('rechazo')" icon="el-icon-circle-close">
+            Cliente rechazó
+          </el-button>
+          <el-button size="small" :disabled="cambiandoEstado"
+                     @click="cambiarEstado('cambios')" icon="el-icon-edit">
+            Pidió cambios
+          </el-button>
+          <el-button type="success" size="small" :disabled="cambiandoEstado"
+                     @click="cambiarEstado('aprobo')" icon="el-icon-circle-check">
+            Cliente aprobó
+          </el-button>
+        </template>
+        <el-button v-else-if="prequote.estado === 'aprobada'"
                    type="primary" size="small" @click="convertToQuotation" :loading="converting"
                    icon="el-icon-document">
-          Convertir a Cotización Formal
+          Convertir a cotización formal
         </el-button>
-        <el-tag v-if="prequote.quotation_id" type="success" size="medium" class="ml-2">
+        <el-button v-else-if="prequote.estado === 'rechazada'" size="small" :disabled="cambiandoEstado"
+                   @click="cambiarEstado('reabrir')" icon="el-icon-unlock">
+          Reabrir
+        </el-button>
+      </el-row>
+      <el-row v-else type="flex" justify="end" class="mt-2">
+        <el-tag type="success" size="medium">
           Convertida - Quotation #{{ prequote.quotation_id }}
         </el-tag>
-        <el-button v-if="!prequote.quotation_id" size="small"
-                   @click="generatePrequote" :loading="generating" icon="el-icon-refresh">
-          Regenerar
-        </el-button>
       </el-row>
     </div>
 
@@ -1587,7 +1654,7 @@
           </span>
         </div>
         <el-table v-if="matchSuggestions.length > 0" :data="matchSuggestions" size="small" border style="margin-bottom:14px;">
-          <el-table-column label="Producto" min-width="200">
+          <el-table-column :resizable="false" label="Producto" min-width="200">
             <template slot-scope="s">
               <strong>{{ s.row.name }}</strong>
               <div v-if="s.row.description" style="font-size:11px; color:#606266;">
@@ -1598,23 +1665,23 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="Precio ref." width="100" align="right">
+          <el-table-column :resizable="false" label="Precio ref." width="100" align="right">
             <template slot-scope="s">
               S/ {{ parseFloat(s.row.sale_unit_price || 0).toFixed(2) }}
             </template>
           </el-table-column>
-          <el-table-column label="Score" width="80" align="center">
+          <el-table-column :resizable="false" label="Score" width="80" align="center">
             <template slot-scope="s">
               <el-tag :type="scoreTagType(s.row.score)" size="mini" effect="plain">
                 {{ Math.round((parseFloat(s.row.score) || 0) * 100) }}%
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="" width="100" align="center">
+          <el-table-column :resizable="false" label="" width="100" align="center">
             <template slot-scope="s">
               <el-button size="mini" type="primary" plain
                          :loading="actingSuggestionId === s.row.item_id"
-                         @click="applyMatch(s.row.item_id)">
+                         @click="applyMatch(s.row.item_id, s.row)">
                 Elegir
               </el-button>
             </template>
@@ -1696,13 +1763,13 @@
         <div v-loading="quoteRefLoading">
           <div v-if="quoteRefResults.length === 0" style="color:#909399; font-size:12px;">Sin resultados.</div>
           <el-table v-else :data="quoteRefResults" size="mini" border style="width:100%;">
-            <el-table-column label="Producto" min-width="200">
+            <el-table-column :resizable="false" label="Producto" min-width="200">
               <template slot-scope="s">{{ s.row.name || s.row.titulo || s.row.description }}</template>
             </el-table-column>
-            <el-table-column label="Precio ref." width="110" align="right">
+            <el-table-column :resizable="false" label="Precio ref." width="110" align="right">
               <template slot-scope="s">S/ {{ parseFloat(s.row.precio_ref || s.row.sale_unit_price || 0).toFixed(2) }}</template>
             </el-table-column>
-            <el-table-column label="" width="90" align="center">
+            <el-table-column :resizable="false" label="" width="90" align="center">
               <template slot-scope="s">
                 <el-button size="mini" type="primary" plain @click="pickQuoteRef(s.row)">Elegir</el-button>
               </template>
@@ -1722,6 +1789,11 @@
 // en vez de reescribirlo acá. Es la misma función que usa el Margen (%) del
 // Proyecto, así los dos lados no se pueden desincronizar.
 import { redondeoComercial } from '../../lib/costeoReal'
+import { nombreEmpresa, recortar } from '../../helpers/texto'
+import { esDiasUtilesValido } from '../../helpers/diasUtiles'
+import { avisar } from '../../helpers/avisos'
+import { etiquetaEstadoPreCotizacion } from '../../helpers/estadoPreCotizacion'
+import CampoDiasUtiles from '../../components/CampoDiasUtiles.vue'
 
 // COM-02 · Objetivo de margen real (%) que usan "Precio Necesario para X%" y
 // "Precio Unitario a Vender (p/X%)" del bloque de Costo Real.
@@ -1730,6 +1802,7 @@ import { redondeoComercial } from '../../lib/costeoReal'
 var MARGEN_REAL_OBJETIVO_PCT = 40
 
 export default {
+  components: { CampoDiasUtiles },
   props: {
     requerimientoId: { type: [Number, String], default: null },
     // Modo standalone: si viene prequoteId, carga directamente la prequote sin
@@ -1779,6 +1852,13 @@ export default {
       interpretingItem: false,
       // Ítem manual (alternativa sin IA): mismo patrón de flag que interpretingItem.
       addingManual: false,
+      // Botón "Ítem manual" oculto en esta etapa: todo se genera con IA. Se usará más
+      // adelante con la búsqueda sin IA.
+      mostrarItemManual: false,
+      // Columna Kit oculta en esta etapa: los kits aún no están completos.
+      mostrarKits: false,
+      // Cambio de estado en curso (emitir, respuesta del cliente, reabrir).
+      cambiandoEstado: false,
       // Rediseño: acordeones de ingreso (IA abierto por defecto, kits cerrado)
       // + kits solo-frontales (el backend llega después).
       iaCollapseOpen: ['ia'],
@@ -1841,23 +1921,69 @@ export default {
         return Array.isArray(it.datos_inferidos) && it.datos_inferidos.length > 0
       }).length
     },
-    // Productos sin proveedor asignado: bloquean Validar/Aprobar.
-    // La comparativa persistida es la fuente de verdad; no contar cambios sin guardar.
-    // Comisión y servicio no requieren proveedor.
-    productosSinProveedor() {
-      if (!this.prequote || !this.prequote.items) return 0
+    // Lo que falta en cada producto o servicio para "Emitir al cliente" (espejo del
+    // servidor): proveedor ganador GUARDADO (proveedor y costo) y tiempo de entrega al
+    // cliente. El plazo del proveedor es opcional.
+    // Una fila agregada y sin guardar no cuenta. La comisión no se revisa.
+    faltantesParaEmitir() {
+      if (!this.prequote || !this.prequote.items) return []
+      var self = this
+      var faltantes = []
+      this.prequote.items.forEach(function (it) {
+        if (String((it && it.tipo_linea) || '').toLowerCase() === 'comision') return
+        var quotes = self.supplierQuotesMap[it.id] || []
+        var conGanador = quotes.some(function (q) {
+          return Number(q.seleccionado) === 1 && Number(q.id) > 0 && !q._isNew && Number(q.supplier_id) > 0
+            && Number(q.costo_base) > 0
+        })
+        var falta = []
+        if (!conGanador) falta.push('proveedor ganador')
+        if (!String(it.tiempo_entrega || '').trim()) falta.push('tiempo de entrega al cliente')
+        if (falta.length) faltantes.push((String(it.product_name || '').trim() || ('Ítem #' + it.id)) + ': ' + falta.join(' y '))
+      })
+      return faltantes
+    },
+    // Ítems con cambios sin guardar en su comparativa de proveedores.
+    comparativasSinGuardar() {
+      if (!this.prequote || !this.prequote.items) return []
       var self = this
       return this.prequote.items.filter(function (it) {
-        var tipoLinea = String((it && it.tipo_linea) || '').toLowerCase()
-        if (tipoLinea === 'comision' || tipoLinea === 'service') return false
-        var quotes = self.supplierQuotesMap[it.id] || []
-        return !quotes.some(function (quote) {
-          return Number(quote.seleccionado) === 1 && Number(quote.supplier_id) > 0
-        })
-      }).length
+        var buf = self.supplierQuoteBuffers[it.id]
+        return buf && buf.dirty
+      }).map(function (it) { return String(it.product_name || '').trim() || ('Ítem #' + it.id) })
     },
-    hayProductosSinProveedor() {
-      return this.productosSinProveedor > 0
+    // Etapa de preparación: se edita y se emite (incluye estados antiguos).
+    enPreparacion() {
+      return !!this.prequote && ['borrador', 'en_revision', 'ajustada', 'validada'].indexOf(this.prequote.estado) !== -1
+    },
+    // Regenerar borra los ítems: solo antes de la primera emisión al cliente.
+    puedeRegenerar() {
+      return !!this.prequote && this.prequote.estado === 'borrador' && !this.prequote.fue_emitida
+    },
+    // Franja de estado sobre los botones: etapa, fecha y quién la marcó.
+    franjaEstado() {
+      var pq = this.prequote || {}
+      var desde = pq.estado_desde
+      var cuando = ''
+      if (desde && desde.fecha) {
+        var f = String(desde.fecha).substr(0, 10).split('-')
+        cuando = ' el ' + f[2] + '/' + f[1] + '/' + f[0] + (desde.usuario ? ' por ' + desde.usuario : '')
+      }
+      if (pq.quotation_id) {
+        return { tipo: 'aprobada', icono: 'el-icon-circle-check', texto: 'Aprobada por el cliente y convertida a cotización formal' }
+      }
+      switch (pq.estado) {
+        case 'propuesta_emitida':
+          return { tipo: 'emitida', icono: 'el-icon-time', texto: 'Emitida al cliente' + cuando + ' · esperando respuesta' }
+        case 'aprobada':
+          return { tipo: 'aprobada', icono: 'el-icon-circle-check', texto: 'Aprobada por el cliente' + cuando }
+        case 'rechazada':
+          return { tipo: 'rechazada', icono: 'el-icon-circle-close', texto: 'Rechazada por el cliente' + cuando }
+        default:
+          return pq.fue_emitida
+            ? { tipo: 'borrador', icono: 'el-icon-edit', texto: 'En edición por cambios del cliente' + cuando + ' · al terminar, vuelve a emitirla' }
+            : { tipo: 'borrador', icono: 'el-icon-edit', texto: 'En preparación · se puede editar' }
+      }
     },
     matchDialogTitle() {
       if (!this.matchTarget) return 'Producto del catálogo'
@@ -1970,6 +2096,8 @@ export default {
     this.preloadAllSuppliers()
   },
   methods: {
+    nombreEmpresa,
+    recortar,
     // COM-02 R3 — Guarda el % de SCTR de la cotización y repinta con la prequote
     // recalculada que devuelve el backend (items + totales + desglose).
     async saveSctr() {
@@ -1986,7 +2114,7 @@ export default {
       } catch (e) {
         var msg = e.response && e.response.data && e.response.data.message
           ? e.response.data.message : 'No se pudo actualizar el SCTR.'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
         // Revertir el input al valor real de la cotización.
         this.parseNumericFields(this.prequote)
       }
@@ -2023,7 +2151,22 @@ export default {
       this.loading = false
     },
 
+    // Genera la pre-cotización o, si ya existe, la regenera en el mismo registro
+    // (reemplaza sus ítems). Si la IA no devuelve productos, no se guarda nada.
     async generatePrequote() {
+      if (this.generating) return
+      var tieneItems = this.prequote && this.prequote.items && this.prequote.items.length > 0
+      if (tieneItems) {
+        try {
+          await this.$confirm(
+            'La IA volverá a interpretar el requerimiento y reemplazará los ítems actuales, con sus proveedores y costos. ¿Continuar?',
+            'Regenerar pre-cotización',
+            { confirmButtonText: 'Regenerar', cancelButtonText: 'Cancelar', type: 'warning' }
+          )
+        } catch (cancelado) {
+          return
+        }
+      }
       this.generating = true
       try {
         var response = await this.$http.post('/marketing/quotation/generate', {
@@ -2032,28 +2175,20 @@ export default {
 
         var pq = response.data.prequote
         var nItems = pq && pq.items ? pq.items.length : 0
+        this.$message.success((tieneItems ? 'Pre-cotización regenerada con ' : 'Pre-cotización generada con ') + nItems + ' producto(s)')
 
-        if (nItems === 0) {
-          // El motor de IA no devolvio productos. La causa mas frecuente es
-          // saldo/conexion del proveedor de IA; tambien puede ser una
-          // descripcion que el motor no logro interpretar.
-          this.$message({
-            message: 'La IA no devolvió productos. Causa más probable: el proveedor de IA del cotizador (COM-02) no respondió ' +
-                     '(sin saldo o sin conexión). Revisa Marketing → Configuración de Agentes IA → COM-02 Cotizador, ' +
-                     'o ajusta la descripción del requerimiento e inténtalo de nuevo.',
-            type: 'warning',
-            duration: 9000,
-            showClose: true
-          })
-        } else {
-          this.$message.success('Pre-cotización generada con ' + nItems + ' producto(s)')
-        }
-
+        // Los ítems son nuevos: se descarta la comparativa en memoria de los anteriores.
+        this.supplierQuotesMap = {}
+        this.supplierQuotesLoaded = {}
+        this.supplierQuoteBuffers = {}
+        this.supplierQuoteOriginals = {}
         this.prequote = this.parseNumericFields(response.data.prequote)
         this.$emit('precotizacion-added')
       } catch (e) {
+        // 422: la IA no devolvió productos (no se guardó nada) o ya no está en borrador.
         var msg = e.response && e.response.data && e.response.data.message ? e.response.data.message : 'Error generando pre-cotización'
-        this.$message.error(msg)
+        var esAviso = e.response && e.response.status === 422
+        this.avisar(msg, esAviso ? 'warning' : 'error')
       }
       this.generating = false
     },
@@ -2081,7 +2216,7 @@ export default {
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message)
           ? e.response.data.message : 'No se pudo duplicar el producto'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
       }
       this.duplicandoItemId = null
     },
@@ -2109,7 +2244,7 @@ export default {
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message)
           ? e.response.data.message : 'No se pudo eliminar el producto'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
       }
     },
 
@@ -2119,6 +2254,77 @@ export default {
      * Servicio ⇒ excluir_catalogo (vive solo en esta cotización; al
      * convertir no crea producto). El check manual se retiró.
      */
+    // Estado del bloque (helpers/estadoPreCotizacion): el mismo en las tres pestañas.
+    etiquetaEstado(prequote) {
+      return etiquetaEstadoPreCotizacion(prequote)
+    },
+    // Cambio de tipo (Producto / Servicio / Comisión), como el mockup: si el ítem ya
+    // tiene datos, avisa y los borra (proveedores, importes, imagen y detalles); el
+    // nombre se conserva. Si está vacío, cambia directo.
+    async cambiarTipoLinea(item, nuevo) {
+      if (!item || !nuevo || nuevo === item.tipo_linea) return
+      var nombres = { product: 'Producto', service: 'Servicio', comision: 'Comisión' }
+      if (this.itemTieneDatos(item)) {
+        var h = this.$createElement
+        try {
+          await this.$confirm(h('div', [
+            h('p', ['Estás cambiando el ítem ', h('strong', '#' + (item._displayNum || item.item_order || '')), ' de ',
+              h('strong', nombres[item.tipo_linea] || 'Producto'), ' a ', h('strong', nombres[nuevo]), '.']),
+            h('p', { style: { marginTop: '8px' } }, [
+              h('strong', 'Se borrarán de forma definitiva los datos registrados en este ítem'),
+              ', incluidos proveedores, importes, imágenes y detalles. No se modifican los demás ítems.'
+            ])
+          ]), '¿Cambiar el tipo de ítem?', {
+            confirmButtonText: 'Cambiar y borrar datos', cancelButtonText: 'Cancelar', type: 'warning'
+          })
+        } catch (cancelado) {
+          return  // el selector vuelve solo al tipo anterior (está ligado a :value)
+        }
+        await this.reiniciarItem(item)
+      }
+      item.tipo_linea = nuevo
+      this.onTipoLineaChange(item)
+    },
+    // ¿El ítem tiene algo que se perdería al cambiar de tipo? (el nombre no cuenta: se conserva)
+    itemTieneDatos(item) {
+      var textos = ['product_description', 'material', 'medida', 'empaque', 'personalizacion', 'tecnica_impresion', 'observaciones']
+      if (textos.some(function (k) { return String(item[k] || '').trim() })) return true
+      if (item.product_reference_image || item.has_image || item.item_id) return true
+      if (Number(item.quantity || 1) !== 1 || Number(item.margen_porcentaje || 0) !== 0 || Number(item.costo_base || 0) !== 0) return true
+      if (['numero_muestras', 'costo_movilidad', 'costo_impresion', 'costo_empaque'].some(function (k) { return Number(item[k] || 0) !== 0 })) return true
+      return this.supplierQuotesOf(item).length > 0
+    },
+    // Deja el ítem limpio para el tipo nuevo (conserva el nombre). La imagen se quita en
+    // el servidor; los proveedores se borran al guardar; el costo y el enlace al catálogo
+    // se limpian con `reiniciar_datos`.
+    async reiniciarItem(item) {
+      if (item.product_reference_image || item.has_image) {
+        try {
+          await this.$http.delete('/marketing/quotation/prequote-items/' + item.id + '/reference-image')
+          this.markItemHasImage(item.id, null)
+          this.itemImageVersion++
+        } catch (e) {
+          // Si la imagen no se pudo quitar, el resto del cambio sigue.
+        }
+      }
+      var limpio = {
+        product_description: '', material: '', medida: '', empaque: '', personalizacion: '',
+        tecnica_impresion: '', observaciones: '', quantity: 1, margen_porcentaje: 0, costo_base: 0,
+        cantidad_colores: 1, cantidad_lados: 1, cantidad_millar: 1, numero_muestras: 0, precio_muestra: null,
+        costo_movilidad: 0, costo_impresion: 0, costo_empaque: 0, impresion_por_unidad: 0,
+        empaque_por_unidad: 0, sctr_porcentaje: null, item_id: null
+      }
+      var self = this
+      Object.keys(limpio).forEach(function (k) { self.$set(item, k, limpio[k]) })
+      this.$set(item, '_precio_muestra_distinto', false)
+      this.$set(item, '_reiniciarDatos', true)
+      // Sin proveedores: al guardar se borran los que había en la BD.
+      this.initSupplierQuoteBuffer(item)
+      var buf = this.supplierQuoteBuffers[item.id]
+      this.$set(buf, 'quotes', [])
+      this.$set(buf, 'dirty', true)
+      this.$set(this.supplierQuotesMap, item.id, [])
+    },
     onTipoLineaChange(item) {
       if (!item) return
       var v = String(item.tipo_linea || 'product').toLowerCase()
@@ -2129,6 +2335,10 @@ export default {
         item.product_name = 'COMISIÓN'
         item.quantity = 1
         item.margen_porcentaje = 0
+      }
+      // De Comisión a Producto: el nombre fijo "COMISIÓN" ya no aplica.
+      if (v === 'product' && String(item.product_name || '').trim().toUpperCase() === 'COMISIÓN') {
+        item.product_name = 'Producto'
       }
       if (v === 'service') {
         item.excluir_catalogo = true
@@ -2171,9 +2381,14 @@ export default {
     async saveItem(item) {
       // Nombre obligatorio (espejo del backend): evita el 500 por NOT NULL.
       if (!String(item.product_name || '').trim()) {
-        this.$message.warning('Ponle un nombre al producto antes de guardar.')
+        this.avisar('Ponle un nombre al producto antes de guardar.')
         return
       }
+      if (!esDiasUtilesValido(item.tiempo_entrega)) {
+        this.avisar('El tiempo de entrega al cliente debe ser un número (8) o un rango (10 a 12).')
+        return
+      }
+      if (!this.validarProveedoresAntesDeGuardar(item)) return
       try {
         var payload = {
           product_name: item.product_name,
@@ -2190,6 +2405,8 @@ export default {
           cantidad_colores: item.cantidad_colores,
           cantidad_lados: item.cantidad_lados,
           observaciones: item.observaciones,
+          // Plazo ofrecido al cliente (el mismo campo que edita el Preview y que sale en el PDF).
+          tiempo_entrega: item.tiempo_entrega || null,
           // Para producto/servicio, el costo se resuelve desde la comparativa.
           // Comisión lo envía aparte porque su costo fijo vive en el ítem.
           margen_porcentaje: item.margen_porcentaje,
@@ -2214,6 +2431,10 @@ export default {
         // costo_base del ítem y se persiste al presionar Guardar detalles.
         if (this.isComision(item)) {
           payload.costo_base = parseFloat(item.costo_base) || 0
+        }
+        // Cambio de tipo con borrado: el servidor limpia el costo y el enlace al catálogo.
+        if (item._reiniciarDatos) {
+          payload.reiniciar_datos = 1
         }
 
         // Servicio = línea propia del requerimiento. Cantidad y Margen se editan
@@ -2275,6 +2496,7 @@ export default {
             }
           }
         }
+        this.$delete(item, '_reiniciarDatos')
         this.$message.success('Item actualizado')
         // [NUEVO FLUJO 2026-10-20] Sincroniza los proveedores pendientes con el backend
         // después de guardar el ítem. Solo hace algo si hay cambios en el buffer.
@@ -2288,7 +2510,7 @@ export default {
         var status = e.response && e.response.status ? e.response.status : ''
         var apiMsg = e.response && e.response.data && e.response.data.message ? e.response.data.message : (e.message || 'error desconocido')
         var fullMsg = status ? ('Error actualizando item (' + status + '): ' + apiMsg) : ('Error actualizando item: ' + apiMsg)
-        this.$message({ message: fullMsg, type: 'error', duration: 8000 })
+        this.avisar(fullMsg, 'error')
         // También loggear al console para inspección con DevTools
         if (e.response) {
           console.error('saveItem error:', e.response.status, e.response.data)
@@ -2298,17 +2520,68 @@ export default {
       }
     },
 
-    async changeStatus(newStatus) {
+    // Ventana con "Entendido" (helpers/avisos).
+    avisar(mensaje, tipo) {
+      return avisar(this, mensaje, tipo)
+    },
+    // Antes de emitir: cambios sin guardar y lo que falta, con el detalle por ítem.
+    emitirAlCliente() {
+      var h = this.$createElement
+      var avisar = function (titulo, intro, lista, cierre) {
+        this.$alert(h('div', [
+          h('p', intro),
+          h('ul', { style: { margin: '8px 0 8px 18px', padding: 0 } }, lista.map(function (t) { return h('li', t) })),
+          h('p', cierre)
+        ]), titulo, { confirmButtonText: 'Entendido', type: 'warning' }).catch(function () {})
+      }.bind(this)
+      if (this.comparativasSinGuardar.length) {
+        avisar('Cambios sin guardar', 'Hay cambios sin guardar en la comparativa de proveedores de:',
+          this.comparativasSinGuardar, 'Guarda cada ítem y vuelve a emitir.')
+        return
+      }
+      if (this.faltantesParaEmitir.length) {
+        avisar('Falta completar', 'Para emitir al cliente falta completar:',
+          this.faltantesParaEmitir, 'Complétalo, guarda el ítem y vuelve a emitir.')
+        return
+      }
+      this.cambiarEstado('emitir')
+    },
+    // Pasos del flujo de emisión. Cada uno pide confirmación y queda en el historial.
+    async cambiarEstado(accion) {
+      var pasos = {
+        emitir: { estado: 'propuesta_emitida', titulo: 'Emitir al cliente', boton: 'Emitir', tipo: 'warning', listo: 'Pre-cotización emitida al cliente',
+          texto: 'Marca la pre-cotización como enviada al cliente. La edición queda bloqueada hasta registrar su respuesta.' },
+        aprobo: { estado: 'aprobada', titulo: 'Cliente aprobó', boton: 'Cliente aprobó', tipo: 'success', listo: 'Aprobación del cliente registrada',
+          texto: 'Registra que el cliente aprobó esta cotización. Después podrás convertirla a cotización formal.' },
+        cambios: { estado: 'borrador', titulo: 'Pidió cambios', boton: 'Reabrir para editar', tipo: 'info', listo: 'Pre-cotización reabierta para editar',
+          texto: 'Se reabre la pre-cotización para hacer los cambios que pidió el cliente. Al terminar, vuelve a emitirla.' },
+        rechazo: { estado: 'rechazada', titulo: 'Cliente rechazó', boton: 'Cliente rechazó', tipo: 'warning', listo: 'Rechazo del cliente registrado',
+          texto: 'Registra que el cliente rechazó esta cotización. Si el cliente vuelve, podrás reabrirla.' },
+        reabrir: { estado: 'borrador', titulo: 'Reabrir', boton: 'Reabrir', tipo: 'info', listo: 'Pre-cotización reabierta para editar',
+          texto: 'Se reabre la pre-cotización para editarla y volver a emitirla al cliente.' },
+      }
+      var paso = pasos[accion]
+      if (!paso || this.cambiandoEstado) return
+      try {
+        await this.$confirm(paso.texto, paso.titulo, {
+          confirmButtonText: paso.boton, cancelButtonText: 'Cancelar', type: paso.tipo
+        })
+      } catch (cancelado) {
+        return
+      }
+      this.cambiandoEstado = true
       try {
         await this.$http.put(
           '/marketing/quotation/prequotes/' + this.prequote.id + '/status',
-          { estado: newStatus }
+          { estado: paso.estado }
         )
-        this.$message.success('Estado cambiado a: ' + newStatus)
+        this.$message.success(paso.listo)
         this.loadPrequote()
       } catch (e) {
-        this.$message.error('Error cambiando estado')
+        var msg = e.response && e.response.data && e.response.data.message ? e.response.data.message : 'No se pudo cambiar el estado'
+        this.avisar(msg)
       }
+      this.cambiandoEstado = false
     },
 
     async convertToQuotation() {
@@ -2334,9 +2607,9 @@ export default {
         var msg = e.response && e.response.data && e.response.data.message ? e.response.data.message : 'Error al convertir'
         if (e.response && e.response.status === 422) {
           // Validacion de negocio (ej.: productos sin asociar al catalogo): aviso accionable, no error.
-          this.$message({ message: msg, type: 'warning', duration: 7000, showClose: true })
+          this.avisar(msg)
         } else {
-          this.$message.error(msg)
+          this.avisar(msg, 'error')
         }
       }
       this.converting = false
@@ -2363,6 +2636,12 @@ export default {
           pq.items[i].costo_movilidad = parseFloat(pq.items[i].costo_movilidad) || 0
           pq.items[i].costo_impresion = parseFloat(pq.items[i].costo_impresion) || 0
           pq.items[i].costo_empaque = parseFloat(pq.items[i].costo_empaque) || 0
+          // Tiempo de entrega al cliente: mismo valor que muestran Preview y el PDF. Si el
+          // ítem no tiene uno propio, se muestra el plazo por defecto que puso el sistema
+          // (PreQuoteItem::tiempoEntregaEfectivo); al guardar queda como propio.
+          var entregaPropia = pq.items[i].tiempo_entrega != null ? String(pq.items[i].tiempo_entrega) : ''
+          pq.items[i].tiempo_entrega = entregaPropia !== '' ? entregaPropia
+            : (pq.items[i].tiempo_estimado_dias != null ? String(pq.items[i].tiempo_estimado_dias) : '')
           // COM-02 #2: factor "Cantidad por millar" (default 1). ≤0 o inválido → 1 (neutro, igual que el motor).
           pq.items[i].cantidad_millar = parseFloat(pq.items[i].cantidad_millar)
           if (isNaN(pq.items[i].cantidad_millar) || pq.items[i].cantidad_millar <= 0) pq.items[i].cantidad_millar = 1
@@ -2782,7 +3061,7 @@ export default {
     aplicarMargenObjetivo(item) {
       var bd = this.costeoBreakdown(item)
       if (!bd || bd.margenRequeridoPct === null) {
-        this.$message.warning('Carga primero el Costo Base del producto.')
+        this.avisar('Carga primero el Costo Base del producto.')
         return
       }
 
@@ -2858,6 +3137,20 @@ export default {
     |------------------------------------------------------------------
     */
 
+    // Casilla del producto del catálogo: nombre corto (items.description, p. ej. "CASACA
+    // CORTAVIENTO"); items.name suele traer la ficha larga y desarmaba la tabla.
+    catalogoCasilla(item) {
+      var estado = this.matchStatus(item)
+      if (estado === 'review') {
+        return { icono: 'el-icon-warning-outline', texto: 'Revisar producto', titulo: 'La IA no está segura del producto. Clic para revisarlo.' }
+      }
+      if (estado !== 'matched') {
+        return { icono: 'el-icon-search', texto: 'Sin match — buscar', titulo: 'Clic para buscar el producto en el catálogo.' }
+      }
+      var cat = item.catalog_item || {}
+      var nombre = String(cat.description || '').trim() || String(cat.name || '').trim() || ('ID ' + item.item_id)
+      return { icono: 'el-icon-success', texto: nombre, titulo: 'Producto del catálogo: ' + nombre + '. Clic para cambiarlo.' }
+    },
     matchStatus(item) {
       if (item.needs_product_review) return 'review'
       if (item.item_id && parseFloat(item.product_match_confidence) >= 0.85) return 'matched'
@@ -2910,8 +3203,27 @@ export default {
      * los totales recalculados — la usamos para refrescar la UI sin tener
      * que hacer un loadPrequote() extra.
      */
-    async applyMatch(catalogItemId) {
+    async applyMatch(catalogItemId, producto) {
       if (!this.matchTarget) return
+      // Elegir un producto del catálogo trae su nombre y su descripción: se avisa antes
+      // de reemplazar lo que tenía el ítem (como el mockup).
+      var traerDatos = catalogItemId !== null
+      if (traerDatos) {
+        var nuevo = producto ? (String(producto.description || '').trim() || String(producto.name || '').trim()) : ''
+        var h = this.$createElement
+        try {
+          await this.$confirm(h('div', [
+            h('p', ['Vas a cambiar el producto solicitado de ', h('strong', this.matchTarget.product_name || '(sin nombre)'),
+              ' a ', h('strong', nuevo || 'el producto elegido'), '.']),
+            h('p', { style: { marginTop: '8px' } },
+              'Se reemplazarán el nombre y la descripción del ítem con los del catálogo, y el costo base con su precio. Los demás datos no cambian.')
+          ]), 'Cambiar producto del catálogo', {
+            confirmButtonText: 'Cambiar producto', cancelButtonText: 'Cancelar', type: 'warning'
+          })
+        } catch (cancelado) {
+          return
+        }
+      }
       // El nombre solicitado pudo editarse en la tabla sin guardar. El backend
       // no lo modifica, pero su respuesta trae el nombre viejo y updateLocalItem
       // lo pisaría (quedaba "tomatodo" con el match de "usb"). Se respalda.
@@ -2920,7 +3232,7 @@ export default {
       try {
         var resp = await this.$http.post(
           '/marketing/quotation/prequote-items/' + this.matchTarget.id + '/match',
-          { item_id: catalogItemId }
+          { item_id: catalogItemId, traer_datos: traerDatos ? 1 : 0 }
         )
         if (resp.data && resp.data.ok) {
           this.$message.success(resp.data.message || 'Producto asociado')
@@ -2933,8 +3245,9 @@ export default {
           }
 
           // Restaurar lo tipeado SIN autoguardar: queda pendiente hasta el ✓ de
-          // la fila (no pisar lo tipeado, pero tampoco quitarle propósito).
-          if (resp.data.item && resp.data.item.id
+          // la fila (no pisar lo tipeado, pero tampoco quitarle propósito). Si se
+          // trajeron los datos del catálogo, el nombre nuevo es el que vale.
+          if (!traerDatos && resp.data.item && resp.data.item.id
               && String(nombreSolicitado || '') !== String(resp.data.item.product_name || '')) {
             this.restoreNombreSolicitado(resp.data.item.id, nombreSolicitado)
           }
@@ -2954,11 +3267,11 @@ export default {
             } catch (e) { /* el match ya quedó aplicado; no se bloquea si el borrado de la imagen falla */ }
           }
         } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo asociar')
+          this.avisar((resp.data && resp.data.message) || 'No se pudo asociar', 'error')
         }
       } catch (e) {
         var msg = e.response && e.response.data && e.response.data.message ? e.response.data.message : 'Error de red'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
       }
       this.actingSuggestionId = null
     },
@@ -3003,10 +3316,10 @@ export default {
           this.matchSuggestions = sugg
           this.matchTarget.product_suggestions = sugg
         } else {
-          this.$message.error('No se pudo re-ejecutar')
+          this.avisar('No se pudo re-ejecutar', 'error')
         }
       } catch (e) {
-        this.$message.error('Error al re-buscar')
+        this.avisar('Error al re-buscar', 'error')
       }
       this.rematchLoading = false
     },
@@ -3048,7 +3361,7 @@ export default {
 
     onManualSelect(item) {
       if (item && item.item_id) {
-        this.applyMatch(item.item_id)
+        this.applyMatch(item.item_id, item)
       }
     },
 
@@ -3070,11 +3383,11 @@ export default {
       // Validación cliente espejo del backend
       var allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
       if (allowed.indexOf(file.type) === -1) {
-        this.$message.error('Tipo de imagen no permitido. Solo JPG, PNG, WEBP o GIF.')
+        this.avisar('Tipo de imagen no permitido. Solo JPG, PNG, WEBP o GIF.', 'error')
         return
       }
       if (file.size > 5 * 1024 * 1024) {
-        this.$message.error('La imagen excede 5 MB.')
+        this.avisar('La imagen excede 5 MB.', 'error')
         return
       }
 
@@ -3094,11 +3407,11 @@ export default {
           this.prequote.reference_image_mime = resp.data.image.mime
           this.imageVersion++
         } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo subir la imagen')
+          this.avisar((resp.data && resp.data.message) || 'No se pudo subir la imagen', 'error')
         }
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message) || 'Error subiendo imagen'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
       } finally {
         this.uploadingImage = false
         // Limpiar el input para permitir re-seleccionar el mismo archivo si quiere
@@ -3121,7 +3434,7 @@ export default {
           this.prequote.reference_image_mime = null
         }
       } catch (e) {
-        this.$message.error('Error eliminando imagen')
+        this.avisar('Error eliminando imagen', 'error')
       } finally {
         this.deletingImage = false
       }
@@ -3145,11 +3458,11 @@ export default {
           this.$message.success(resp.data.message || 'Re-interpretado')
           this.prequote = this.parseNumericFields(resp.data.prequote)
         } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo re-interpretar')
+          this.avisar((resp.data && resp.data.message) || 'No se pudo re-interpretar', 'error')
         }
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message) || 'Error al re-interpretar'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
       } finally {
         this.reinterpretingImage = false
       }
@@ -3162,7 +3475,7 @@ export default {
     },
     triggerReferenceImageUpload() {
       if (this.referenceMode === 'texto') {
-        this.$message.warning('Ya ingresaste una referencia en texto. Para usar imagen, primero limpiá el texto.')
+        this.avisar('Ya ingresaste una referencia en texto. Para usar imagen, primero limpiá el texto.')
         return
       }
       if (this.$refs.referenceImageInput) this.$refs.referenceImageInput.click()
@@ -3175,7 +3488,7 @@ export default {
     onReferenceDrop(event) {
       if (this.interpretingItem) return
       if (this.referenceMode === 'texto') {
-        this.$message.warning('Ya ingresaste una referencia en texto. Para usar imagen, primero limpiá el texto.')
+        this.avisar('Ya ingresaste una referencia en texto. Para usar imagen, primero limpiá el texto.')
         return
       }
       var files = event.dataTransfer && event.dataTransfer.files
@@ -3184,11 +3497,11 @@ export default {
     setReferenceImage(file) {
       var allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
       if (allowed.indexOf(file.type) === -1) {
-        this.$message.error('Tipo de imagen no permitido. Solo JPG, PNG, WEBP o GIF.')
+        this.avisar('Tipo de imagen no permitido. Solo JPG, PNG, WEBP o GIF.', 'error')
         return
       }
       if (file.size > 5 * 1024 * 1024) {
-        this.$message.error('La imagen excede 5 MB.')
+        this.avisar('La imagen excede 5 MB.', 'error')
         return
       }
       this.referenceImageFile = file
@@ -3211,11 +3524,11 @@ export default {
     },
     async interpretItem() {
       if (!this.referenceMode) {
-        this.$message.warning('Escribí el producto o subí una imagen referencial para interpretar el ítem.')
+        this.avisar('Escribí el producto o subí una imagen referencial para interpretar el ítem.')
         return
       }
       if (!this.refReqId) {
-        this.$message.error('No se pudo determinar el requerimiento para interpretar el ítem.')
+        this.avisar('No se pudo determinar el requerimiento para interpretar el ítem.', 'error')
         return
       }
       this.interpretingItem = true
@@ -3238,18 +3551,18 @@ export default {
           this.prequote = this.parseNumericFields(resp.data.prequote)
           this.clearReference()
           if (resp.data.warning) {
-            this.$message({ message: resp.data.warning, type: 'warning', duration: 8000, showClose: true })
+            this.avisar(resp.data.warning)
           } else {
             this.$message.success('Ítem interpretado y agregado. Los ítems actuales no se modificaron.')
           }
           this.$emit('precotizacion-added')
         } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo interpretar la referencia.')
+          this.avisar((resp.data && resp.data.message) || 'No se pudo interpretar la referencia.', 'error')
         }
       } catch (e) {
         var status = e.response && e.response.status ? e.response.status : ''
         var msg = (e.response && e.response.data && e.response.data.message) || 'Error al interpretar la referencia.'
-        this.$message({ message: (status ? '(' + status + ') ' : '') + msg, type: 'error', duration: 8000, showClose: true })
+        this.avisar((status ? '(' + status + ') ' : '') + msg, 'error')
       } finally {
         this.interpretingItem = false
       }
@@ -3263,7 +3576,7 @@ export default {
      */
     async addManualItem() {
       if (!this.refReqId) {
-        this.$message.error('No se pudo determinar el requerimiento para agregar el ítem.')
+        this.avisar('No se pudo determinar el requerimiento para agregar el ítem.', 'error')
         return
       }
       this.addingManual = true
@@ -3280,11 +3593,11 @@ export default {
           this.$message.success('Ítem manual agregado. Complétalo y guárdalo.')
           this.$emit('precotizacion-added')
         } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo agregar el ítem manual.')
+          this.avisar((resp.data && resp.data.message) || 'No se pudo agregar el ítem manual.', 'error')
         }
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message) || 'Error al agregar el ítem manual.'
-        this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+        this.avisar(msg, 'error')
       } finally {
         this.addingManual = false
       }
@@ -3385,6 +3698,7 @@ export default {
     // la opción 0 del select) y deja el nombre del proveedor resuelto.
     onQuoteSupplierChange(item, quote, supplierId) {
       var sid = supplierId ? Number(supplierId) : null
+      if (sid) this.$delete(quote, '_sinProveedor')
       this.saveSupplierQuote(item, quote, {
         supplier_id: sid,
         costo_base: 0,
@@ -3402,11 +3716,17 @@ export default {
       return 'S/ ' + (parseFloat(bd.unit) || 0).toFixed(2)
     },
     // [NUEVO FLUJO 2026-10-21] Costo base (número) del proveedor SELECCIONADO.
+    // El ganador manda solo cuando ya tiene precio (> 0); si no, se mantiene el
+    // costo del ítem (el del catálogo). Misma regla que el motor del servidor.
     selectedQuoteCostValue(item) {
       if (this.isComision(item)) return parseFloat(item && item.costo_base) || 0
       var quotes = this.supplierQuotesOf(item) || []
       for (var i = 0; i < quotes.length; i++) {
-        if (Number(quotes[i].seleccionado) === 1) return parseFloat(quotes[i].costo_base) || 0
+        if (Number(quotes[i].seleccionado) === 1) {
+          var costo = parseFloat(quotes[i].costo_base) || 0
+          if (costo > 0) return costo
+          break
+        }
       }
       return parseFloat(item && item.costo_base) || 0
     },
@@ -3512,7 +3832,7 @@ export default {
             })
             this.$set(target, 'supplier_name', opt ? (opt.nombre_comercial || opt.razon_social) : target.supplier_name)
           } else {
-            this.$set(target, 'supplier_name', 'Proveedor por definir')
+            this.$set(target, 'supplier_name', '')
           }
         }
       }
@@ -3526,33 +3846,110 @@ export default {
       var buf = this.supplierQuoteBuffers[item.id]
       var quotes = buf.quotes
       var tempId = -(Date.now())
-      // [NUEVO FLUJO 2026-10-21] Ya no hay columna `orden`. La fila nueva entra
-      // como RESPALDO (seleccionado = 0); el radio "Ganador" elige cuál manda.
+      // El primero que se agrega queda como ganador; los siguientes, de respaldo
+      // (el radio "Ganador" elige cuál manda).
       quotes.push({
         id: tempId,  // temp id negativo: existe solo en local
         supplier_id: null,
-        supplier_name: 'Proveedor por definir',
+        supplier_name: '',
         origen: 'manual',
         product_reference: '',
         costo_base: 0,
         tiempo_estimado_dias: '',
         observaciones: '',
-        seleccionado: 0,
+        seleccionado: quotes.length ? 0 : 1,
         _isNew: true  // marca para que flush sepa que es nuevo
       })
       this.$set(buf, 'quotes', quotes)
       this.$set(buf, 'dirty', true)
       this.$set(this.supplierQuotesMap, item.id, quotes)
-      this.$message.success('Proveedor agregado. Selecciónalo y completa los datos. Se guardará al presionar "Guardar detalles".')
+      this.abrirSelectorProveedor(tempId)
+    },
+    // Lleva el cursor al proveedor de la fila nueva con la lista ya desplegada.
+    abrirSelectorProveedor(quoteId) {
+      var self = this
+      this.$nextTick(function () {
+        var ref = self.$refs['proveedor-' + quoteId]
+        var select = Array.isArray(ref) ? ref.find(function (r) { return r && r.$el && r.$el.offsetParent }) || ref[0] : ref
+        if (!select) return
+        select.focus()
+        select.visible = true
+      })
+    },
+    // Al cerrar el detalle de un ítem se descartan sus filas agregadas sin proveedor.
+    onDetalleItemCambio(row, expandidas) {
+      if (!row || row._isKit || !Array.isArray(expandidas)) return
+      if (expandidas.indexOf(row) === -1) this.descartarFilasSinProveedor(row)
+    },
+    onQuoteCostoChange(item, quote, valor) {
+      if (Number(valor) > 0) this.$delete(quote, '_sinCosto')
+      this.markSupplierQuoteDirty(item)
+    },
+    onQuoteTiempoInput(item, quote) {
+      if (esDiasUtilesValido(quote.tiempo_estimado_dias)) this.$delete(quote, '_sinTiempo')
+      this.markSupplierQuoteDirty(item)
+    },
+    // ¿Hay una fila agregada sin proveedor elegido? (bloquea "+ proveedor" y el guardado)
+    tieneFilaSinProveedor(item) {
+      return this.supplierQuotesOf(item).some(function (q) { return !Number(q.supplier_id) })
+    },
+    // Al guardar: cada proveedor necesita proveedor elegido y costo base > 0; el tiempo
+    // de entrega es opcional (mientras se cotiza puede no saberse; se completa en el
+    // proyecto), pero si se escribe debe ser un número o un rango. Marca en rojo lo que
+    // falta. Solo revisa la comparativa si tiene cambios pendientes.
+    validarProveedoresAntesDeGuardar(item) {
+      var buf = item && this.supplierQuoteBuffers[item.id]
+      if (!buf || !buf.dirty) return true
+      var faltan = 0
+      var self = this
+      buf.quotes.forEach(function (q) {
+        var marcas = {
+          _sinProveedor: !Number(q.supplier_id),
+          _sinCosto: !(Number(q.costo_base) > 0),
+          _sinTiempo: !esDiasUtilesValido(q.tiempo_estimado_dias)
+        }
+        Object.keys(marcas).forEach(function (k) {
+          if (marcas[k]) { self.$set(q, k, true); faltan++ } else { self.$delete(q, k) }
+        })
+      })
+      if (faltan) {
+        this.avisar('Completa el proveedor y el costo base de cada proveedor antes de guardar. Si escribes el tiempo de entrega, usa un número (8) o un rango (10 a 12).')
+      }
+      return faltan === 0
+    },
+    // Al cerrar el detalle del ítem: la fila agregada sin proveedor se descarta
+    // (nunca llegó a guardarse).
+    descartarFilasSinProveedor(item) {
+      var buf = item && this.supplierQuoteBuffers[item.id]
+      if (!buf) return
+      var quotes = buf.quotes.filter(function (q) { return !(q._isNew && !Number(q.supplier_id)) })
+      if (quotes.length === buf.quotes.length) return
+      if (quotes.length && !quotes.some(function (q) { return Number(q.seleccionado) === 1 })) {
+        this.$set(quotes[0], 'seleccionado', 1)
+      }
+      this.$set(buf, 'quotes', quotes)
+      this.$set(this.supplierQuotesMap, item.id, quotes)
     },
     // [NUEVO FLUJO] Elimina proveedor LOCALMENTE con confirmación.
     removeSupplierQuote(item, quote) {
       var self = this
-      this.$confirm(
-        '¿Estás seguro de eliminar al proveedor "' + (quote.supplier_name || 'sin nombre') + '"?',
-        'Confirmar eliminación',
-        { confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar', type: 'warning' }
-      ).then(function () {
+      var esUltimo = this.supplierQuotesOf(item).length === 1
+      // Fila recién agregada sin proveedor: se quita sin preguntar (no hay nada que perder).
+      var vacia = quote._isNew && !Number(quote.supplier_id)
+      var confirmar = vacia && !esUltimo
+        ? Promise.resolve()
+        : esUltimo
+          ? this.$confirm(
+            'Si quitas este proveedor, el ítem quedará sin proveedor ganador y no podrás crear el proyecto hasta agregar uno.',
+            'Quitar último proveedor',
+            { confirmButtonText: 'Quitar de todos modos', cancelButtonText: 'Cancelar', type: 'warning' }
+          )
+          : this.$confirm(
+            '¿Estás seguro de eliminar al proveedor "' + (quote.supplier_name || 'sin nombre') + '"?',
+            'Confirmar eliminación',
+            { confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar', type: 'warning' }
+          )
+      confirmar.then(function () {
         self.initSupplierQuoteBuffer(item)
         var buf = self.supplierQuoteBuffers[item.id]
         var quotes = buf.quotes.filter(function (q) { return Number(q.id) !== Number(quote.id) })
@@ -3564,7 +3961,7 @@ export default {
         self.$set(buf, 'quotes', quotes)
         self.$set(buf, 'dirty', true)
         self.$set(self.supplierQuotesMap, item.id, quotes)
-        self.$message.success('Proveedor eliminado. Se aplicará al guardar.')
+        if (!vacia) self.$message.success('Proveedor eliminado. Se aplicará al guardar.')
       }).catch(function () {
         // Cancelado: no hace nada
       })
@@ -3671,7 +4068,7 @@ export default {
         this.$delete(this.supplierQuoteBuffers, item.id)
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message) || 'Error sincronizando proveedores.'
-        this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+        this.avisar(msg, 'error')
         // Recarga para mostrar estado real de BD
         this.loadSupplierQuotes(item, true)
       }
@@ -3696,11 +4093,11 @@ export default {
       extras.forEach(function (s) {
         if (!list.some(function (m) { return Number(m.id) === Number(s.id) })) list.push(s)
       })
-      // Filtro local (nombre comercial, razón social o RUC).
+      // Filtro local (nombre comercial y razón social).
       var q = (this.supplierFilterQuery || '').toLowerCase()
       if (q) {
         list = list.filter(function (s) {
-          var texto = ((s.nombre_comercial || '') + ' ' + (s.razon_social || '') + ' ' + (s.ruc || '')).toLowerCase()
+          var texto = ((s.nombre_comercial || '') + ' ' + (s.razon_social || '')).toLowerCase()
           return texto.indexOf(q) !== -1
         })
       }
@@ -3868,7 +4265,7 @@ export default {
     toggleKitSelected(item) {
       if (!item || !item.id || !this.isEditable) return
       if (this.itemInKit(item)) {
-        this.$message.warning('Ese producto ya está en un kit.')
+        this.avisar('Ese producto ya está en un kit.')
         return
       }
       var ix = this.kitSelection.indexOf(item.id)
@@ -4045,12 +4442,12 @@ export default {
       var file = files[0]
       var allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
       if (allowed.indexOf(file.type) === -1) {
-        this.$message.error('Tipo de imagen no permitido. Solo JPG, PNG, WEBP o GIF.')
+        this.avisar('Tipo de imagen no permitido. Solo JPG, PNG, WEBP o GIF.', 'error')
         this.pendingKitPhotoId = null
         return
       }
       if (file.size > 5 * 1024 * 1024) {
-        this.$message.error('La imagen excede 5 MB.')
+        this.avisar('La imagen excede 5 MB.', 'error')
         this.pendingKitPhotoId = null
         return
       }
@@ -4068,11 +4465,11 @@ export default {
           this.kitPhotoVersion++
           this.$message.success('Foto del kit guardada')
         } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo subir la foto')
+          this.avisar((resp.data && resp.data.message) || 'No se pudo subir la foto', 'error')
         }
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message) || 'Error subiendo la foto'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
       } finally {
         this.$set(this.kitSaving, kit._kid, false)
         this.pendingKitPhotoId = null
@@ -4099,12 +4496,12 @@ export default {
     async createKitFromSelection() {
       var nombre = (this.kitNameInput || '').trim()
       if (!nombre) {
-        this.$message.warning('Escribe el nombre del kit.')
+        this.avisar('Escribe el nombre del kit.')
         return
       }
       var selected = this.selectedLooseItems()
       if (selected.length < 2) {
-        this.$message.error('Selecciona 2 o más productos sueltos para crear un kit.')
+        this.avisar('Selecciona 2 o más productos sueltos para crear un kit.', 'error')
         return
       }
       var expected = Number(selected[0].quantity)
@@ -4139,7 +4536,7 @@ export default {
       if (!kit) return
       var selected = this.selectedLooseItems()
       if (!selected.length) {
-        this.$message.error('Selecciona uno o más productos sueltos.')
+        this.avisar('Selecciona uno o más productos sueltos.', 'error')
         return
       }
       var expected = Number(kit.cantidad)
@@ -4173,11 +4570,11 @@ export default {
           this.kitSelection = []
           this.$message.success('Producto(s) agregado(s) a ' + kit.nombre + '.')
         } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo agregar al kit.')
+          this.avisar((resp.data && resp.data.message) || 'No se pudo agregar al kit.', 'error')
         }
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message) || 'Error agregando al kit.'
-        this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+        this.avisar(msg, 'error')
       }
     },
     replaceKitFromServer(serverKit, draftKid) {
@@ -4201,11 +4598,11 @@ export default {
       if (kit._isNew) {
         var nombre = (kit.nombre || '').trim()
         if (!nombre) {
-          this.$message.warning('Ponle un nombre al kit antes de guardarlo.')
+          this.avisar('Ponle un nombre al kit antes de guardarlo.')
           return
         }
         if (!kit._draftItemIds || kit._draftItemIds.length < 2) {
-          this.$message.error('El kit necesita al menos 2 productos.')
+          this.avisar('El kit necesita al menos 2 productos.', 'error')
           return
         }
         this.$set(this.kitSaving, kit._kid, true)
@@ -4220,11 +4617,11 @@ export default {
             this.replaceKitFromServer(resp.data.kit, kit._kid)
             this.$message.success('Kit guardado.')
           } else {
-            this.$message.error((resp.data && resp.data.message) || 'No se pudo guardar el kit.')
+            this.avisar((resp.data && resp.data.message) || 'No se pudo guardar el kit.', 'error')
           }
         } catch (e) {
           var msg = (e.response && e.response.data && e.response.data.message) || 'Error guardando el kit.'
-          this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+          this.avisar(msg, 'error')
         } finally {
           this.$set(this.kitSaving, kit._kid, false)
         }
@@ -4243,11 +4640,11 @@ export default {
           await this.loadPrequoteById(this.prequote.id)
           this.$message.success('Kit actualizado.')
         } else {
-          this.$message.error((resp2.data && resp2.data.message) || 'No se pudo actualizar el kit.')
+          this.avisar((resp2.data && resp2.data.message) || 'No se pudo actualizar el kit.', 'error')
         }
       } catch (e2) {
         var msg2 = (e2.response && e2.response.data && e2.response.data.message) || 'Error actualizando el kit.'
-        this.$message({ message: msg2, type: 'error', duration: 8000, showClose: true })
+        this.avisar(msg2, 'error')
       } finally {
         this.$set(this.kitSaving, kit._kid, false)
       }
@@ -4258,7 +4655,7 @@ export default {
         kit._draftItemIds = kit._draftItemIds.filter(function (id) { return Number(id) !== Number(item.id) })
         kit.members = kit.members.filter(function (m) { return Number(m.id) !== Number(item.id) })
         if (kit._draftItemIds.length < 2) {
-          this.$message.warning('Al kit le queda menos de 2 productos: disuélvelo o agrégale más.')
+          this.avisar('Al kit le queda menos de 2 productos: disuélvelo o agrégale más.')
         }
         return
       }
@@ -4270,14 +4667,14 @@ export default {
         } else if (resp.data && resp.data.must_dissolve) {
           this.askDissolveKit(kit, item.id)
         } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo quitar del kit.')
+          this.avisar((resp.data && resp.data.message) || 'No se pudo quitar del kit.', 'error')
         }
       } catch (e) {
         if (e.response && e.response.data && e.response.data.must_dissolve) {
           this.askDissolveKit(kit, item.id)
         } else {
           var msg = (e.response && e.response.data && e.response.data.message) || 'Error quitando del kit.'
-          this.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+          this.avisar(msg, 'error')
         }
       }
     },
@@ -4313,11 +4710,11 @@ export default {
             if (ix2 >= 0) self.kits.splice(ix2, 1)
             self.$message.success('Kit disuelto. Sus componentes vuelven a productos sueltos.')
           } else {
-            self.$message.error((resp.data && resp.data.message) || 'No se pudo disolver el kit.')
+            self.avisar((resp.data && resp.data.message) || 'No se pudo disolver el kit.', 'error')
           }
         } catch (e) {
           var msg = (e.response && e.response.data && e.response.data.message) || 'Error disolviendo el kit.'
-          self.$message({ message: msg, type: 'error', duration: 8000, showClose: true })
+          self.avisar(msg, 'error')
         }
       }).catch(function () {})
     },
@@ -4381,13 +4778,13 @@ export default {
       // Validación cliente espejo del backend (mime + 5MB)
       var allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
       if (allowed.indexOf(file.type) === -1) {
-        this.$message.error('Tipo de imagen no permitido. Solo JPG, PNG, WEBP o GIF.')
+        this.avisar('Tipo de imagen no permitido. Solo JPG, PNG, WEBP o GIF.', 'error')
         this.uploadingItemImageId = null
         if (this.$refs.itemImageInput) this.$refs.itemImageInput.value = ''
         return
       }
       if (file.size > 5 * 1024 * 1024) {
-        this.$message.error('La imagen excede 5 MB.')
+        this.avisar('La imagen excede 5 MB.', 'error')
         this.uploadingItemImageId = null
         if (this.$refs.itemImageInput) this.$refs.itemImageInput.value = ''
         return
@@ -4407,11 +4804,11 @@ export default {
           this.markItemHasImage(itemId, resp.data.image ? resp.data.image.path : true)
           this.itemImageVersion++
         } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo subir la imagen')
+          this.avisar((resp.data && resp.data.message) || 'No se pudo subir la imagen', 'error')
         }
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message) || 'Error subiendo imagen'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
       } finally {
         this.uploadingItemImageId = null
         // Limpiar el input para permitir re-seleccionar el mismo archivo
@@ -4435,11 +4832,11 @@ export default {
           this.markItemHasImage(item.id, null)
           this.itemImageVersion++
         } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo eliminar la imagen')
+          this.avisar((resp.data && resp.data.message) || 'No se pudo eliminar la imagen', 'error')
         }
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message) || 'Error eliminando imagen'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
       }
     },
 
@@ -4484,6 +4881,179 @@ export default {
 </script>
 
 <style>
+/* Producto del catálogo: casilla de una línea que abre la búsqueda (mockup) */
+.catalogo-casilla {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  background: #fff;
+  color: #606266;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+.catalogo-casilla span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.catalogo-casilla i { flex: 0 0 auto; }
+.catalogo-casilla:hover:not(:disabled) { border-color: #409eff; }
+.catalogo-casilla:disabled { cursor: not-allowed; opacity: .8; }
+.catalogo-casilla--matched { color: #18865c; border-color: #b7e4c7; background: #f0faf4; font-weight: 600; }
+.catalogo-casilla--review { color: #b26a00; border-color: #f3d19e; background: #fdf6ec; }
+.catalogo-casilla--no-match { color: #909399; background: #fafafa; }
+/* El tema ajusta la celda al contenido (display: table-cell); aquí ocupa su columna
+   para que la casilla se recorte dentro de ella. */
+.items-table td > .cell { display: block; }
+/* Tiempo de entrega al cliente: en el encabezado del detalle, como el mockup v28 */
+.entrega-cliente {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  cursor: help;
+}
+.entrega-cliente label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #303133;
+  white-space: nowrap;
+}
+/* Aviso bajo el producto: se tomó de una cotización anterior */
+.item-cotizado-antes {
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: #2b6cb0;
+  white-space: normal;
+}
+/* Acciones del ítem: íconos de Font Awesome con el estilo del mockup */
+.item-icon-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+}
+.item-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 29px;
+  height: 29px;
+  padding: 0;
+  border: 1px solid #e0e6ef;
+  border-radius: 6px;
+  background: #fff;
+  color: #5f7088;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .13s, border-color .13s, color .13s;
+}
+.item-icon-btn:hover:not(:disabled),
+.item-icon-btn:focus-visible {
+  background: #edf4ff;
+  border-color: #a3bcdc;
+  color: #165fac;
+  outline: none;
+}
+.item-icon-btn.item-danger:hover:not(:disabled) {
+  background: #fff0f1;
+  border-color: #f2b4bc;
+  color: #c93c50;
+}
+.item-icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+/* Acciones fija a la derecha al desplazar la tabla horizontalmente */
+.items-table .col-acciones-item {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #fff;
+  box-shadow: -5px 0 12px rgba(31, 58, 91, .055);
+}
+.items-table th.col-acciones-item {
+  z-index: 3;
+}
+.supplier-quotes__acciones {
+  margin: 6px 0 8px;
+}
+/* "Agregar proveedor" en naranja para que no pase desapercibido (el tema pinta todos
+   los .el-button con su color; aquí solo se aplica dentro de la comparativa). */
+.supplier-quotes__acciones .el-button--warning {
+  background-color: #e6a23c;
+  border-color: #e6a23c;
+  color: #fff;
+}
+.supplier-quotes__acciones .el-button--warning:hover,
+.supplier-quotes__acciones .el-button--warning:focus {
+  background-color: #ebb563;
+  border-color: #ebb563;
+  color: #fff;
+}
+.supplier-quotes__acciones .el-button--warning.is-disabled,
+.supplier-quotes__acciones .el-button--warning.is-disabled:hover {
+  background-color: #f3d19e;
+  border-color: #f3d19e;
+  color: #fff;
+}
+.supplier-quotes__quitar {
+  margin: 0 auto;
+}
+/* Comparativa de proveedores. El tema "light" oculta .el-radio__input en todo el
+   sistema; aquí el radio "Ganador" debe verse para elegir un solo proveedor. */
+.supplier-quotes-section .el-radio__input {
+  display: inline-block !important; /* el tema lo oculta con !important */
+}
+/* El tema hace que la celda se ajuste al contenido (display: table-cell); en la comparativa
+   cada celda ocupa todo el ancho de su columna, así la casilla de plazo se ajusta a ella. */
+.supplier-quotes-section .el-table td > .cell {
+  display: block;
+}
+.supplier-quotes__vacio {
+  padding: 10px 12px;
+  border: 1px dashed #dcdfe6;
+  border-radius: 4px;
+  color: #909399;
+  font-size: 12px;
+}
+.supplier-quotes__sin-proveedor .el-input__inner,
+.supplier-quotes__campo-error .el-input__inner {
+  border-color: #f56c6c;
+}
+.supplier-quotes__error {
+  margin-top: 2px;
+  color: #f56c6c;
+  font-size: 11px;
+  line-height: 1.3;
+}
+/* Desplegable de proveedores: nombre comercial, razón social y RUC */
+.supplier-quotes__lista .el-select-dropdown__item {
+  height: auto;
+  line-height: 1.3;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.supplier-quotes__opcion-nombre {
+  font-weight: 600;
+  font-size: 13px;
+  color: #303133;
+}
+.supplier-quotes__opcion-dato {
+  font-size: 11px;
+  color: #909399;
+}
 /* R4 — Campos en solo-lectura (cuando la pre-cotización está validada/aprobada):
    texto legible en vez del gris muy claro por defecto de Element UI. Mismo
    criterio aplicado en Proyectos > Datos Generales. */
@@ -4502,7 +5072,7 @@ export default {
 .catalog-card { display: flex; gap: 10px; border: 1px solid #ebeef5; border-radius: 8px; padding: 10px; cursor: pointer; background: #fff; min-width: 0; }
 .catalog-card:hover { border-color: #4f46e5; background: #f8f7ff; }
 .catalog-card__badge { width: 64px; height: 64px; flex: 0 0 64px; border-radius: 8px; background: #eef4ff; color: #2b5fc7; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; text-align: center; overflow: hidden; position: relative; }
-.catalog-card__badge img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.catalog-card__badge img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fff; display: block; }
 .catalog-card__body { flex: 1; min-width: 0; }
 .catalog-card__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; font-size: 13px; }
 .catalog-card__score { flex: 0 0 auto; font-size: 11px; color: #909399; white-space: nowrap; }
@@ -4516,19 +5086,61 @@ export default {
 }
 
 /* Rediseño — barra de totales fija arriba del tab (formato referencia) */
+/* Franja de resumen (mockup v26): métricas con divisores y TOTAL fijo a la derecha */
 .precot-totals {
   position: sticky; top: 0; z-index: 20;
-  background: #fff; border: 1px solid #ebeef5; border-radius: 6px;
-  padding: 8px 12px; margin-bottom: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.04);
+  display: flex; align-items: stretch;
+  background: #fff; border: 1px solid #e5e9f2; border-radius: 6px;
+  margin-bottom: 12px; overflow: hidden;
 }
-.precot-totals__grid { display: flex; flex-wrap: wrap; gap: 6px 14px; }
-.precot-total { flex: 1 1 0; min-width: 86px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
-.precot-total--wide { flex: 1.7 1 0; min-width: 112px; }
-.precot-total__label { font-size: 10px; color: #909399; white-space: nowrap; }
-.precot-total > span:last-child, .precot-total .el-tag { font-size: 12px; color: #303133; }
-.precot-total--total { flex: 1.3 1 0; align-items: flex-end; }
-.precot-total--total strong { font-size: 15px; color: #303133; }
+.precot-totals__grid {
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: center;
+  overflow-x: auto; min-height: 62px; padding: 5px 2px;
+}
+.precot-total {
+  flex: 1 0 auto; min-width: 96px; padding: 5px 10px;
+  border-right: 1px solid #e9edf5;
+  display: flex; flex-direction: column; justify-content: center; gap: 6px;
+}
+.precot-total--ultimo { border-right: 0; }
+.precot-total--wide { min-width: 150px; }
+.precot-total__label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .35px; font-weight: 700;
+  color: #7d8b9e; line-height: 1.1; white-space: nowrap;
+}
+.precot-total__label .el-icon-info { cursor: help; }
+.precot-total > span:last-child {
+  font-size: 12.5px; font-weight: 700; color: #27384c; white-space: nowrap;
+  line-height: 1.2; font-variant-numeric: tabular-nums;
+}
+.precot-total--ganancia > span:last-child { color: #18865c; }
+.precot-estado {
+  display: inline-flex; align-items: center; gap: 6px; width: max-content;
+  padding: 4px 8px; border-radius: 5px; font-size: 11px; font-weight: 800;
+  color: #596579; background: #f2f5fa; border: 1px solid #e1e6ef;
+}
+.precot-estado:before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #8a94a6; }
+.precot-estado--borrador { color: #6f5a22; background: #fff7e9; border-color: #f1e5ce; }
+.precot-estado--borrador:before { background: #d6a33c; }
+.precot-estado--aprobada { color: #18865c; background: #eaf8f0; border-color: #c7ead6; }
+.precot-estado--aprobada:before { background: #18865c; }
+.precot-estado--rechazada { color: #c93c50; background: #fff0f1; border-color: #f2c4ca; }
+.precot-estado--rechazada:before { background: #c93c50; }
+.precot-estado--propuesta_emitida { color: #2f5f9e; background: #eef4fd; border-color: #cddcf3; }
+.precot-estado--propuesta_emitida:before { background: #2f5f9e; }
+/* Franja de etapa sobre los botones de acción */
+.precot-etapa { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border: 1px solid #ebeef5; border-radius: 4px; font-size: 12px; color: #606266; background: #fafafa; }
+.precot-etapa--emitida { color: #8a5a00; background: #fdf6ec; border-color: #f3d19e; }
+.precot-etapa--aprobada { color: #18865c; background: #eaf8f0; border-color: #c7ead6; }
+.precot-etapa--rechazada { color: #c93c50; background: #fff0f1; border-color: #f2c4ca; }
+.precot-total--total {
+  flex: 0 0 137px; min-width: 137px; border-right: 0;
+  padding: 9px 14px; border-left: 1px solid #d6e5f3; background: #f1f7ff;
+  text-align: right; align-items: flex-end; gap: 4px;
+  box-shadow: -4px 0 12px rgba(33, 75, 134, .035);
+}
+.precot-total--total .precot-total__label { color: #446587; }
+.precot-total--total strong { font-size: 17px; color: #075f9a; letter-spacing: -.45px; font-weight: 900; white-space: nowrap; }
 
 /* Rediseño — acordeones de ingreso (IA + kits) */
 .precot-collapse { border: 1px solid #ebeef5; border-radius: 6px; overflow: hidden; }
@@ -4552,7 +5164,8 @@ export default {
 .erp-costgrid .erp-span2 { grid-column: 1 / -1; }
 .detail-photo-drop { position: relative; min-height: 210px; border: 1px dashed #b9c7dd; border-radius: 7px; background: #f8fbff; display: flex; align-items: center; justify-content: center; text-align: center; color: #657083; cursor: pointer; overflow: hidden; padding: 14px; outline: 0; }
 .detail-photo-drop:hover, .detail-photo-drop:focus { border-color: #4f46e5; background: #f6f5ff; }
-.detail-photo-drop img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Fotos de producto contenidas: enteras, sin estirar ni recortar. */
+.detail-photo-drop img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fff; display: block; }
 .detail-photo-copy { position: relative; z-index: 1; }
 .detail-photo-copy strong { display: block; color: #2d3a50; font-size: 15px; }
 .detail-photo-copy span { display: block; margin-top: 4px; font-size: 12px; }
@@ -4582,7 +5195,7 @@ export default {
 .image-ref-empty { padding: 8px 0; }
 .image-ref-loaded { display: flex; gap: 16px; align-items: flex-start; }
 .image-ref-thumb {
-  width: 140px; height: 140px; object-fit: cover;
+  width: 140px; height: 140px; object-fit: contain;
   border-radius: 8px; border: 1px solid #ddd; cursor: zoom-in;
   background: #fafafa;
 }
@@ -4595,7 +5208,7 @@ export default {
 .item-foto-click { cursor: pointer; }
 .item-foto-click:hover { border-color: #4f46e5; }
 .item-foto-thumb {
-  width: 48px; height: 48px; object-fit: cover;
+  width: 48px; height: 48px; object-fit: contain;
   border-radius: 4px; border: 1px solid #ddd; background: #fafafa;
 }
 .item-foto-empty {
@@ -4856,7 +5469,7 @@ export default {
 .kit-summary .metric strong { font-size: 14px; color: #303133; }
 .kit-detail__grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px 14px; margin-bottom: 10px; }
 .kit-detail__photo { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-.kit-photo-thumb { width: 110px; height: 82px; object-fit: cover; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; }
+.kit-photo-thumb { width: 110px; height: 82px; object-fit: contain; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; }
 .kit-detail__subtitle { font-size: 13px; color: #606266; margin: 6px 0 8px; }
 .tiers-section__title { font-size: 13px; color: #606266; margin-bottom: 8px; }
 .tiers-section__title i { color: #67c23a; margin-right: 4px; }

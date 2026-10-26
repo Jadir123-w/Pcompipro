@@ -163,7 +163,9 @@ class QuotationCalculationEngine
             ->orderBy('id')
             ->first();
 
-        if ($selected) {
+        // El ganador manda solo cuando ya tiene precio; con 0 se mantiene el costo
+        // del ítem (el del catálogo, si la IA encontró el producto).
+        if ($selected && (float) $selected->costo_base > 0) {
             return (float) $selected->costo_base;
         }
 

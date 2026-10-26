@@ -41,8 +41,9 @@
         <div>
           <strong>N° Cotización:</strong>
           <span class="cf-num">{{ proposal.numero_cotizacion }}</span>
-          <el-tag :type="estadoTagType(proposal.estado)" size="small" style="margin-left:8px;">
-            {{ proposal.estado }}
+          <!-- Mismo estado que Pre-cotización y Preview (sale de la pre-cotización). -->
+          <el-tag :type="prequote ? tipoEstado(prequote) : estadoTagType(proposal.estado)" size="small" style="margin-left:8px;">
+            {{ prequote ? etiquetaEstado(prequote) : proposal.estado }}
           </el-tag>
         </div>
         <div>
@@ -56,6 +57,10 @@
           </el-button>
         </div>
       </div>
+
+      <el-alert v-if="bloqueadaPorPreCotizacion" type="info" :closable="false" show-icon class="mb-2"
+                :title="'Solo lectura: la pre-cotización está ' + etapaPreCotizacion + '.' + siguientePasoBloqueo">
+      </el-alert>
 
       <!-- ────────────────────────────────────────────────────────────
            COLLAPSE: 5 secciones plegables
@@ -326,19 +331,19 @@
                    :loading="sendingTest" @click="sendTestEmail">
           Enviar correo de prueba
         </el-button>
-        <el-button v-if="isEditable" type="success" size="small" icon="el-icon-s-promotion"
+        <el-button v-if="mostrarEmision && isEditable" type="success" size="small" icon="el-icon-s-promotion"
                    :loading="emitting" @click="emitToClient">
           Emitir al cliente
         </el-button>
-        <el-button v-if="proposal.estado === 'emitida'" type="warning" size="small"
+        <el-button v-if="mostrarEmision && proposal.estado === 'emitida'" type="warning" size="small"
                    icon="el-icon-message" @click="changeStatus('enviada_cliente')">
           Marcar como "Enviada al cliente"
         </el-button>
-        <el-button v-if="canApprove" type="success" size="small" icon="el-icon-circle-check"
+        <el-button v-if="mostrarEmision && canApprove" type="success" size="small" icon="el-icon-circle-check"
                    @click="changeStatus('aprobada_cliente')">
           Cliente aprobó
         </el-button>
-        <el-button v-if="canReject" type="danger" size="small" icon="el-icon-circle-close"
+        <el-button v-if="mostrarEmision && canReject" type="danger" size="small" icon="el-icon-circle-close"
                    @click="changeStatus('rechazada_cliente')" plain>
           Cliente rechazó
         </el-button>
@@ -349,6 +354,9 @@
 </template>
 
 <script>
+import { avisar } from '../../helpers/avisos'
+import { etiquetaEstadoPreCotizacion, tipoEstadoPreCotizacion } from '../../helpers/estadoPreCotizacion'
+
 export default {
   name: 'TabCotizacionFinal',
   props: {
@@ -363,6 +371,9 @@ export default {
   },
   data() {
     return {
+      // Emisión y respuesta del cliente ocultas en esta etapa: se marcan en la
+      // pestaña Pre-cotización (aún no se envía el PDF desde aquí).
+      mostrarEmision: false,
       loading: false,
       generating: false,
       regenerating: false,
@@ -407,7 +418,35 @@ export default {
   },
   computed: {
     isEditable() {
-      return this.proposal && this.proposal.estado === 'borrador'
+      // Un solo estado para el bloque: manda la pre-cotización (el estado propio de la
+      // propuesta es del flujo anterior y ya no decide nada).
+      if (!this.proposal) return false
+      if (!this.prequote) return this.proposal.estado === 'borrador'
+      return !this.bloqueadaPorPreCotizacion
+    },
+    // Pre-cotización, Preview y Cotización final son un bloque: si la pre-cotización
+    // se emitió (o está aprobada, rechazada o convertida), aquí tampoco se edita.
+    bloqueadaPorPreCotizacion() {
+      var pq = this.prequote
+      if (!pq) return false
+      return !!pq.quotation_id || ['borrador', 'en_revision', 'ajustada'].indexOf(pq.estado) === -1
+    },
+    etapaPreCotizacion() {
+      var pq = this.prequote || {}
+      if (pq.quotation_id) return 'aprobada y convertida a cotización formal'
+      var etapas = { propuesta_emitida: 'emitida al cliente', aprobada: 'aprobada por el cliente', rechazada: 'rechazada por el cliente', validada: 'validada' }
+      return etapas[pq.estado] || pq.estado
+    },
+    // Qué hacer para salir del bloqueo, según la etapa (botones de Pre-cotización).
+    siguientePasoBloqueo() {
+      var pq = this.prequote || {}
+      if (pq.quotation_id) return ''
+      var pasos = {
+        propuesta_emitida: ' Para editar, marca «Pidió cambios» en la pestaña Pre-cotización.',
+        rechazada: ' Para editar, marca «Reabrir» en la pestaña Pre-cotización.',
+        aprobada: ' El siguiente paso es «Convertir a cotización formal» en la pestaña Pre-cotización.',
+      }
+      return pasos[pq.estado] || ''
     },
     moneySign() {
       return this.proposal && this.proposal.moneda === 'USD' ? '$' : 'S/'
@@ -434,6 +473,17 @@ export default {
     }
   },
   methods: {
+    // Estado del bloque (helpers/estadoPreCotizacion): el mismo en las tres pestañas.
+    etiquetaEstado(prequote) {
+      return etiquetaEstadoPreCotizacion(prequote)
+    },
+    tipoEstado(prequote) {
+      return tipoEstadoPreCotizacion(prequote)
+    },
+    // Ventana con "Entendido" (helpers/avisos).
+    avisar(mensaje, tipo) {
+      return avisar(this, mensaje, tipo)
+    },
     // ══════════════════════════════════════════════════════════════
     // Carga inicial: busca prequote del requerimiento → si hay, busca proposal
     // ══════════════════════════════════════════════════════════════
@@ -498,7 +548,7 @@ export default {
       } catch (e) {
         var msg = e.response && e.response.data && e.response.data.message
           ? e.response.data.message : 'Error generando la Cotización Final'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
       }
       this.generating = false
     },
@@ -589,7 +639,7 @@ export default {
       } catch (e) {
         var msg = e.response && e.response.data && e.response.data.message
           ? e.response.data.message : 'Error guardando cambios'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
       }
       this.saving = false
     },
@@ -625,7 +675,7 @@ export default {
           this.$message.success(msg)
         }
       } catch (e) {
-        this.$message.error('Error regenerando con IA')
+        this.avisar('Error regenerando con IA', 'error')
       }
       this.regenerating = false
     },
@@ -647,7 +697,7 @@ export default {
         this.$message.success('PDF generado')
         window.open(this.pdfUrl, '_blank')
       } catch (e) {
-        this.$message.error('Error generando PDF')
+        this.avisar('Error generando PDF', 'error')
       }
       this.generatingPdf = false
     },
@@ -695,7 +745,7 @@ export default {
         if (response.data && response.data.success) {
           this.$message.success(response.data.message || 'Correo de prueba enviado')
         } else {
-          this.$message.warning((response.data && response.data.message) || 'No se pudo enviar el correo de prueba')
+          this.avisar((response.data && response.data.message) || 'No se pudo enviar el correo de prueba')
         }
       } catch (e) {
         var status = e.response && e.response.status
@@ -703,9 +753,9 @@ export default {
           ? e.response.data.message : 'Error enviando el correo de prueba'
         // 422 = correo de prueba no configurado: es una guía para el usuario, no un error técnico
         if (status === 422) {
-          this.$message.warning(msg)
+          this.avisar(msg)
         } else {
-          this.$message.error(msg)
+          this.avisar(msg, 'error')
         }
       }
       this.sendingTest = false
@@ -739,7 +789,7 @@ export default {
       } catch (e) {
         var msg = e.response && e.response.data && e.response.data.message
           ? e.response.data.message : 'Error emitiendo la cotización'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
       }
       this.emitting = false
     },
@@ -757,7 +807,7 @@ export default {
       } catch (e) {
         var msg = e.response && e.response.data && e.response.data.message
           ? e.response.data.message : 'Error cambiando estado'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
       }
     },
 
@@ -997,7 +1047,7 @@ export default {
 
 /* Miniatura de foto del ítem (solo lectura) */
 .cf-foto-thumb {
-  width: 40px; height: 40px; object-fit: cover;
+  width: 40px; height: 40px; object-fit: contain;
   border-radius: 4px; border: 1px solid #ddd; background: #fafafa;
   vertical-align: middle;
 }

@@ -15,16 +15,14 @@ use Illuminate\Support\Facades\Log;
  * Estrategia (sin dependencias externas):
  *   1. Pre-filter SQL con LIKE %tokens% sobre name+description+text_filter
  *      para reducir candidatos a ~50 (evita escanear miles).
- *   2. Scoring fino en PHP combinando:
- *        - exact_match  (40%): query es substring del item.name
- *        - name_sim     (30%): similar_text(query, item.name) / 100
- *        - desc_sim     (10%): similar_text(query, item.description) / 100
- *        - token_overlap(20%): |tokens(q) ∩ tokens(item.fields)| / |tokens(q)|
- *   3. Ranking + decisión:
- *        - top_score >= 0.85 → high confidence, no review
- *        - top_score < 0.40  → no match (item_id=null), no review
- *        - de lo contrario → ambiguous, needs_review=true
- *        - también marca review si top1-top2 < 0.10 (empate cercano)
+ *   2. Puntaje 0..1 contra el NOMBRE REAL del producto (items.description, p. ej.
+ *      "CASACA CORTAVIENTO"; items.name suele ser la ficha larga). Es el mayor entre:
+ *        - cobertura: palabras de la búsqueda presentes en el nombre real, en cualquier
+ *          orden, sin tildes, mayúsculas ni plurales (las que solo están en la ficha
+ *          larga valen la mitad);
+ *        - parecido del nombre completo (similitudNombres).
+ *   3. Solo cuenta lo que llega a MIN_SCORE (80%): por debajo no se muestra ni se
+ *      asocia. Si hay más de uno arriba del mínimo y muy parejos → revisar.
  *
  * Devuelve siempre estructura uniforme:
  *   [
@@ -37,11 +35,14 @@ use Illuminate\Support\Facades\Log;
  */
 class ProductMatchingService
 {
-    /** Score >= este → confianza alta, no review */
-    const HIGH_CONFIDENCE_THRESHOLD = 0.85;
+    /** Mínimo para mostrar un producto o asociarlo (0..1). Más adelante, 0.90. */
+    const MIN_SCORE = 0.80;
+
+    /** Score >= este → coincidencia (sin banda intermedia: o llega al mínimo o no cuenta) */
+    const HIGH_CONFIDENCE_THRESHOLD = self::MIN_SCORE;
 
     /** Score < este → no se considera un match real */
-    const NO_MATCH_THRESHOLD = 0.40;
+    const NO_MATCH_THRESHOLD = self::MIN_SCORE;
 
     /** Si top1 - top2 < esta diferencia → review (empate cercano) */
     const TIE_GAP = 0.10;
@@ -182,7 +183,10 @@ class ProductMatchingService
         $scored = [];
         foreach ($candidates as $item) {
             $scoreData = $this->scoreItem($item, $primaryNorm, $tokens, $query);
-            // Para búsqueda manual, devolvemos también scores bajos pero ordenados
+            // Solo los que llegan al mínimo (antes salían también los de 13%).
+            if ($scoreData['score'] < self::MIN_SCORE) {
+                continue;
+            }
             $sum = $this->itemSummary($item);
             $sum['score']  = round($scoreData['score'], 3);
             $sum['reason'] = $scoreData['reason'];
@@ -258,75 +262,91 @@ class ProductMatchingService
      */
     private function scoreItem($item, $primaryNorm, array $enrichedTokens, $rawProductName)
     {
-        $itemNameNorm = $this->normalize((string) $item->name);
-        $itemDescNorm = $this->normalize((string) $item->description);
-        $itemFullNorm = trim($itemNameNorm . ' ' . $itemDescNorm . ' ' . $this->normalize((string) $item->text_filter));
+        // Nombre real del producto: en este catálogo es items.description; items.name
+        // suele traer la ficha larga. Si no hay descripción, se usa name.
+        $nombreReal = trim((string) $item->description) !== '' ? (string) $item->description : (string) $item->name;
+        $ficha = trim($item->name . ' ' . $item->second_name . ' ' . $item->text_filter);
 
-        $itemTokens = $this->tokenize($itemFullNorm);
+        $buscadas = $this->palabrasSingular($primaryNorm);
+        if (empty($buscadas)) {
+            return ['score' => 0.0, 'breakdown' => [], 'reason' => 'sin palabras para comparar'];
+        }
+        $enNombre = array_flip($this->palabrasSingular($nombreReal));
+        $enFicha = array_flip($this->palabrasSingular($ficha));
 
-        // 1) Exact match — productName es substring del item.name, o viceversa
-        // Esta es la señal más fuerte: si "polo" aparece literalmente en el
-        // nombre del item, alta probabilidad de match.
-        $exact = 0.0;
-        if ($itemNameNorm !== '' && $primaryNorm !== '') {
-            if (strpos($itemNameNorm, $primaryNorm) !== false) {
-                // Toda la query está dentro del nombre del item.
-                // Boost extra si la query es sustancial (>=4 chars).
-                $exact = mb_strlen($primaryNorm) >= 4 ? 1.0 : 0.85;
-            } elseif (strpos($primaryNorm, $itemNameNorm) !== false && mb_strlen($itemNameNorm) >= 4) {
-                // El nombre del item es contenido en la query (ej: query="100 mochilas eco" contiene "mochila")
-                $exact = 0.90;
+        // 1) Cobertura: palabras buscadas presentes en el nombre real (en la ficha, media).
+        $puntos = 0.0;
+        foreach ($buscadas as $palabra) {
+            if (isset($enNombre[$palabra])) {
+                $puntos += 1.0;
+            } elseif (isset($enFicha[$palabra])) {
+                $puntos += 0.5;
             }
         }
+        $cobertura = $puntos / count($buscadas);
 
-        // 2) similar_text contra el nombre del item (productName vs item.name)
-        $nameSim = 0.0;
-        if ($itemNameNorm !== '' && $primaryNorm !== '') {
-            similar_text($primaryNorm, $itemNameNorm, $pct);
-            $nameSim = $pct / 100.0;
+        // 2) Parecido del nombre completo (mismo criterio que lo ya cotizado).
+        $parecido = $this->similitudNombres($rawProductName, $nombreReal);
+
+        $score = max(0.0, min(1.0, max($cobertura, $parecido)));
+
+        if ($cobertura >= 1.0) {
+            $reason = 'todas las palabras coinciden';
+        } elseif ($parecido >= self::MIN_SCORE) {
+            $reason = 'nombre muy similar';
+        } elseif ($score > 0) {
+            $reason = 'similitud parcial';
+        } else {
+            $reason = 'baja similitud';
         }
-
-        // 3) similar_text contra la descripción
-        $descSim = 0.0;
-        if ($itemDescNorm !== '' && $primaryNorm !== '') {
-            similar_text($primaryNorm, $itemDescNorm, $pctd);
-            $descSim = $pctd / 100.0;
-        }
-
-        // 4) Token overlap (usa los tokens enriquecidos con descripción)
-        $tokenOverlap = 0.0;
-        if (!empty($enrichedTokens) && !empty($itemTokens)) {
-            $itemSet = array_flip($itemTokens);
-            $matches = 0;
-            foreach ($enrichedTokens as $t) {
-                if (isset($itemSet[$t])) $matches++;
-            }
-            $tokenOverlap = $matches / count($enrichedTokens);
-        }
-
-        // Weighted combination — exact pesa más porque es la señal más fuerte
-        $score = (0.50 * $exact) + (0.20 * $nameSim) + (0.05 * $descSim) + (0.25 * $tokenOverlap);
-        $score = max(0.0, min(1.0, $score));
-
-        // Razón legible para mostrar en UI
-        $reasons = [];
-        if ($exact >= 1.0) $reasons[] = 'nombre coincide exactamente';
-        elseif ($exact >= 0.85) $reasons[] = 'nombre coincide en gran parte';
-        if ($nameSim >= 0.7 && $exact < 0.85) $reasons[] = 'nombre muy similar';
-        if ($tokenOverlap >= 0.7 && $exact < 0.85) $reasons[] = 'comparten varias palabras clave';
-        if (empty($reasons) && $score > 0) $reasons[] = 'similitud parcial';
-        $reason = implode(' · ', $reasons) ?: 'baja similitud';
 
         return [
             'score'     => $score,
             'breakdown' => [
-                'exact'         => round($exact, 3),
-                'name_sim'      => round($nameSim, 3),
-                'desc_sim'      => round($descSim, 3),
-                'token_overlap' => round($tokenOverlap, 3),
+                'cobertura' => round($cobertura, 3),
+                'parecido'  => round($parecido, 3),
             ],
             'reason' => $reason,
         ];
+    }
+
+    /**
+     * Palabras útiles del texto, normalizadas y en singular ("libretas" → "libreta").
+     *
+     * @param  string  $texto
+     * @return array
+     */
+    private function palabrasSingular($texto)
+    {
+        return array_values(array_unique(array_map(function ($w) {
+            if (mb_strlen($w) > 4 && substr($w, -2) === 'es') return substr($w, 0, -2);
+            if (mb_strlen($w) > 3 && substr($w, -1) === 's') return substr($w, 0, -1);
+            return $w;
+        }, $this->tokenize($this->normalize($texto)))));
+    }
+
+    /**
+     * Similitud (0..1) entre dos nombres de producto: sin tildes, mayúsculas ni signos, y
+     * con las palabras en singular. Es la mayor entre la similitud de texto y la de
+     * palabras en común (mismo nombre con las palabras en otro orden = 1).
+     *
+     * @param  string  $a
+     * @param  string  $b
+     * @return float
+     */
+    public function similitudNombres($a, $b)
+    {
+        $ta = $this->palabrasSingular($a);
+        $tb = $this->palabrasSingular($b);
+        if (empty($ta) || empty($tb)) return 0.0;
+
+        sort($ta);
+        sort($tb);
+        similar_text(implode(' ', $ta), implode(' ', $tb), $pct);
+        $comunes = count(array_intersect($ta, $tb));
+        $jaccard = $comunes / count(array_unique(array_merge($ta, $tb)));
+
+        return max($pct / 100.0, $jaccard);
     }
 
     /**

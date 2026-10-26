@@ -23,8 +23,8 @@
       <div class="pe-toolbar">
         <div>
           <strong>Vista previa de la propuesta</strong>
-          <el-tag :type="estadoTagType(prequote.estado)" size="small" style="margin-left:8px;">
-            {{ prequote.estado }}
+          <el-tag :type="tipoEstado(prequote)" size="small" style="margin-left:8px;">
+            {{ etiquetaEstado(prequote) }}
           </el-tag>
           <span class="pe-hint">
             Edita aquí los detalles del bloque. La cantidad y los costos se editan en la pestaña Pre-Cotización.
@@ -113,11 +113,9 @@
                      que la pestaña Proveedores, y por eso al tocar uno se movía el
                      otro y era imposible tener 19 días de producción y 20 a 22 de
                      entrega a la vez. -->
-                <el-input v-model="item.tiempo_entrega" type="textarea"
-                          :autosize="{ minRows: 1, maxRows: 4 }" size="mini"
-                          :disabled="!isEditable" @input="markDirty(item)"
-                          placeholder="Ej. 20 a 22 días útiles"
-                          title="Plazo ofrecido al cliente (texto libre)"></el-input>
+                <!-- Número o rango; "días útiles" lo completa el control (igual que en Pre-Cotización). -->
+                <campo-dias-utiles v-model="item.tiempo_entrega" :disabled="!isEditable"
+                                   @input="markDirty(item)"></campo-dias-utiles>
               </td>
               <td class="detalles">
                 <div class="detalle-editor">
@@ -308,7 +306,13 @@ const MARCADORES = {
 /** Los colores se excluyen entre sí: aplicar uno reemplaza al anterior. */
 const COLORES = ['rojo', 'azul', 'verde']
 
+import CampoDiasUtiles from '../../components/CampoDiasUtiles.vue'
+import { esDiasUtilesValido } from '../../helpers/diasUtiles'
+import { avisar } from '../../helpers/avisos'
+import { etiquetaEstadoPreCotizacion, tipoEstadoPreCotizacion } from '../../helpers/estadoPreCotizacion'
+
 export default {
+  components: { CampoDiasUtiles },
   name: 'TabPreviewEditable',
   props: {
     requerimientoId: { type: [Number, String], default: null },
@@ -353,6 +357,17 @@ export default {
     }
   },
   methods: {
+    // Estado del bloque (helpers/estadoPreCotizacion): el mismo en las tres pestañas.
+    etiquetaEstado(prequote) {
+      return etiquetaEstadoPreCotizacion(prequote)
+    },
+    tipoEstado(prequote) {
+      return tipoEstadoPreCotizacion(prequote)
+    },
+    // Ventana con "Entendido" (helpers/avisos).
+    avisar(mensaje, tipo) {
+      return avisar(this, mensaje, tipo)
+    },
     // ══════════════════════════════════════════════════════════════
     // Carga del prequote (mismo patrón que TabPreCotizacion)
     // ══════════════════════════════════════════════════════════════
@@ -643,7 +658,7 @@ export default {
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message)
           || 'No se pudo guardar el código del artículo'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
         // Se deja lo escrito en pantalla para que se pueda corregir y reintentar.
       } finally {
         this.savingCodigoId = null
@@ -669,7 +684,11 @@ export default {
         return !i.product_name || !i.product_name.trim()
       })
       if (invalid.length > 0) {
-        this.$message.warning('El nombre del producto (Artículo) es obligatorio en los ítems editados.')
+        this.avisar('El nombre del producto (Artículo) es obligatorio en los ítems editados.')
+        return
+      }
+      if (itemsToSave.some(function (i) { return !esDiasUtilesValido(i.tiempo_entrega) })) {
+        this.avisar('El tiempo de entrega debe ser un número (8) o un rango (10 a 12).')
         return
       }
 
@@ -723,11 +742,7 @@ export default {
               ? e.response.data.message : (e.message || 'error desconocido')
             return status ? '(' + status + ') ' + apiMsg : apiMsg
           }).join('; ')
-          this.$message({
-            message: failures.length + ' de ' + itemsToSave.length + ' ítem(s) fallaron al guardar: ' + msgs,
-            type: 'error',
-            duration: 8000
-          })
+          this.avisar(failures.length + ' de ' + itemsToSave.length + ' ítem(s) fallaron al guardar: ' + msgs, 'error')
           // Refrescar totales con la última respuesta OK, sin recargar
           // (para no perder las ediciones de los ítems que fallaron)
           if (successes.length > 0) {
@@ -789,13 +804,13 @@ export default {
       // Validación cliente espejo del backend (mime + 5MB)
       var allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
       if (allowed.indexOf(file.type) === -1) {
-        this.$message.error('Tipo de imagen no permitido. Solo JPG, PNG, WEBP o GIF.')
+        this.avisar('Tipo de imagen no permitido. Solo JPG, PNG, WEBP o GIF.', 'error')
         this.uploadingItemImageId = null
         if (this.$refs.itemImageInput) this.$refs.itemImageInput.value = ''
         return
       }
       if (file.size > 5 * 1024 * 1024) {
-        this.$message.error('La imagen excede 5 MB.')
+        this.avisar('La imagen excede 5 MB.', 'error')
         this.uploadingItemImageId = null
         if (this.$refs.itemImageInput) this.$refs.itemImageInput.value = ''
         return
@@ -814,11 +829,11 @@ export default {
           this.markItemHasImage(itemId, resp.data.image ? resp.data.image.path : true)
           this.itemImageVersion++
         } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo subir la imagen')
+          this.avisar((resp.data && resp.data.message) || 'No se pudo subir la imagen', 'error')
         }
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message) || 'Error subiendo imagen'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
       } finally {
         this.uploadingItemImageId = null
         if (this.$refs.itemImageInput) this.$refs.itemImageInput.value = ''
@@ -841,11 +856,11 @@ export default {
           this.markItemHasImage(item.id, null)
           this.itemImageVersion++
         } else {
-          this.$message.error((resp.data && resp.data.message) || 'No se pudo eliminar la imagen')
+          this.avisar((resp.data && resp.data.message) || 'No se pudo eliminar la imagen', 'error')
         }
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message) || 'Error eliminando imagen'
-        this.$message.error(msg)
+        this.avisar(msg, 'error')
       }
     },
 

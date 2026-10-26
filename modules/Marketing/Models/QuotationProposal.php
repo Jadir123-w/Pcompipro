@@ -207,7 +207,25 @@ class QuotationProposal extends ModelTenant
      */
     public function isEditable()
     {
-        return $this->estado === self::ESTADO_BORRADOR;
+        // Un solo estado para el bloque: manda la pre-cotización. El `estado` propio de
+        // la proposal (borrador/emitida/…) es del flujo anterior y ya no decide nada.
+        if ($this->prequote === null) {
+            return $this->estado === self::ESTADO_BORRADOR;
+        }
+        return !$this->bloqueadaPorPreCotizacion();
+    }
+
+    /**
+     * Pre-cotización, Preview y Cotización final son un solo bloque: si la
+     * pre-cotización no se puede editar (emitida, aprobada, rechazada o convertida),
+     * la Cotización final tampoco. "Pidió cambios" o "Reabrir" la liberan.
+     *
+     * @return bool
+     */
+    public function bloqueadaPorPreCotizacion()
+    {
+        $prequote = $this->prequote;
+        return $prequote !== null && (!$prequote->isEditable() || $prequote->isConverted());
     }
 
     /**

@@ -141,7 +141,7 @@ SIEMPRE responde en JSON válido. Sin texto adicional. Sin bloques markdown.
 # REGLAS CRÍTICAS
 
 1. SIEMPRE responde solo con JSON válido.
-2. NUNCA inventes productos que no estén en el texto.
+2. NUNCA inventes productos que no estén en el texto: devuelve solo los productos que el cliente menciona en el requerimiento, ni uno más.
 3. Si un texto menciona "varios" o "algunos" sin cantidad, pon quantity=0 y agrega warning.
 4. Si el texto es demasiado ambiguo para detectar productos, retorna items vacío con un warning.
 5. Separa SIEMPRE cada producto como ítem independiente, aunque vengan en la misma frase.
@@ -157,10 +157,3 @@ SIEMPRE responde en JSON válido. Sin texto adicional. Sin bloques markdown.
 
 Si el producto mencionado coincide con alguno del catálogo, usa el nombre exacto del catálogo y anota el item_id en observaciones.
 
----
-
-# CASOS HISTÓRICOS SIMILARES
-
-{{HISTORICAL_CASES}}
-
-Si encuentras coincidencias razonables con casos previos validados, úsalos como referencia para inferir proveedor probable, costo base aproximado, técnica de impresión, tiempo estimado y empaque. Esto NO es obligatorio: si el texto del cliente especifica algo distinto, prevalece lo del cliente.

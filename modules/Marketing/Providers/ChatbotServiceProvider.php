@@ -127,7 +127,8 @@ class ChatbotServiceProvider extends ServiceProvider
                 $app->make(QuotationCalculationEngine::class),
                 $app->make(MarginService::class),
                 $app->make(\Modules\Marketing\Services\ProductMatchingService::class),
-                $app->make(\Modules\Marketing\Services\VolumePricingService::class)
+                $app->make(\Modules\Marketing\Services\VolumePricingService::class),
+                $app->make(\Modules\Marketing\Services\CotizacionAnteriorService::class)
             );
         });
 

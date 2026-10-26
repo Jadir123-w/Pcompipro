@@ -194,4 +194,52 @@ class PreQuote extends ModelTenant
     {
         return $this->quotation_id !== null;
     }
+
+    /**
+     * Pasos permitidos entre estados (flujo de emisión al cliente):
+     * borrador → emitida → aprobada / borrador (pidió cambios) / rechazada → borrador (reabrir).
+     * Los estados antiguos (en_revision, ajustada, validada) pueden emitirse; validada,
+     * además, reabrirse. Aprobada solo sale al convertir a cotización formal.
+     */
+    const TRANSICIONES = [
+        self::ESTADO_BORRADOR          => [self::ESTADO_PROPUESTA_EMITIDA],
+        self::ESTADO_EN_REVISION       => [self::ESTADO_PROPUESTA_EMITIDA],
+        self::ESTADO_AJUSTADA          => [self::ESTADO_PROPUESTA_EMITIDA],
+        self::ESTADO_VALIDADA          => [self::ESTADO_PROPUESTA_EMITIDA, self::ESTADO_BORRADOR],
+        self::ESTADO_PROPUESTA_EMITIDA => [self::ESTADO_APROBADA, self::ESTADO_BORRADOR, self::ESTADO_RECHAZADA],
+        self::ESTADO_RECHAZADA         => [self::ESTADO_BORRADOR],
+    ];
+
+    /**
+     * ¿Se puede pasar del estado actual a $nuevo?
+     *
+     * @param  string  $nuevo
+     * @return bool
+     */
+    public function puedeCambiarA($nuevo)
+    {
+        if ($this->isConverted()) {
+            return false;
+        }
+        $permitidos = isset(self::TRANSICIONES[$this->estado]) ? self::TRANSICIONES[$this->estado] : [];
+        return in_array($nuevo, $permitidos, true);
+    }
+
+    /**
+     * ¿Se emitió al cliente alguna vez? Desde ahí ya no se regenera (se perdería lo
+     * enviado): solo se edita. Cuenta el estado actual y el historial de cambios.
+     *
+     * @return bool
+     */
+    public function fueEmitida()
+    {
+        if ($this->estado === self::ESTADO_PROPUESTA_EMITIDA || $this->isConverted()) {
+            return true;
+        }
+        $emitida = '%"' . self::ESTADO_PROPUESTA_EMITIDA . '"%';
+        return PreQuoteHistory::where('prequote_id', $this->id)
+            ->where('action', PreQuoteHistory::ACTION_STATUS_CHANGED)
+            ->where('changes', 'like', $emitida)
+            ->exists();
+    }
 }

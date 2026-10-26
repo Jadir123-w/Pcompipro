@@ -114,7 +114,8 @@ class QuotationProductController extends Controller
     public function manualMatch(Request $request, $id)
     {
         $v = Validator::make($request->all(), [
-            'item_id' => ['nullable', 'integer', 'min:1'],
+            'item_id'     => ['nullable', 'integer', 'min:1'],
+            'traer_datos' => ['nullable', 'boolean'],
         ]);
         if ($v->fails()) {
             return response()->json(['ok' => false, 'errors' => $v->errors()], 422);
@@ -155,6 +156,17 @@ class QuotationProductController extends Controller
         }
 
         $item->manualMatchTo($itemId);
+
+        // Traer del catálogo el nombre corto y la descripción (la pantalla avisó antes de
+        // reemplazarlos). Los demás campos no se tocan.
+        if ($catalogItem !== null && $request->input('traer_datos')) {
+            $datos = \Modules\Marketing\Support\FichaCatalogo::desdeCatalogo($catalogItem);
+            if ($datos['nombre'] !== '') {
+                $item->product_name = $datos['nombre'];
+            }
+            $item->product_description = $datos['descripcion'] !== '' ? $datos['descripcion'] : $item->product_description;
+            $item->save();
+        }
 
         // Auto-traer el costo desde el catálogo cuando:
         //   1. Se asoció un producto del catálogo (itemId != null), y

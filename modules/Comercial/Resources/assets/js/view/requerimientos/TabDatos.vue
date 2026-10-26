@@ -47,7 +47,7 @@ CAMBIOS EN V5:
                 :remote-method="searchEmpresas"
                 :loading="loadingEmpresas"
                 @change="onEmpresaChange"
-                class="flex-input"
+                class="flex-input select-legible"
               >
                 <el-option
                   v-for="empresa in empresasOptions"
@@ -840,6 +840,13 @@ export default {
 </script>
 
 <style scoped>
+/* Empresa bloqueada al editar: texto legible, no el gris tenue por defecto (igual que en contactos) */
+.select-legible >>> .el-input.is-disabled .el-input__inner {
+  color: #303133;
+  -webkit-text-fill-color: #303133;
+  background-color: #f5f7fa;
+  cursor: not-allowed;
+}
 .tab-datos {
   padding: 15px 20px;
 }

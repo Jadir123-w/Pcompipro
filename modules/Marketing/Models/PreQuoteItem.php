@@ -78,6 +78,8 @@ class PreQuoteItem extends ModelTenant
         'datos_explicitos',
         'datos_inferidos',
         'observaciones',
+        // Producto ya cotizado en otro requerimiento (JSON; ver CotizacionAnteriorService).
+        'cotizacion_anterior',
         'is_inferred',
     ];
 
@@ -170,6 +172,7 @@ class PreQuoteItem extends ModelTenant
         // campos del ítem que la IA infirió (material, medida, técnica, empaque, etc.).
         'datos_explicitos'         => 'array',
         'datos_inferidos'          => 'array',
+        'cotizacion_anterior'      => 'array',
     ];
 
     /*
@@ -253,6 +256,60 @@ class PreQuoteItem extends ModelTenant
     | Helpers
     |--------------------------------------------------------------------------
     */
+
+    /**
+     * Proveedor ganador del ítem para pasar al proyecto: el elegido en la comparativa
+     * (`quotation_items_supplier`, seleccionado = 1). Si el ítem no tiene comparativa
+     * (pre-cotizaciones anteriores), se usan los datos que guardaba el propio ítem.
+     * El costo sigue la misma regla que el cálculo: el del ganador si es mayor a 0.
+     *
+     * @return array  ['supplier_id' => int|null, 'supplier_name' => string|null, 'costo_base' => float, 'tiempo' => string]
+     */
+    public function proveedorGanador()
+    {
+        $ganador = $this->relationLoaded('winningItemSupplier')
+            ? $this->winningItemSupplier
+            : $this->winningItemSupplier()->first();
+
+        if ($ganador && (int) $ganador->supplier_id > 0) {
+            return [
+                'supplier_id'   => (int) $ganador->supplier_id,
+                'supplier_name' => $ganador->supplier_name,
+                'costo_base'    => (float) $ganador->costo_base > 0 ? (float) $ganador->costo_base : (float) $this->costo_base,
+                'tiempo'        => trim((string) $ganador->tiempo_estimado_dias),
+            ];
+        }
+
+        return [
+            'supplier_id'   => (int) $this->supplier_id > 0 ? (int) $this->supplier_id : null,
+            'supplier_name' => $this->supplier_name,
+            'costo_base'    => (float) $this->costo_base,
+            'tiempo'        => trim((string) $this->tiempo_estimado_dias),
+        ];
+    }
+
+    /**
+     * Los demás proveedores cotizados en la comparativa (no ganadores, con proveedor):
+     * pasan al proyecto como respaldo, con su precio y tiempo cotizados.
+     *
+     * @return array  [['supplier_id', 'supplier_name', 'costo_base', 'tiempo', 'cotizado_el'], ...]
+     */
+    public function proveedoresRespaldo()
+    {
+        $filas = $this->relationLoaded('itemSuppliers') ? $this->itemSuppliers : $this->itemSuppliers()->get();
+
+        return $filas->filter(function ($fila) {
+            return (int) $fila->seleccionado !== 1 && (int) $fila->supplier_id > 0;
+        })->map(function ($fila) {
+            return [
+                'supplier_id'   => (int) $fila->supplier_id,
+                'supplier_name' => $fila->supplier_name,
+                'costo_base'    => (float) $fila->costo_base,
+                'tiempo'        => trim((string) $fila->tiempo_estimado_dias),
+                'cotizado_el'   => $fila->created_at ? $fila->created_at->format('Y-m-d') : null,
+            ];
+        })->values()->all();
+    }
 
     /**
      * Agosto 2026 (punto 9) · Plazo que se le comunica al CLIENTE.

@@ -17,8 +17,9 @@ CAMBIOS EN V2:
     />
 
     <div v-else class="cotizaciones-container">
-      <!-- Formulario -->
-      <el-card shadow="never" class="form-card">
+      <!-- Formulario (oculto): las cotizaciones las arma el cotizador del sistema y el
+           PDF se genera al pedirlo; subir archivos aquí ya no aplica. Se quitará. -->
+      <el-card v-if="mostrarSubirCotizacion" shadow="never" class="form-card">
         <div slot="header" class="card-header">
           <span>Subir nueva cotización</span>
         </div>
@@ -188,6 +189,8 @@ export default {
 
   data: function() {
     return {
+      // "Subir nueva cotización" oculto: lo reemplaza el cotizador (Pre-cotización).
+      mostrarSubirCotizacion: false,
       formData: {
         archivo: null,
         monto: null,

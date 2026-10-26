@@ -35,29 +35,38 @@ class QuotationOrchestrator
 
     /** @var VolumePricingService */
     private $volumePricing;
+    /** @var CotizacionAnteriorService */
+    protected $cotizacionAnterior;
 
     public function __construct(
         QuotationAIEngine $aiEngine,
         QuotationCalculationEngine $calcEngine,
         MarginService $marginService,
         ProductMatchingService $productMatcher,
-        VolumePricingService $volumePricing
+        VolumePricingService $volumePricing,
+        CotizacionAnteriorService $cotizacionAnterior
     ) {
         $this->aiEngine       = $aiEngine;
         $this->calcEngine     = $calcEngine;
         $this->marginService  = $marginService;
         $this->productMatcher = $productMatcher;
         $this->volumePricing  = $volumePricing;
+        $this->cotizacionAnterior = $cotizacionAnterior;
     }
 
     /**
      * Generar una precotización desde texto libre.
      *
+     * Si la IA no devuelve productos no se guarda nada (antes quedaba una pre-cotización
+     * vacía por cada intento fallido). Con $existente, sus ítems se reemplazan por los
+     * nuevos en una sola transacción: si algo falla, los ítems actuales quedan intactos.
+     *
      * @param  string    $text       Texto del requerimiento
      * @param  array     $context    Contexto: empresa_id, contacto_id, requerimiento_id, user_id, etc.
+     * @param  PreQuote|null  $existente  Pre-cotización a regenerar en el mismo registro
      * @return PreQuote
      */
-    public function generateFromText($text, array $context = [])
+    public function generateFromText($text, array $context = [], PreQuote $existente = null)
     {
         Log::info('QuotationOrchestrator: generando precotización', [
             'text_length'      => strlen($text),
@@ -69,15 +78,20 @@ class QuotationOrchestrator
         // pasa al provider como input multimodal junto con el texto.
         $interpretation = $this->aiEngine->interpretRequirement($text, $context);
 
-        // Verificar si hay ítems
+        // Verificar si hay ítems: sin productos no se crea ni se modifica nada.
         if (empty($interpretation['items'])) {
             Log::warning('QuotationOrchestrator: no se detectaron ítems', [
                 'warnings' => isset($interpretation['warnings']) ? $interpretation['warnings'] : [],
             ]);
+            throw new \DomainException(
+                'La IA no devolvió productos. Causa más probable: el proveedor de IA del cotizador (COM-02) no respondió '
+                . '(sin saldo o sin conexión). Revisa Marketing → Configuración de Agentes IA → COM-02 Cotizador, '
+                . 'o ajusta la descripción del requerimiento e inténtalo de nuevo.'
+            );
         }
 
-        // 2. Crear la precotización
-        $prequote = PreQuote::create([
+        // 2. Crear la precotización (o actualizar la existente)
+        $datos = [
             'requerimiento_id'   => isset($context['requerimiento_id']) ? $context['requerimiento_id'] : null,
             'empresa_id'         => isset($context['empresa_id']) ? $context['empresa_id'] : null,
             'contacto_id'        => isset($context['contacto_id']) ? $context['contacto_id'] : null,
@@ -95,17 +109,48 @@ class QuotationOrchestrator
             'subtotal'           => 0,
             'total_igv'          => 0,
             'total'              => 0,
-        ]);
+        ];
+        $items = $interpretation['items'];
+        $imagenesAnteriores = [];
 
-        // 3. Crear ítems
-        $items = isset($interpretation['items']) ? $interpretation['items'] : [];
+        // 3. Crear ítems y 4. calcular totales, todo junto
+        $prequote = \Illuminate\Support\Facades\DB::connection('tenant')->transaction(function () use ($existente, $datos, $items, &$imagenesAnteriores) {
+            if ($existente) {
+                $imagenesAnteriores = $existente->items()->whereNotNull('product_reference_image')
+                    ->pluck('product_reference_image')->all();
+                // Borra los ítems anteriores; sus proveedores y componentes de kit caen en cascada.
+                $existente->items()->delete();
+                // Se conservan el creador y la imagen de referencia de la pre-cotización.
+                unset($datos['user_id']);
+                if (empty($datos['reference_image_path'])) {
+                    unset($datos['reference_image_path'], $datos['reference_image_mime']);
+                }
+                // La versión no cambia: aún no se guardan versiones por separado.
+                unset($datos['version']);
+                $existente->update($datos);
+                $prequote = $existente;
+            } else {
+                $prequote = PreQuote::create($datos);
+            }
 
-        foreach ($items as $itemData) {
-            $this->createPreQuoteItem($prequote, $itemData);
+            foreach ($items as $itemData) {
+                $this->createPreQuoteItem($prequote, $itemData);
+            }
+
+            return $this->calcEngine->recalculate($prequote);
+        });
+
+        // Fotos de los ítems anteriores que ya nadie usa (best-effort, fuera de la transacción).
+        foreach (array_unique($imagenesAnteriores) as $ruta) {
+            try {
+                if (!PreQuoteItem::where('product_reference_image', $ruta)->exists()
+                    && \Illuminate\Support\Facades\Storage::disk('local')->exists($ruta)) {
+                    \Illuminate\Support\Facades\Storage::disk('local')->delete($ruta);
+                }
+            } catch (\Exception $e) {
+                // Si el archivo no se puede borrar, la regeneración igual queda hecha.
+            }
         }
-
-        // 4. Calcular totales
-        $prequote = $this->calcEngine->recalculate($prequote);
 
         // 5. Registrar en historial
         PreQuoteHistory::log(
@@ -114,6 +159,7 @@ class QuotationOrchestrator
             PreQuoteHistory::ACTION_CREATED,
             [
                 'items_detected' => count($items),
+                'regenerada'     => (bool) $existente,
                 'ai_provider'    => $prequote->ai_provider,
                 'warnings'       => isset($interpretation['warnings']) ? $interpretation['warnings'] : [],
             ],
@@ -155,7 +201,18 @@ class QuotationOrchestrator
             'categoria_productos' => $requerimiento->categoria_productos,
         ];
 
-        return $this->generateFromText($text, $context);
+        // Una pre-cotización por requerimiento: si ya existe, "Regenerar" actualiza ese
+        // mismo registro (antes cada clic creaba otra). Solo en borrador y sin convertir.
+        $existente = PreQuote::where('requerimiento_id', $requerimiento->id)->orderByDesc('id')->first();
+        if ($existente && ($existente->quotation_id || $existente->estado !== PreQuote::ESTADO_BORRADOR)) {
+            throw new \DomainException('Solo se puede regenerar una pre-cotización en borrador.');
+        }
+        // Regenerar borra los ítems: después de emitir al cliente solo se edita.
+        if ($existente && $existente->fueEmitida()) {
+            throw new \DomainException('Esta pre-cotización ya se emitió al cliente: edita sus ítems en vez de regenerarla.');
+        }
+
+        return $this->generateFromText($text, $context, $existente);
     }
 
     /**
@@ -266,6 +323,10 @@ class QuotationOrchestrator
             'observaciones'         => isset($itemData['observaciones']) ? $itemData['observaciones'] : null,
             'is_inferred'           => true,
         ]);
+
+        // Si el producto ya se cotizó en otro requerimiento, trae su margen y su
+        // proveedor ganador (con costo y tiempo de entrega).
+        $this->cotizacionAnterior->aplicar($item);
 
         return $item;
     }

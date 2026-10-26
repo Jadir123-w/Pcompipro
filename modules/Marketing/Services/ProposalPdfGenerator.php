@@ -188,7 +188,7 @@ class ProposalPdfGenerator
                     // salida que consuma este arreglo muestren lo mismo.
                     // mb_strtoupper y no strtoupper: con acentos y Ñ, la versión sin
                     // multibyte deja "TARJETA DE PRESENTACIóN".
-                    'nombre'           => mb_strtoupper((string) $item->product_name, 'UTF-8'),
+                    'nombre'           => self::partirTramosLargos(mb_strtoupper((string) $item->product_name, 'UTF-8'), self::ARTICULO_TRAMO_MAX),
                     // Imagen embebida como data URI base64 para que dompdf la renderice
                     // sin problemas de rutas/chroot. Resuelve la imagen propia del ítem
                     // y, si no tiene, hereda la del catálogo (items.image). null = "imagen referencial".
@@ -204,8 +204,10 @@ class ProposalPdfGenerator
                     // ejecutiva puso en el Preview se convierten acá a HTML seguro.
                     // Escapa primero y aplica los marcadores después, así nada de
                     // lo que se escribió puede convertirse en una etiqueta.
-                    'detalles'         => \Modules\Marketing\Support\TextoEnriquecido::aHtml(
-                        $this->buildDetallesItem($item)
+                    'detalles'         => $this->detallesConSaltos(
+                        \Modules\Marketing\Support\TextoEnriquecido::aHtml(
+                            self::partirTramosLargos($this->buildDetallesItem($item), self::DETALLE_TRAMO_MAX)
+                        )
                     ),
                     'costo_total'      => $totalItem,
                 ];
@@ -435,6 +437,45 @@ class ProposalPdfGenerator
      * @param  \Modules\Marketing\Models\PreQuoteItem  $item
      * @return string
      */
+    /**
+     * Saltos de línea de los detalles como <br>. dompdf (0.8) pierde `white-space: pre-line`
+     * en la fila que pasa a la página siguiente y junta todo el texto; con <br> no.
+     * Antes se unifican los saltos raros (CR solo, separadores Unicode) que llegan al
+     * pegar texto de otros programas.
+     *
+     * @param  string  $html  HTML seguro de TextoEnriquecido::aHtml()
+     * @return string
+     */
+    /**
+     * Largo máximo de un tramo sin espacios. Más largo, dompdf no puede partirlo y ensancha
+     * la tabla fuera del A4 (se cortaban las columnas de precio). Se calcula para el ancho
+     * de cada columna con su tamaño de letra.
+     */
+    const DETALLE_TRAMO_MAX = 32;
+    const ARTICULO_TRAMO_MAX = 14;
+
+    /**
+     * Parte con un espacio los tramos sin espacios más largos que $max (un enlace o una lista
+     * pegada sin espacios). El texto normal no cambia: sus palabras son más cortas.
+     *
+     * @param  string  $texto  Texto plano (antes de convertirlo a HTML)
+     * @param  int     $max
+     * @return string
+     */
+    public static function partirTramosLargos($texto, $max)
+    {
+        // Corchetes y asteriscos cortan el tramo: así nunca se parte un marcador de formato.
+        return preg_replace_callback('/[^\s\[\]*]{' . ($max + 1) . ',}/u', function ($m) use ($max) {
+            return trim(implode(' ', preg_split('/(.{' . $max . '})/u', $m[0], -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY)));
+        }, (string) $texto);
+    }
+
+    private function detallesConSaltos($html)
+    {
+        $html = preg_replace('/\r\n|\r|\x{2028}|\x{2029}|\x{0085}|\x{000B}/u', "\n", (string) $html);
+        return nl2br($html, false);
+    }
+
     private function buildDetallesItem($item)
     {
         $parts = [];
@@ -517,7 +558,9 @@ class ProposalPdfGenerator
         }
 
         try {
-            return $this->imageToResizedDataUri($absPath, 150, 150);
+            // Cuadro fijo con la foto contenida (sin estirar ni recortar): la plantilla la
+            // muestra a todo el ancho de la columna Foto y el alto sale de esta proporción.
+            return $this->imageToResizedDataUri($absPath, 232, 200, true);
         } catch (\Exception $e) {
             Log::warning('ProposalPdfGenerator: no se pudo procesar imagen del ítem', [
                 'item_id' => $item->id,
@@ -581,7 +624,7 @@ class ProposalPdfGenerator
      * @param  int|null  $maxHeight  tope de alto opcional (para fotos verticales)
      * @return string|null
      */
-    private function imageToResizedDataUri($absPath, $maxWidth = 80, $maxHeight = null)
+    private function imageToResizedDataUri($absPath, $maxWidth = 80, $maxHeight = null, $encajar = false)
     {
         if (!is_file($absPath) || !function_exists('imagecreatetruecolor')) {
             return null;
@@ -627,11 +670,28 @@ class ProposalPdfGenerator
         $dstW = max(1, $dstW);
         $dstH = max(1, $dstH);
 
-        $dst = imagecreatetruecolor($dstW, $dstH);
+        // Encajar: lienzo fijo de $maxWidth x $maxHeight con la foto entera centrada, ampliada o
+        // reducida sin deformarla. Así el PDF la muestra siempre con la misma proporción: una
+        // foto vertical ya no se estira a lo ancho ni una pequeña queda diminuta.
+        $lienzoW = $dstW;
+        $lienzoH = $dstH;
+        $x = 0;
+        $y = 0;
+        if ($encajar && $maxHeight !== null) {
+            $escala = min($maxWidth / $srcW, $maxHeight / $srcH);
+            $dstW = max(1, (int) round($srcW * $escala));
+            $dstH = max(1, (int) round($srcH * $escala));
+            $lienzoW = (int) $maxWidth;
+            $lienzoH = (int) $maxHeight;
+            $x = (int) floor(($lienzoW - $dstW) / 2);
+            $y = (int) floor(($lienzoH - $dstH) / 2);
+        }
+
+        $dst = imagecreatetruecolor($lienzoW, $lienzoH);
         // Fondo blanco (aplana transparencias de PNG/GIF para JPEG de salida).
         $white = imagecolorallocate($dst, 255, 255, 255);
-        imagefilledrectangle($dst, 0, 0, $dstW, $dstH, $white);
-        imagecopyresampled($dst, $src, 0, 0, 0, 0, $dstW, $dstH, $srcW, $srcH);
+        imagefilledrectangle($dst, 0, 0, $lienzoW, $lienzoH, $white);
+        imagecopyresampled($dst, $src, $x, $y, 0, 0, $dstW, $dstH, $srcW, $srcH);
 
         ob_start();
         imagejpeg($dst, null, 82);

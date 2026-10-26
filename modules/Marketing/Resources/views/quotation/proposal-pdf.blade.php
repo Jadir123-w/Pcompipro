@@ -126,7 +126,9 @@
         table.productos td.tiempo { width: 60px; font-size: 8px; }
         /* Detalles: única columna alineada a la izquierda (centrada en vertical
            por la base). No tiene ancho fijo: absorbe el espacio restante. */
-        table.productos td.detalles { font-size: 8px; white-space: pre-line; line-height: 1.3; text-align: left; }
+        {{-- Los saltos de línea llegan como <br> (no con white-space: pre-line): dompdf
+             perdía pre-line en la fila que pasaba a la página siguiente y juntaba todo. --}}
+        table.productos td.detalles { font-size: 8px; line-height: 1.3; text-align: left; }
         table.productos td.precio { width: 52px; }
         table.productos td.total { width: 60px; font-weight: bold; }
         .totales {
@@ -417,8 +419,11 @@
                                  max-height sigue como tope para que una imagen muy
                                  vertical no empuje la fila y rompa el salto de
                                  página. --}}
+                            {{-- La imagen llega como un cuadro fijo con la foto contenida
+                                 (ver imageToResizedDataUri): sin max-height, que en fotos
+                                 verticales recortaba el alto y estiraba el ancho. --}}
                             <img src="{{ $it['imagen_url'] }}"
-                                 style="width: 100%; height: auto; max-height: 115px;" alt="">
+                                 style="width: 100%; height: auto;" alt="">
                         @else
                             imagen referencial
                         @endif
@@ -430,8 +435,7 @@
                          TextoEnriquecido::aHtml(), que solo deja pasar <strong>,
                          <em> y un <span> de color de una paleta cerrada. Lo que
                          escribió el usuario nunca llega crudo hasta acá.
-                         Los saltos de línea siguen resolviéndose por CSS
-                         (white-space: pre-line), no con <br>. --}}
+                         Los saltos de línea llegan como <br> desde el generador. --}}
                     <td class="detalles">{!! $it['detalles'] !!}</td>
                     <td class="precio">{{ $moneda_signo }} {{ number_format($it['costo_unitario'], 2) }}</td>
                     <td class="total">{{ $moneda_signo }} {{ number_format($it['costo_total'], 2) }}</td>

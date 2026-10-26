@@ -79,7 +79,8 @@ CAMBIOS EN V3:
             </el-checkbox>
           </el-form-item>
 
-          <el-form-item v-if="!editandoId" label="Archivo adjunto" class="compact-item">
+          <!-- Adjuntar archivo oculto: todo se maneja en el sistema (cotizador). Se quitará. -->
+          <el-form-item v-if="mostrarAdjunto && !editandoId" label="Archivo adjunto" class="compact-item">
             <input
               type="file"
               ref="fileInput"
@@ -178,6 +179,9 @@ export default {
 
   data: function() {
     return {
+      // "Archivo adjunto" oculto (decisión 2026-10-24). Los adjuntos ya subidos se
+      // siguen pudiendo ver con "Ver archivo".
+      mostrarAdjunto: false,
       editandoId: null,
 
       formData: {

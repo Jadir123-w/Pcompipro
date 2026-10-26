@@ -974,9 +974,8 @@ class QuotationAIEngine
         $catalogItems = $this->getCatalogForPrompt($context);
         $prompt = str_replace('{{CATALOG_ITEMS}}', $catalogItems, $prompt);
 
-        // S6: Inyectar casos históricos similares (sec 30 doc funcional)
-        $historicalCases = $this->getHistoricalCasesForPrompt($context);
-        $prompt = str_replace('{{HISTORICAL_CASES}}', $historicalCases, $prompt);
+        // Los casos históricos ya no se envían a la IA: los tomaba como productos del
+        // pedido. Lo ya cotizado lo busca el sistema después (CotizacionAnteriorService).
 
         return $prompt;
     }
@@ -1113,98 +1112,6 @@ class QuotationAIEngine
         return isset($map[$ext]) ? $map[$ext] : 'image/jpeg';
     }
 
-    /**
-     * S6 — Obtener casos históricos similares para inyectar al system prompt.
-     *
-     * Lee la flag `defop_historico_enabled` de quotation_config. Si está activa,
-     * busca prequote_items de prequotes validadas o aprobadas dentro del
-     * lookback configurable y devuelve un bloque markdown listo para inyectar.
-     *
-     * El context puede incluir 'requerimiento_text' (el texto que se está
-     * interpretando ahora) para filtrar más relevante.
-     *
-     * @param  array  $context
-     * @return string
-     */
-    private function getHistoricalCasesForPrompt(array $context = [])
-    {
-        // Si la flag está desactivada, no agregar nada al prompt
-        try {
-            $enabled = \Modules\Marketing\Models\QuotationConfig::getValue('defop_historico_enabled', '1');
-        } catch (\Exception $e) {
-            $enabled = '1';
-        }
-        if ((string) $enabled !== '1' && $enabled !== 1 && $enabled !== true) {
-            return "_(Histórico desactivado en configuración.)_";
-        }
-
-        try {
-            $lookbackMonths = (int) \Modules\Marketing\Models\QuotationConfig::getValue('defop_historico_meses_lookback', 12);
-        } catch (\Exception $e) {
-            $lookbackMonths = 12;
-        }
-        if ($lookbackMonths < 1) $lookbackMonths = 12;
-
-        try {
-            // Solo prequotes validadas o aprobadas (datos confiables)
-            $threshold = now()->subMonths($lookbackMonths);
-
-            $query = \Modules\Marketing\Models\PreQuoteItem::query()
-                ->whereHas('prequote', function ($q) use ($threshold) {
-                    $q->whereIn('estado', ['validada', 'aprobada'])
-                      ->where('created_at', '>=', $threshold);
-                })
-                ->whereNotNull('product_name')
-                ->where('quantity', '>', 0)
-                ->select([
-                    'id', 'prequote_id', 'product_name', 'quantity',
-                    'tecnica_impresion', 'cantidad_colores', 'cantidad_lados',
-                    'empaque', 'supplier_name', 'costo_base',
-                    'margen_porcentaje', 'tiempo_estimado_dias',
-                ])
-                ->orderBy('created_at', 'desc')
-                ->limit(50)
-                ->get();
-
-            if ($query->isEmpty()) {
-                return "_(No hay casos históricos validados aún.  El sistema irá aprendiendo a medida que se validen cotizaciones.)_";
-            }
-
-            // Top-5 más recientes para no saturar el prompt
-            $top = $query->take(5);
-
-            $lines = [];
-            $i = 1;
-            foreach ($top as $caso) {
-                $line = sprintf(
-                    '%d. **%s** (cant: %d) — proveedor: %s · costo base: S/ %.2f · margen: %.0f%% · tiempo: %s',
-                    $i,
-                    $caso->product_name,
-                    (int) $caso->quantity,
-                    $caso->supplier_name ?: '(sin proveedor registrado)',
-                    (float) $caso->costo_base,
-                    (float) $caso->margen_porcentaje,
-                    $caso->tiempo_estimado_dias ?: 'N/D'
-                );
-                if ($caso->tecnica_impresion) {
-                    $line .= ' · técnica: ' . $caso->tecnica_impresion;
-                }
-                if ($caso->empaque) {
-                    $line .= ' · empaque: ' . $caso->empaque;
-                }
-                $lines[] = $line;
-                $i++;
-            }
-
-            return implode("\n", $lines);
-
-        } catch (\Exception $e) {
-            Log::warning('QuotationAIEngine: no se pudo cargar histórico', [
-                'error' => $e->getMessage(),
-            ]);
-            return "_(Histórico no disponible en este momento.)_";
-        }
-    }
 
     /**
      * Parsear la respuesta raw del LLM como JSON.
