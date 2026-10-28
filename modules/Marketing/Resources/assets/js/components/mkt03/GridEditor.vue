@@ -13,7 +13,7 @@
       <el-col :span="4">
         <el-button icon="el-icon-refresh" @click="loadGrids">Recargar</el-button>
       </el-col>
-      <el-col :span="10" style="text-align:right">
+      <el-col :span="10" style="text-align:middle">
         <el-button type="primary" icon="el-icon-magic-stick" @click="showGenerateDialog = true">
           Generar Grilla con IA (Modo A)
         </el-button>
@@ -44,8 +44,8 @@
     </el-table>
 
     <!-- Dialog: Generar grilla -->
-    <el-dialog title="Generar Grilla con IA" :visible.sync="showGenerateDialog" width="600px">
-      <el-form :model="genForm" label-position="top" size="small">
+    <el-dialog class="generate-grid-dialog" title="Generar Grilla con IA" :visible.sync="showGenerateDialog" width="950px">
+      <el-form class="generate-grid-form" :model="genForm" label-position="top" size="small">
         <el-row :gutter="10">
           <el-col :span="12">
             <el-form-item label="Ano">
@@ -321,3 +321,17 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.generate-grid-dialog >>> .el-dialog__body {
+  word-break: normal;
+}
+
+.generate-grid-form >>> .el-form-item__label {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  white-space: normal;
+  word-break: normal;
+}
+</style>

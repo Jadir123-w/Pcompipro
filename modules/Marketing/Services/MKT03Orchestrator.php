@@ -375,7 +375,7 @@ class MKT03Orchestrator
      * @param  bool      $generateImage
      * @return Piece|null
      */
-    public function producePiece(GridItem $gridItem, $generateImage = true)
+    public function producePiece(GridItem $gridItem, $generateImage = false)
     {
         return $this->producer->producePiece($gridItem, $generateImage);
     }

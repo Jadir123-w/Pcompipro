@@ -83,19 +83,22 @@ class ExcelHistoricalImporter
             return $this->errorResult($hg, 'HistoricalGrid sin archivo_storage_path');
         }
 
-        // Obtener ruta física del archivo
         $disk = config('marketing.chatbot.mkt03.image_storage_disk', 'public');
+        
         try {
             $fullPath = Storage::disk($disk)->path($hg->archivo_storage_path);
         } catch (\Exception $e) {
             return $this->errorResult($hg, 'Archivo no accesible: ' . $e->getMessage());
         }
 
+        if (empty($fullPath)) {
+            return $this->errorResult($hg, 'La ruta del archivo está vacía');
+        }
+
         if (!file_exists($fullPath)) {
             return $this->errorResult($hg, 'Archivo no existe en: ' . $fullPath);
         }
 
-        // Subir memory_limit antes de leer (los planners pueden ser grandes)
         $previousLimit = ini_get('memory_limit');
         ini_set('memory_limit', '2G');
 
@@ -119,7 +122,6 @@ class ExcelHistoricalImporter
                     continue;
                 }
 
-                // Cargar solo esta hoja
                 $reader->setLoadSheetsOnly([$sheetName]);
                 $spreadsheet = $reader->load($fullPath);
                 $sheet = $spreadsheet->getActiveSheet();
@@ -129,19 +131,16 @@ class ExcelHistoricalImporter
                 $redesDetectadas = array_unique(array_merge($redesDetectadas, $redesSheet));
                 $sheetsParsed[$sheetName] = count($items);
 
-                // Liberar memoria
                 $spreadsheet->disconnectWorksheets();
                 unset($spreadsheet);
             }
 
-            // Estructura detectada (meta info)
             $estructura = [
                 'hojas_procesadas' => $sheetsParsed,
                 'campos_editoriales_conocidos'  => array_keys(self::EDITORIAL_FIELDS),
                 'campos_operativos_conocidos'   => array_keys(self::OPERATIONAL_FIELDS),
             ];
 
-            // Persistir en el HistoricalGrid
             $hg->update([
                 'estructura_detectada'  => $estructura,
                 'contenido_normalizado' => $allItems,

@@ -111,15 +111,16 @@ export default {
         fd.append('anio', this.uploadForm.anio)
         fd.append('nombre', this.uploadForm.nombre)
         fd.append('archivo', this.selectedFile)
-        var r = await this.$http.post('/marketing/mkt03/historical/import', fd, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        })
+        var r = await this.$http.post('/marketing/mkt03/historical/import', fd)
         this.$message.success('Importado (ID: ' + r.data.historical.id + '). ' + (r.data.note || ''))
         this.showUploadDialog = false
         this.loadHistoricals()
       } catch (e) {
-        var msg = (e.response && e.response.data && e.response.data.errors) || 'Error importando'
-        this.$message.error(typeof msg === 'string' ? msg : 'Error importando')
+        var responseData = e.response && e.response.data
+        var errors = responseData && responseData.errors
+        var firstError = errors && errors[Object.keys(errors)[0]]
+        var msg = (responseData && responseData.message) || (firstError && firstError[0]) || 'Error importando'
+        this.$message.error(msg)
       }
       this.uploading = false
     },

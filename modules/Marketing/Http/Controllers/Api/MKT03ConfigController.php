@@ -4,6 +4,7 @@ namespace Modules\Marketing\Http\Controllers\Api;
 
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Modules\Marketing\Models\HistoricalGrid;
@@ -212,20 +213,84 @@ class MKT03ConfigController extends Controller
             return response()->json(['ok' => false, 'errors' => $v->errors()], 422);
         }
 
-        $disk = config('marketing.chatbot.mkt03.image_storage_disk', 'public');
-        $filename = 'historical_' . $request->input('anio') . '_' . date('YmdHis') . '.' . $request->file('archivo')->getClientOriginalExtension();
-        $storagePath = $request->file('archivo')->storeAs('mkt03/historical', $filename, $disk);
+        $file = $request->file('archivo');
 
+        if (!$file || !$file->isValid()) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'No se recibió ningún archivo válido',
+            ], 422);
+        }
+
+        $temporaryPath = $file->getPathname();
+        if (!$temporaryPath || !is_file($temporaryPath) || !is_readable($temporaryPath)) {
+            Log::error('MKT03 historical import: archivo temporal no disponible', [
+                'upload_error' => $file->getError(),
+                'temporary_path_available' => (bool) $temporaryPath,
+            ]);
+
+            return response()->json([
+                'ok'      => false,
+                'message' => 'El archivo temporal de la carga no está disponible. Vuelve a seleccionar el archivo e inténtalo otra vez.',
+            ], 422);
+        }
+
+        $disk = config('marketing.chatbot.mkt03.image_storage_disk', 'public');
+        $filename = 'historical_' . $request->input('anio') . '_' . date('YmdHis') . '.' . $file->getClientOriginalExtension();
+        $destinationPath = 'mkt03/historical/' . $filename;
+        $stream = fopen($temporaryPath, 'r');
+
+        if ($stream === false) {
+            Log::error('MKT03 historical import: no se pudo abrir el archivo temporal', [
+                'upload_error' => $file->getError(),
+            ]);
+
+            return response()->json([
+                'ok'      => false,
+                'message' => 'No se pudo leer el archivo temporal de la carga. Vuelve a seleccionar el archivo e inténtalo otra vez.',
+            ], 422);
+        }
+
+        try {
+            $stored = Storage::disk($disk)->put($destinationPath, $stream);
+        } catch (\Throwable $e) {
+            Log::error('MKT03 historical import: error guardando archivo', [
+                'disk' => $disk,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'ok'      => false,
+                'message' => 'No se pudo guardar el archivo. Verifica el almacenamiento e inténtalo otra vez.',
+            ], 500);
+        } finally {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
+        }
+
+        if (!$stored) {
+            Log::error('MKT03 historical import: almacenamiento no devolvió una ruta', [
+                'disk' => $disk,
+            ]);
+
+            return response()->json([
+                'ok'      => false,
+                'message' => 'No se pudo guardar el archivo en el almacenamiento',
+            ], 500);
+        }
+
+        $storagePath = $destinationPath;
         $hg = HistoricalGrid::create([
             'anio'                  => $request->input('anio'),
             'nombre'                => $request->input('nombre'),
-            'archivo_original'      => $request->file('archivo')->getClientOriginalName(),
+            'archivo_original'      => $file->getClientOriginalName(),
             'archivo_storage_path'  => $storagePath,
             'estado'                => HistoricalGrid::ESTADO_IMPORTADO,
             'user_id'               => $request->user() ? $request->user()->id : null,
         ]);
 
-        // Disparar parsing automático si el flag está activo
+        // Disparar parsing automático
         $autoParse = filter_var($request->input('auto_parse', true), FILTER_VALIDATE_BOOLEAN);
         $parseResult = null;
         if ($autoParse) {
@@ -237,11 +302,10 @@ class MKT03ConfigController extends Controller
             'historical'    => $hg->fresh(),
             'parse_result'  => $parseResult,
             'note'          => $autoParse
-                ? 'Archivo almacenado y parseado. Ahora puede analizar patrones con IA.'
-                : 'Archivo almacenado. Ejecutar /parse para extraer el contenido.',
+                ? 'Archivo almacenado y parseado.'
+                : 'Archivo almacenado.',
         ], 201);
     }
-
     /**
      * POST /marketing/mkt03/historical/{id}/parse
      *

@@ -76,7 +76,7 @@ class PieceProducerEngine
      * @param  bool      $generateImage  Si true, genera imagen con ImageGenerationService
      * @return Piece|null
      */
-    public function producePiece(GridItem $gridItem, $generateImage = true)
+    public function producePiece(GridItem $gridItem, $generateImage = false)
     {
         // 1. Construir contexto del ítem para el LLM
         $context = $this->buildItemContext($gridItem);
