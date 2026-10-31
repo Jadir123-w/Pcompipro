@@ -43,12 +43,16 @@ class ClaudeProvider implements AIProviderInterface
         $this->model     = isset($config['model'])      ? $config['model']      : self::resolveModelFromDb('claude-sonnet-4-6');
         $this->baseUrl   = isset($config['base_url'])   ? $config['base_url']   : config('marketing.chatbot.ai.claude.base_url', 'https://api.anthropic.com/v1/messages');
         $this->maxTokens = isset($config['max_tokens']) ? (int) $config['max_tokens'] : config('marketing.chatbot.ai.claude.max_tokens', 1024);
-
+        $this->apiKey = isset($config['api_key']) ? $config['api_key'] : config('marketing.chatbot.ai.claude.api_key');
+        #if (empty($this->apiKey)) {
+        #    throw new AIProviderException(
+         #       'API key no configurada. Configura CHATBOT_CLAUDE_API_KEY en .env',
+         #       'claude'
+         #   );
+        #}
         if (empty($this->apiKey)) {
-            throw new AIProviderException(
-                'API key no configurada. Configura CHATBOT_CLAUDE_API_KEY en .env',
-                'claude'
-            );
+            $this->apiKey = 'dev-dummy-key'; // evita null
+            // throw new AIProviderException(...); // comentado
         }
 
         $this->client = new Client([
