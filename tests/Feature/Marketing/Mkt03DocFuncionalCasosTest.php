@@ -127,6 +127,40 @@ class Mkt03DocFuncionalCasosTest extends TestCase
         }
     }
 
+    /** @test */
+    public function no_persiste_grilla_si_falla_la_generacion_de_ia()
+    {
+        Grid::withTrashed()
+            ->where('anio', 2098)
+            ->where('periodo', 'like', 'TEST_FALLBACK_%')
+            ->forceDelete();
+
+        $periodo = 'TEST_FALLBACK_' . substr(uniqid(), -6);
+        $generator = Mockery::mock(GridGeneratorEngine::class);
+        $generator->shouldReceive('generateGrid')
+            ->once()
+            ->andReturn([
+                '_fallback'          => true,
+                'resumen_generacion' => 'Error del proveedor IA: Gemini no disponible',
+                'items_generados'    => [],
+            ]);
+        $generator->shouldNotReceive('saveGeneratedItems');
+
+        $orchestrator = $this->makeOrchestratorWith($generator, null, null);
+        $result = $orchestrator->createGrid([
+            'anio'         => 2098,
+            'periodo'      => $periodo,
+            'tipo_periodo' => Grid::TIPO_ANUAL,
+            'redes'        => ['facebook'],
+            'fecha_desde'  => '2098-01-01',
+            'fecha_hasta'  => '2098-12-31',
+        ]);
+
+        $this->assertArrayHasKey('error', $result);
+        $this->assertSame('Error del proveedor IA: Gemini no disponible', $result['error']);
+        $this->assertSame(0, Grid::where('anio', 2098)->where('periodo', $periodo)->count());
+    }
+
     /*
     |==========================================================================
     | CASO 2 — Construir solo enero de LinkedIn y luego completar el trimestre

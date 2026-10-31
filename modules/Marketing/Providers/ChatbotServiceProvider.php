@@ -18,8 +18,6 @@ use Modules\Marketing\Services\QuotationCalculationEngine;
 use Modules\Marketing\Services\QuotationOrchestrator;
 use Modules\Marketing\Services\MarginService;
 use Modules\Marketing\Contracts\ImageProviderInterface;
-use Modules\Marketing\Services\Image\DallE3Provider;
-use Modules\Marketing\Services\Image\GPTImage2Provider;
 use Modules\Marketing\Services\ImageGenerationService;
 use Modules\Marketing\Services\EditorialGuidelinesService;
 use Modules\Marketing\Services\GridContinuityService;
@@ -142,24 +140,12 @@ class ChatbotServiceProvider extends ServiceProvider
         // ══════════════════════════════════════════════
 
         // ── Bind del ImageProviderInterface ──
-        // IMPORTANTE: usamos bind (no singleton) para que cada resolve consulte
-        // la config en BD. Eso permite cambiar el provider desde la UI Config
-        // Chatbot sin reiniciar el servicio. La resolución busca primero en
-        // marketing_chatbot_config (clave 'mkt03_image_provider') y cae al
-        // .env como fallback si la tabla no está disponible (instalación fresh).
+        // Resolver desde AgentConfigService, la misma fuente que edita la UI
+        // de configuración de agentes (marketing_agent_config), con fallback
+        // al .env cuando no hay configuración de imagen para MKT-03.
         $this->app->bind(ImageProviderInterface::class, function ($app) {
-            $provider = $this->resolveMkt03Setting('mkt03_image_provider', 'image_provider', 'dalle3');
-
-            switch ($provider) {
-                case 'dalle3':
-                    return new DallE3Provider();
-                case 'gpt-image-2':
-                    return new GPTImage2Provider();
-                default:
-                    throw new \InvalidArgumentException(
-                        "Proveedor de imagen no soportado: {$provider}. Usa 'dalle3' o 'gpt-image-2'."
-                    );
-            }
+            return $app->make(AgentConfigService::class)
+                ->resolveImageProvider('mkt03');
         });
 
         // ── Bind del ImageGenerationService ──
@@ -172,7 +158,7 @@ class ChatbotServiceProvider extends ServiceProvider
         // ── Bind del GridPatternAnalyzer ──
         $this->app->singleton(GridPatternAnalyzer::class, function ($app) {
             return new GridPatternAnalyzer(
-                $app->make(AIProviderInterface::class)
+                $app->make(AgentConfigService::class)->resolveTextProvider('mkt03')
             );
         });
 
@@ -184,7 +170,7 @@ class ChatbotServiceProvider extends ServiceProvider
         // ── Bind del GridGeneratorEngine ──
         $this->app->singleton(GridGeneratorEngine::class, function ($app) {
             return new GridGeneratorEngine(
-                $app->make(AIProviderInterface::class),
+                $app->make(AgentConfigService::class)->resolveTextProvider('mkt03'),
                 $app->make(EditorialGuidelinesService::class)
             );
         });
@@ -270,31 +256,4 @@ class ChatbotServiceProvider extends ServiceProvider
         return config('marketing.chatbot.' . $legacyConfigPath, $default);
     }
 
-    /**
-     * Resuelve un setting MKT-03 con prioridad BD → config legacy → default.
-     *
-     * Si la tabla `marketing_chatbot_config` existe en el tenant actual y tiene
-     * la clave, devuelve ese valor. Sino cae al config Laravel (que puede leer
-     * de .env). Sino devuelve el default.
-     *
-     * Si la tabla aún no existe (instalación fresh, antes de migrar), no falla:
-     * sigue de largo al fallback.
-     *
-     * @param  string       $configKey      Clave en marketing_chatbot_config (ej: mkt03_image_provider)
-     * @param  string       $legacyConfigPath Path en config('marketing.chatbot.mkt03.X') (ej: image_provider)
-     * @param  mixed        $default        Default si nada está configurado
-     * @return mixed
-     */
-    private function resolveMkt03Setting($configKey, $legacyConfigPath, $default)
-    {
-        try {
-            $val = \Modules\Marketing\Models\ChatbotConfig::get($configKey);
-            if ($val !== null && $val !== '') {
-                return $val;
-            }
-        } catch (\Exception $e) {
-            // Tabla no disponible (instalación fresh, sin tenant resuelto, etc.) — fallback
-        }
-        return config('marketing.chatbot.mkt03.' . $legacyConfigPath, $default);
-    }
 }

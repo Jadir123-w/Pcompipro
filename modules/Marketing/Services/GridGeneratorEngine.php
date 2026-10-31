@@ -95,7 +95,7 @@ class GridGeneratorEngine
         $parsed = $this->parseResponse($rawResponse);
         if ($parsed === null) {
             Log::warning('GridGeneratorEngine: respuesta no es JSON válido, reintentando');
-            $parsed = $this->retryWithCorrection($messages, $rawResponse);
+            $parsed = $this->retryWithCorrection($messages, $rawResponse, $effectiveSystemPrompt);
         }
 
         if ($parsed === null) {
@@ -312,9 +312,10 @@ class GridGeneratorEngine
     /**
      * @param  array   $messages
      * @param  string  $badResponse
+     * @param  string  $systemPrompt
      * @return array|null
      */
-    private function retryWithCorrection($messages, $badResponse)
+    private function retryWithCorrection($messages, $badResponse, $systemPrompt)
     {
         $corrected = $messages;
         $corrected[] = ['role' => 'assistant', 'content' => $badResponse];
@@ -323,8 +324,9 @@ class GridGeneratorEngine
             'content' => 'Tu respuesta no es JSON válido. Responde SOLAMENTE con el JSON según el esquema. Sin texto adicional.',
         ];
         try {
-            $retry = $this->provider->sendMessage($this->systemPromptTemplate, $corrected, [
+            $retry = $this->provider->sendMessage($systemPrompt, $corrected, [
                 'temperature' => 0.2,
+                'max_tokens'  => 16000,
             ]);
             return $this->parseResponse($retry);
         } catch (\Exception $e) {

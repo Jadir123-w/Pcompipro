@@ -128,7 +128,7 @@ class AgentConfigService
      * Atajo: provider_key de la imagen.
      *
      * @param  string  $agentKey
-     * @return string  'dalle3' | 'gpt-image-2' | etc.
+     * @return string  'dalle3' | 'gpt-image-2' | 'nano-banana' | etc.
      */
     public function getImageProviderKey($agentKey)
     {
@@ -196,10 +196,12 @@ class AgentConfigService
         $cfg = $this->getImageConfig($agentKey);
 
         $providerCfg = [
-            'api_key' => $cfg['api_key'],
-            'model'   => $cfg['model'],
-            'quality' => $cfg['quality'],
-            'format'  => $cfg['format'],
+            'api_key'      => $cfg['api_key'],
+            'model'        => $cfg['model'],
+            'quality'      => $cfg['quality'],
+            'format'       => $cfg['format'],
+            'base_url'     => $cfg['base_url'],
+            'aspect_ratio' => $cfg['aspect_ratio'],
         ];
 
         switch ($cfg['provider']) {
@@ -207,9 +209,11 @@ class AgentConfigService
                 return new \Modules\Marketing\Services\Image\DallE3Provider($providerCfg);
             case 'gpt-image-2':
                 return new \Modules\Marketing\Services\Image\GPTImage2Provider($providerCfg);
+            case 'nano-banana':
+                return new \Modules\Marketing\Services\Image\NanoBananaProvider($providerCfg);
             default:
                 throw new \InvalidArgumentException(
-                    "Image provider no soportado: {$cfg['provider']}. Soportados: dalle3, gpt-image-2."
+                    "Image provider no soportado: {$cfg['provider']}. Soportados: dalle3, gpt-image-2, nano-banana."
                 );
         }
     }
@@ -280,19 +284,28 @@ class AgentConfigService
     private function fallbackImageFromEnv($agentKey)
     {
         $providerKey = config('marketing.chatbot.mkt03.image_provider', 'dalle3');
+        $defaultModel = $providerKey === 'gpt-image-2'
+            ? 'gpt-image-2'
+            : ($providerKey === 'nano-banana' ? 'gemini-3.1-flash-image' : 'dall-e-3');
+        $isNanoBanana = $providerKey === 'nano-banana';
+        $configuredModel = config('marketing.chatbot.mkt03.image_model');
 
         return [
             'source'              => 'env',
             'agent_key'           => $agentKey,
             'provider'            => $providerKey,
-            'model'               => config('marketing.chatbot.mkt03.image_model', $providerKey === 'gpt-image-2' ? 'gpt-image-2' : 'dall-e-3'),
+            'model'               => $configuredModel ?: $defaultModel,
             'quality'             => config('marketing.chatbot.mkt03.image_quality', 'medium'),
             'format'              => config('marketing.chatbot.mkt03.image_format', 'png'),
             'aspect_ratio'        => '1:1',
             'auto_generate'       => (bool) config('marketing.chatbot.mkt03.auto_generate_image', false),
-            'supports_image_edit' => $providerKey === 'gpt-image-2',
-            'base_url'            => null,
-            'api_key'             => config('marketing.chatbot.ai.openai.api_key'),
+            'supports_image_edit' => $providerKey === 'gpt-image-2' || $isNanoBanana,
+            'base_url'            => $isNanoBanana
+                ? config('marketing.chatbot.ai.gemini.base_url')
+                : null,
+            'api_key'             => $isNanoBanana
+                ? config('marketing.chatbot.ai.gemini.api_key')
+                : config('marketing.chatbot.ai.openai.api_key'),
         ];
     }
 }

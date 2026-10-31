@@ -140,12 +140,31 @@ class GeminiProvider implements AIProviderInterface
         $startTime = microtime(true);
 
         try {
-            $response = $this->client->post($url, [
-                'headers' => [
-                    'Content-Type' => 'application/json',
-                ],
-                'json' => $payload,
-            ]);
+            $attempt = 0;
+            do {
+                try {
+                    $response = $this->client->post($url, [
+                        'headers' => [
+                            'Content-Type' => 'application/json',
+                        ],
+                        'json' => $payload,
+                    ]);
+                    break;
+                } catch (\GuzzleHttp\Exception\ServerException $e) {
+                    $statusCode = $e->hasResponse() ? $e->getResponse()->getStatusCode() : 0;
+                    if (!in_array($statusCode, [502, 503, 504], true) || $attempt >= 2) {
+                        throw $e;
+                    }
+
+                    Log::warning('Gemini API transient server error; retrying request', [
+                        'model'   => $model,
+                        'status'  => $statusCode,
+                        'attempt' => $attempt + 1,
+                    ]);
+                    usleep(500000 * (2 ** $attempt));
+                    $attempt++;
+                }
+            } while (true);
 
             $duration = round((microtime(true) - $startTime) * 1000);
             $statusCode = $response->getStatusCode();
@@ -194,14 +213,16 @@ class GeminiProvider implements AIProviderInterface
                 $responseBody = json_decode($e->getResponse()->getBody()->getContents(), true);
             }
 
-            $errorMsg = isset($responseBody['error']['message']) ? $responseBody['error']['message'] : $e->getMessage();
+            $errorMsg = isset($responseBody['error']['message'])
+                ? $responseBody['error']['message']
+                : 'La solicitud fue rechazada por Gemini.';
+            $errorMsg = str_replace($this->apiKey, '[REDACTED]', $errorMsg);
 
             throw new AIProviderException(
                 'Error HTTP ' . $statusCode . ': ' . $errorMsg,
                 'gemini',
                 $responseBody,
-                $statusCode,
-                $e
+                $statusCode
             );
         } catch (\GuzzleHttp\Exception\ServerException $e) {
             $responseBody = null;
@@ -211,20 +232,24 @@ class GeminiProvider implements AIProviderInterface
                 $responseBody = json_decode($e->getResponse()->getBody()->getContents(), true);
             }
 
+            $errorMsg = isset($responseBody['error']['message'])
+                ? $responseBody['error']['message']
+                : 'Gemini no está disponible temporalmente.';
+            $errorMsg = str_replace($this->apiKey, '[REDACTED]', $errorMsg);
+
             throw new AIProviderException(
-                'Error 5xx Gemini API: ' . $e->getMessage(),
+                'Error HTTP ' . $statusCode . ' Gemini API: ' . $errorMsg,
                 'gemini',
                 $responseBody,
-                $statusCode,
-                $e
+                $statusCode
             );
         } catch (\Exception $e) {
+            $errorMsg = str_replace($this->apiKey, '[REDACTED]', $e->getMessage());
             throw new AIProviderException(
-                'Error de conexión con Gemini API: ' . $e->getMessage(),
+                'Error de conexión con Gemini API: ' . $errorMsg,
                 'gemini',
                 null,
-                0,
-                $e
+                0
             );
         }
     }

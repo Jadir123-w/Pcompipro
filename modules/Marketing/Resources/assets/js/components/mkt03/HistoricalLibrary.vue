@@ -47,6 +47,7 @@
         </el-form-item>
         <el-form-item label="Archivo Excel (.xlsx)">
           <el-upload action="" :auto-upload="false" :limit="1" :on-change="handleFileChange"
+                     :on-remove="handleFileRemove"
                      accept=".xlsx,.xls">
             <el-button size="small" type="primary">Seleccionar archivo</el-button>
           </el-upload>
@@ -93,7 +94,11 @@ export default {
     },
 
     handleFileChange(file) {
-      this.selectedFile = file.raw
+      this.selectedFile = file && file.raw ? file.raw : null
+    },
+
+    handleFileRemove() {
+      this.selectedFile = null
     },
 
     async upload() {
@@ -111,15 +116,19 @@ export default {
         fd.append('anio', this.uploadForm.anio)
         fd.append('nombre', this.uploadForm.nombre)
         fd.append('archivo', this.selectedFile)
-        var r = await this.$http.post('/marketing/mkt03/historical/import', fd, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        })
+        var r = await this.$http.post('/marketing/mkt03/historical/import', fd)
         this.$message.success('Importado (ID: ' + r.data.historical.id + '). ' + (r.data.note || ''))
         this.showUploadDialog = false
         this.loadHistoricals()
       } catch (e) {
-        var msg = (e.response && e.response.data && e.response.data.errors) || 'Error importando'
-        this.$message.error(typeof msg === 'string' ? msg : 'Error importando')
+        var response = e.response && e.response.data
+        var msg = response && response.message
+        if (!msg && response && response.errors) {
+          msg = response.errors.archivo && response.errors.archivo[0]
+            ? response.errors.archivo[0]
+            : 'Revisa los datos del archivo y vuelve a intentarlo'
+        }
+        this.$message.error(msg || 'Error importando')
       }
       this.uploading = false
     },

@@ -129,9 +129,9 @@ return [
     */
     'mkt03' => [
         // ── Generación de imágenes ──
-        // Provider soportados: 'dalle3' (DALL-E 3 legacy) | 'gpt-image-2' (recomendado, mucho mejor calidad)
+        // Providers: 'dalle3' | 'gpt-image-2' | 'nano-banana' (Gemini 3.1 Flash Image)
         'image_provider'      => env('MKT03_IMAGE_PROVIDER', 'dalle3'),
-        'image_model'         => env('MKT03_IMAGE_MODEL', 'dall-e-3'),
+        'image_model'         => env('MKT03_IMAGE_MODEL'),
 
         // Quality (solo aplica a gpt-image-2): low | medium | high | auto
         // Cada nivel cambia el costo significativamente (low ≈ $0.006, medium ≈ $0.053, high ≈ $0.211 por 1024×1024)

@@ -21,14 +21,6 @@ use Modules\Marketing\Services\MKT03Orchestrator;
  */
 class MKT03GridController extends Controller
 {
-    /** @var MKT03Orchestrator */
-    private $orchestrator;
-
-    public function __construct(MKT03Orchestrator $orchestrator)
-    {
-        $this->orchestrator = $orchestrator;
-    }
-
     /*
     |--------------------------------------------------------------------------
     | Modo A — Crear nueva grilla
@@ -65,7 +57,7 @@ class MKT03GridController extends Controller
             ]);
             $params['user_id'] = $request->user() ? $request->user()->id : null;
 
-            $result = $this->orchestrator->createGrid($params);
+            $result = app(MKT03Orchestrator::class)->createGrid($params);
 
             if (isset($result['error'])) {
                 return response()->json(['ok' => false, 'message' => $result['error']], 500);
@@ -145,7 +137,7 @@ class MKT03GridController extends Controller
             'anio', 'periodo', 'red_social', 'fecha_desde', 'fecha_hasta',
         ]);
 
-        $result = $this->orchestrator->consultGrid($params);
+        $result = app(MKT03Orchestrator::class)->consultGrid($params);
 
         return response()->json([
             'ok'    => true,
@@ -225,7 +217,7 @@ class MKT03GridController extends Controller
             return response()->json(['ok' => false, 'errors' => $v->errors()], 422);
         }
 
-        $result = $this->orchestrator->extendGrid($grid, [
+        $result = app(MKT03Orchestrator::class)->extendGrid($grid, [
             'fecha_desde' => $request->input('fecha_desde'),
             'fecha_hasta' => $request->input('fecha_hasta'),
         ]);
@@ -254,7 +246,7 @@ class MKT03GridController extends Controller
     {
         $umbralDias = $request->filled('dias') ? (int) $request->input('dias') : null;
 
-        $candidates = $this->orchestrator->detectContinuityCandidates($umbralDias);
+        $candidates = app(MKT03Orchestrator::class)->detectContinuityCandidates($umbralDias);
 
         $payload = array_map(function ($c) {
             $g = $c['grid'];
@@ -292,7 +284,7 @@ class MKT03GridController extends Controller
         $umbralDias = $request->filled('dias') ? (int) $request->input('dias') : null;
         $dryRun     = filter_var($request->input('dry_run', false), FILTER_VALIDATE_BOOLEAN);
 
-        $result = $this->orchestrator->extendAllNeedingContinuity($umbralDias, $dryRun);
+        $result = app(MKT03Orchestrator::class)->extendAllNeedingContinuity($umbralDias, $dryRun);
 
         return response()->json([
             'ok'      => true,

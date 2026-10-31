@@ -19,20 +19,6 @@ use Modules\Marketing\Support\PublicUrl;
  */
 class MKT03PieceController extends Controller
 {
-    /** @var MKT03Orchestrator */
-    private $orchestrator;
-
-    /** @var ImageGenerationService */
-    private $imageService;
-
-    public function __construct(
-        MKT03Orchestrator $orchestrator,
-        ImageGenerationService $imageService
-    ) {
-        $this->orchestrator = $orchestrator;
-        $this->imageService = $imageService;
-    }
-
     /**
      * POST /marketing/mkt03/items/{itemId}/produce
      *
@@ -48,7 +34,7 @@ class MKT03PieceController extends Controller
         );
 
         try {
-            $piece = $this->orchestrator->producePiece($gridItem, (bool) $generateImage);
+            $piece = app(MKT03Orchestrator::class)->producePiece($gridItem, (bool) $generateImage);
 
             if (!$piece) {
                 return response()->json([
@@ -144,7 +130,7 @@ class MKT03PieceController extends Controller
             ], 422);
         }
 
-        $result = $this->imageService->generate($prompt, [
+        $result = app(ImageGenerationService::class)->generate($prompt, [
             'aspect_ratio' => $aspectRatio,
             'quality'      => $request->input('quality', 'standard'),
             'style'        => $request->input('style', 'vivid'),

@@ -5,25 +5,25 @@ namespace Tests\Feature\Marketing;
 use Hyn\Tenancy\Environment;
 use Hyn\Tenancy\Models\Website;
 use Modules\Marketing\Contracts\ImageProviderInterface;
+use Modules\Marketing\Services\AgentConfigService;
 use Modules\Marketing\Models\ChatbotConfig;
 use Modules\Marketing\Services\Image\DallE3Provider;
 use Modules\Marketing\Services\Image\GPTImage2Provider;
+use Modules\Marketing\Services\Image\NanoBananaProvider;
 use Tests\TestCase;
 
 /**
- * Mkt03ConfigBdFirstTest — refactor "configs operativas a BD"
+ * Mkt03ConfigBdFirstTest — compatibilidad de configuracion de imagen de MKT-03
  *
- * Cubre que los settings operativos del MKT-03 (provider, modelo, quality,
- * format) ahora se leen PRIMERO de marketing_chatbot_config y solo si la
- * BD no tiene la clave, caen al config legacy del .env.
+ * Cubre que el servicio de generación usa la misma configuración por agente
+ * que la UI y que los providers mantienen compatibilidad con los settings legacy.
  *
  * Cubre:
  *   1. ChatbotConfig acepta value_type='select' con options JSON
- *   2. ChatbotServiceProvider resuelve ImageProviderInterface según el valor
- *      de mkt03_image_provider en BD (no del .env)
+ *   2. ImageProviderInterface delega la selección a AgentConfigService
  *   3. DallE3Provider toma el modelo desde BD si está
  *   4. GPTImage2Provider toma el modelo + quality + format desde BD
- *   5. Si la key en BD está vacía, fallback al .env funciona
+ *   5. Los overrides explícitos de constructor tienen prioridad
  */
 class Mkt03ConfigBdFirstTest extends TestCase
 {
@@ -91,26 +91,22 @@ class Mkt03ConfigBdFirstTest extends TestCase
     }
 
     /** @test */
-    public function image_provider_singleton_resuelve_dalle3_si_bd_dice_dalle3()
+    public function image_provider_usa_la_configuracion_de_agente_para_resolver_nano_banana()
     {
-        ChatbotConfig::set('mkt03_image_provider', 'dalle3');
-
-        // Forzar re-resolve (bind, no singleton, así que cada make() vuelve a leer)
-        $provider = app(ImageProviderInterface::class);
-
-        $this->assertInstanceOf(DallE3Provider::class, $provider,
-            'Cuando BD dice dalle3, el provider concreto debe ser DallE3Provider');
-    }
-
-    /** @test */
-    public function image_provider_resuelve_gpt_image_2_si_bd_dice_gpt_image_2()
-    {
-        ChatbotConfig::set('mkt03_image_provider', 'gpt-image-2');
+        $agentConfigService = $this->createMock(AgentConfigService::class);
+        $agentConfigService->expects($this->once())
+            ->method('resolveImageProvider')
+            ->with('mkt03')
+            ->willReturn(new NanoBananaProvider([
+                'model' => 'gemini-3.1-flash-image',
+            ]));
+        $this->app->instance(AgentConfigService::class, $agentConfigService);
 
         $provider = app(ImageProviderInterface::class);
 
-        $this->assertInstanceOf(GPTImage2Provider::class, $provider,
-            'Cuando BD dice gpt-image-2, el provider concreto debe ser GPTImage2Provider');
+        $this->assertInstanceOf(NanoBananaProvider::class, $provider);
+        $this->assertEquals('gemini-3.1-flash-image', $provider->getModelName());
+        $this->assertTrue($provider->supportsImageEdit());
     }
 
     /** @test */

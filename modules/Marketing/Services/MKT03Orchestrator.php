@@ -69,7 +69,7 @@ class MKT03Orchestrator
         $grids = [];
         $totalItems = 0;
 
-        DB::beginTransaction();
+        DB::connection('tenant')->beginTransaction();
         try {
             foreach ($redes as $red) {
                 // Verificar si ya existe
@@ -110,6 +110,13 @@ class MKT03Orchestrator
                     'items_existentes' => [],
                 ]);
 
+                if (!empty($generation['_fallback'])) {
+                    $error = isset($generation['resumen_generacion'])
+                        ? $generation['resumen_generacion']
+                        : 'El proveedor de IA no pudo generar la grilla.';
+                    throw new \RuntimeException($error);
+                }
+
                 $saved = $this->generator->saveGeneratedItems($generation, $grid);
                 $totalItems += $saved;
                 $grids[] = $grid->fresh();
@@ -121,9 +128,9 @@ class MKT03Orchestrator
                 ]);
             }
 
-            DB::commit();
+            DB::connection('tenant')->commit();
         } catch (\Exception $e) {
-            DB::rollBack();
+            DB::connection('tenant')->rollBack();
             Log::error('MKT03Orchestrator[ModeA]: error creando grilla', [
                 'error' => $e->getMessage(),
             ]);

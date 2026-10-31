@@ -1,0 +1,103 @@
+RESUMEN DE LOS TRES ULTIMOS COMMITS DE dev-jadir
+Repositorio: https://github.com/EvyKuper/erp_compipro/tree/dev-jadir
+Fecha de los commits: 26 de octubre de 2026
+
+RESUMEN GENERAL
+
+Los tres commits construyen y completan un flujo de pre-cotizacion comercial:
+primero preparan las tablas tenant, luego agregan la comparativa de proveedores
+y el ciclo de revision/emision de la cotizacion, y finalmente conectan los
+proveedores de respaldo con la creacion del proyecto. Tambien se refuerza el
+guardado transaccional en la base de datos de cada empresa.
+
+
+1. BASE DE DATOS PARA PRE-COTIZACIONES Y PROVEEDORES DE RESPALDO
+
+Commit: 888268323f27b8605efe1016704d420459ea3dc9
+Enlace: https://github.com/EvyKuper/erp_compipro/commit/888268323f27b8605efe1016704d420459ea3dc9
+
+Se agregaron migraciones tenant idempotentes y scripts SQL equivalentes para
+instalacion manual. La estructura nueva cubre:
+
+- Kits de productos para propuestas.
+- Comparativa de proveedores por articulo de la pre-cotizacion.
+- Tipo de linea del articulo.
+- Referencia a cotizaciones anteriores del articulo.
+- Proveedores de respaldo asociados a productos de proyectos.
+
+Los scripts SQL se plantearon para aplicarse manualmente en cada base tenant,
+despues de realizar un backup.
+
+Archivos: migraciones tenant y scripts en database/sql.
+
+
+2. PRE-COTIZACION, COMPARATIVA Y EMISION AL CLIENTE
+
+Commit: 73c53062b74357f1e40aefc200bf8e8cbb416b98
+Enlace: https://github.com/EvyKuper/erp_compipro/commit/73c53062b74357f1e40aefc200bf8e8cbb416b98
+
+Se amplio el flujo de requerimientos y cotizacion:
+
+- Se incorporo una comparativa de proveedores por articulo. El proveedor y el
+  costo son obligatorios; el plazo del proveedor es opcional. Se puede guardar
+  un ganador, que determina el costo usado.
+- La IA limita la pre-cotizacion a los productos solicitados y puede reutilizar
+  margen y proveedor de productos cotizados con al menos 90% de similitud.
+  Regenerar actualiza la pre-cotizacion existente en vez de duplicarla.
+- Se mejoro la busqueda en catalogo con un minimo de 80% de coincidencia contra
+  el nombre corto, y se muestran datos del producto entre cotizacion y catalogo.
+- Se unificaron los plazos en dias utiles y el tiempo de entrega al cliente en
+  pre-cotizacion, preview y PDF. Tambien se ajusto el PDF para evitar columnas
+  cortadas y deformacion de imagenes.
+- Se agrego el flujo de emision y respuesta del cliente: emitir, aprobar,
+  solicitar cambios, rechazar, reabrir y convertir. El servidor valida los
+  pasos permitidos y el ganador/plazo antes de emitir.
+- La regeneracion queda restringida antes de la primera emision y se conserva
+  una version fija.
+- Pre-cotizacion, preview y cotizacion final comparten estado y bloqueo. La
+  emision de cotizacion final queda oculta por ahora.
+- La conversion a cotizacion formal se realiza de forma atomica en la base de
+  la empresa e incorpora el codigo MAP con el cliente en Preventa.
+- Se agregaron avisos de advertencia/error en ventanas con confirmacion y se
+  ocultaron las opciones "Subir nueva cotizacion" y el adjunto de Interacciones.
+
+Archivos principales: vistas Vue de requerimientos; controladores y modelos de
+pre-cotizacion/propuesta; servicios de cotizacion, matching y PDF; helpers y
+prompt del sistema.
+
+
+3. CREACION DE PROYECTOS Y PROVEEDORES DE RESPALDO
+
+Commit: 166324c428ccdded91ee1d776d1f84a0e27607ce
+Enlace: https://github.com/EvyKuper/erp_compipro/commit/166324c428ccdded91ee1d776d1f84a0e27607ce
+
+Se conecto la comparativa con la creacion de proyectos:
+
+- El proyecto toma proveedor, costo y plazo del proveedor ganador. Se corrigio
+  un conteo que podia bloquear el proceso aunque no hubiera articulos realmente
+  sin proveedor.
+- Los demas proveedores cotizados se guardan como alternativas de respaldo y
+  no se agregan al costo del proyecto.
+- Se puede elegir un proveedor de respaldo para reemplazar al actual, con
+  confirmacion de precio, plazo y motivo. El proveedor reemplazado queda en el
+  historial y las alternativas se pueden quitar.
+- Si falla la copia de productos, no se crea el proyecto y se informa el motivo.
+- Las observaciones de producto de la pre-cotizacion dejan de copiarse al campo
+  de preocupaciones/observaciones del cliente.
+- Se corrigio el uso de transacciones para Requerimientos, Contactos y
+  Proyectos, de modo que operen sobre la conexion de la empresa y protejan los
+  cambios guardados.
+
+Archivos principales: controladores de Proyectos, Requerimientos y Contactos;
+modelo de proveedores por producto; formulario Vue de proyectos.
+
+
+RESULTADO FUNCIONAL
+
+En conjunto, los commits habilitan un proceso desde la comparacion de
+proveedores y armado de una pre-cotizacion, pasando por su revision y emision al
+cliente, hasta la conversion a cotizacion formal y creacion del proyecto con
+proveedores alternativos trazables.
+
+Este resumen describe los cambios registrados en los mensajes y archivos de
+esos commits; no implica que se hayan ejecutado pruebas o despliegues.

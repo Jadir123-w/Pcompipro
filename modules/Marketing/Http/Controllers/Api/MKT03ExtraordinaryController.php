@@ -16,14 +16,6 @@ use Modules\Marketing\Services\MKT03Orchestrator;
  */
 class MKT03ExtraordinaryController extends Controller
 {
-    /** @var MKT03Orchestrator */
-    private $orchestrator;
-
-    public function __construct(MKT03Orchestrator $orchestrator)
-    {
-        $this->orchestrator = $orchestrator;
-    }
-
     /**
      * GET /marketing/mkt03/extraordinary
      */
@@ -82,7 +74,7 @@ class MKT03ExtraordinaryController extends Controller
         $params = $request->only(['fecha', 'motivo', 'red_social', 'descripcion', 'clasificacion']);
         $params['solicitante_id'] = $request->user() ? $request->user()->id : null;
 
-        $result = $this->orchestrator->createExtraordinary($params);
+        $result = app(MKT03Orchestrator::class)->createExtraordinary($params);
 
         return response()->json([
             'ok'            => true,
@@ -112,7 +104,7 @@ class MKT03ExtraordinaryController extends Controller
 
         $decisorId = $request->user() ? $request->user()->id : null;
 
-        $updated = $this->orchestrator->decideExtraordinaryForFuture(
+        $updated = app(MKT03Orchestrator::class)->decideExtraordinaryForFuture(
             $extra,
             (bool) $request->input('approved'),
             $decisorId,

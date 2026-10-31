@@ -53,7 +53,7 @@ class ImageGenerationService
     /**
      * Editar/transformar imágenes usando referencias visuales.
      *
-     * Solo funciona con providers que soportan multimodal (gpt-image-2).
+     * Solo funciona con providers que soportan multimodal (gpt-image-2, Nano Banana).
      * Si el provider activo no soporta editImage(), retorna error claro.
      *
      * @param  string  $prompt
@@ -83,7 +83,7 @@ class ImageGenerationService
         if (!$this->provider->supportsImageEdit()) {
             return [
                 'success' => false,
-                'error'   => 'El provider activo (' . $this->provider->getProviderName() . ') no soporta edición con referencias. Cambia MKT03_IMAGE_PROVIDER=gpt-image-2',
+                'error'   => 'El provider activo (' . $this->provider->getProviderName() . ') no soporta edición con referencias. Usa gpt-image-2 o nano-banana.',
             ];
         }
 

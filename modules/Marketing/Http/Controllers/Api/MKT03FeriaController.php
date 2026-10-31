@@ -20,14 +20,6 @@ use Modules\Marketing\Services\MKT03Orchestrator;
  */
 class MKT03FeriaController extends Controller
 {
-    /** @var MKT03Orchestrator */
-    private $orchestrator;
-
-    public function __construct(MKT03Orchestrator $orchestrator)
-    {
-        $this->orchestrator = $orchestrator;
-    }
-
     /**
      * GET /marketing/mkt03/ferias
      */
@@ -137,7 +129,7 @@ class MKT03FeriaController extends Controller
         $producePieces = filter_var($request->input('produce_pieces', false), FILTER_VALIDATE_BOOLEAN);
 
         try {
-            $result = $this->orchestrator->generateFeriaItems($feria, $redes, $grid, $producePieces);
+            $result = app(MKT03Orchestrator::class)->generateFeriaItems($feria, $redes, $grid, $producePieces);
             return response()->json([
                 'ok'             => true,
                 'items_creados'  => $result['items_creados'],
@@ -216,7 +208,7 @@ class MKT03FeriaController extends Controller
         $itemsResult = null;
         if ($autoGenerate && $feria->gridItems()->count() === 0) {
             try {
-                $itemsResult = $this->orchestrator->generateFeriaItems($feria, [], null, false);
+                $itemsResult = app(MKT03Orchestrator::class)->generateFeriaItems($feria, [], null, false);
             } catch (\Exception $e) {
                 // No fallar el endpoint si la generación tarda — la feria queda creada
                 $itemsResult = ['error' => $e->getMessage()];

@@ -22,20 +22,6 @@ use Modules\Marketing\Services\GridPatternAnalyzer;
  */
 class MKT03ConfigController extends Controller
 {
-    /** @var GridPatternAnalyzer */
-    private $patternAnalyzer;
-
-    /** @var ExcelHistoricalImporter */
-    private $excelImporter;
-
-    public function __construct(
-        GridPatternAnalyzer $patternAnalyzer,
-        ExcelHistoricalImporter $excelImporter
-    ) {
-        $this->patternAnalyzer = $patternAnalyzer;
-        $this->excelImporter   = $excelImporter;
-    }
-
     /*
     |--------------------------------------------------------------------------
     | PlatformConfig
@@ -212,14 +198,62 @@ class MKT03ConfigController extends Controller
             return response()->json(['ok' => false, 'errors' => $v->errors()], 422);
         }
 
+        $archivo = $request->file('archivo');
+        if (!$archivo || !$archivo->isValid()) {
+            $uploadErrors = [
+                UPLOAD_ERR_INI_SIZE   => 'El archivo supera el límite de subida configurado en PHP.',
+                UPLOAD_ERR_FORM_SIZE  => 'El archivo supera el tamaño máximo permitido por el formulario.',
+                UPLOAD_ERR_PARTIAL    => 'El archivo se recibió parcialmente. Intenta subirlo nuevamente.',
+                UPLOAD_ERR_NO_FILE    => 'No se recibió ningún archivo.',
+                UPLOAD_ERR_NO_TMP_DIR => 'El servidor no tiene disponible la carpeta temporal de subidas.',
+                UPLOAD_ERR_CANT_WRITE => 'El servidor no pudo guardar el archivo temporal.',
+                UPLOAD_ERR_EXTENSION  => 'Una extensión de PHP impidió la subida del archivo.',
+            ];
+            $message = $archivo
+                ? (isset($uploadErrors[$archivo->getError()])
+                    ? $uploadErrors[$archivo->getError()]
+                    : 'El archivo no se recibió correctamente.')
+                : 'No se recibió ningún archivo.';
+
+            return response()->json(['ok' => false, 'message' => $message], 422);
+        }
+
+        $temporaryPath = $archivo->getPathname();
+        if (!$temporaryPath || !is_file($temporaryPath)) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'No se encontró el archivo temporal subido. Intenta seleccionarlo nuevamente.',
+            ], 422);
+        }
+
         $disk = config('marketing.chatbot.mkt03.image_storage_disk', 'public');
-        $filename = 'historical_' . $request->input('anio') . '_' . date('YmdHis') . '.' . $request->file('archivo')->getClientOriginalExtension();
-        $storagePath = $request->file('archivo')->storeAs('mkt03/historical', $filename, $disk);
+        $filename = 'historical_' . $request->input('anio') . '_' . date('YmdHis') . '.' . $archivo->getClientOriginalExtension();
+        $storagePath = 'mkt03/historical/' . $filename;
+        $stream = fopen($temporaryPath, 'rb');
+        if ($stream === false) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'No se pudo leer el archivo temporal subido. Intenta seleccionarlo nuevamente.',
+            ], 422);
+        }
+
+        try {
+            $stored = Storage::disk($disk)->put($storagePath, $stream);
+        } finally {
+            fclose($stream);
+        }
+
+        if (!$stored) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'No se pudo guardar el archivo histórico en el almacenamiento configurado.',
+            ], 500);
+        }
 
         $hg = HistoricalGrid::create([
             'anio'                  => $request->input('anio'),
             'nombre'                => $request->input('nombre'),
-            'archivo_original'      => $request->file('archivo')->getClientOriginalName(),
+            'archivo_original'      => $archivo->getClientOriginalName(),
             'archivo_storage_path'  => $storagePath,
             'estado'                => HistoricalGrid::ESTADO_IMPORTADO,
             'user_id'               => $request->user() ? $request->user()->id : null,
@@ -229,7 +263,7 @@ class MKT03ConfigController extends Controller
         $autoParse = filter_var($request->input('auto_parse', true), FILTER_VALIDATE_BOOLEAN);
         $parseResult = null;
         if ($autoParse) {
-            $parseResult = $this->excelImporter->import($hg);
+            $parseResult = app(ExcelHistoricalImporter::class)->import($hg);
         }
 
         return response()->json([
@@ -259,7 +293,7 @@ class MKT03ConfigController extends Controller
         }
 
         try {
-            $result = $this->excelImporter->import($hg);
+            $result = app(ExcelHistoricalImporter::class)->import($hg);
             return response()->json([
                 'ok'            => $result['success'],
                 'result'        => $result,
@@ -291,8 +325,23 @@ class MKT03ConfigController extends Controller
         }
 
         try {
-            $result = $this->patternAnalyzer->analyzeHistoricalGrid($hg);
-            $saved  = $this->patternAnalyzer->savePatterns($result, $hg);
+            $result = app(GridPatternAnalyzer::class)->analyzeHistoricalGrid($hg);
+            if (!empty($result['_fallback'])) {
+                $message = isset($result['resumen_analisis'])
+                    ? $result['resumen_analisis']
+                    : 'El proveedor de IA no pudo completar el análisis.';
+                $hg->update([
+                    'estado'        => HistoricalGrid::ESTADO_ERROR,
+                    'error_message' => $message,
+                ]);
+
+                return response()->json([
+                    'ok'      => false,
+                    'message' => $message,
+                ], 502);
+            }
+
+            $saved  = app(GridPatternAnalyzer::class)->savePatterns($result, $hg);
 
             $hg->update(['estado' => HistoricalGrid::ESTADO_ANALIZADO]);
 

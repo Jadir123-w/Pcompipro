@@ -185,4 +185,39 @@ class Mkt03EditorialGuidelinesTest extends TestCase
         $this->assertStringContainsString('Optimizaciones específicas para LINKEDIN', $capturedSystemPrompt,
             'Cuando se solicita 1 sola red, el addendum debe incluir su sección específica');
     }
+
+    /** @test */
+    public function grid_generator_retry_reutiliza_system_prompt_y_limite_de_tokens()
+    {
+        $capturedOptions = [];
+        $capturedPrompts = [];
+        $responses = [
+            'respuesta que no es JSON',
+            json_encode([
+                'resumen_generacion' => 'mock',
+                'parametros_usados'  => [],
+                'items_generados'    => [],
+            ]),
+        ];
+        $providerMock = Mockery::mock(AIProviderInterface::class);
+        $providerMock->shouldReceive('sendMessage')
+            ->twice()
+            ->andReturnUsing(function ($systemPrompt, $messages, $options) use (&$capturedOptions, &$capturedPrompts, &$responses) {
+                $capturedPrompts[] = $systemPrompt;
+                $capturedOptions[] = $options;
+                return array_shift($responses);
+            });
+
+        $engine = new GridGeneratorEngine($providerMock, new EditorialGuidelinesService());
+        $result = $engine->generateGrid([
+            'fecha_desde' => '2027-08-01',
+            'fecha_hasta' => '2027-08-31',
+            'redes'       => ['linkedin'],
+            'tipo_periodo'=> 'mensual',
+        ]);
+
+        $this->assertArrayHasKey('items_generados', $result);
+        $this->assertSame($capturedPrompts[0], $capturedPrompts[1]);
+        $this->assertSame(16000, $capturedOptions[1]['max_tokens']);
+    }
 }
