@@ -28,6 +28,13 @@ class MKT03PieceController extends Controller
     {
         $gridItem = GridItem::findOrFail($itemId);
 
+        if ($gridItem->pieces()->exists()) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Este ítem ya tiene una pieza producida.',
+            ], 409);
+        }
+
         $generateImage = $request->input(
             'generate_image',
             (bool) config('marketing.chatbot.mkt03.auto_generate_image', false)

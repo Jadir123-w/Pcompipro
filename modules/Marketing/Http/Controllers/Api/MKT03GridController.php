@@ -120,7 +120,12 @@ class MKT03GridController extends Controller
      */
     public function show($id)
     {
-        $grid = Grid::with(['items', 'historicalBase'])
+        $grid = Grid::with([
+            'items' => function ($query) {
+                $query->withCount('pieces');
+            },
+            'historicalBase',
+        ])
             ->findOrFail($id);
 
         return response()->json(['ok' => true, 'grid' => $grid]);
