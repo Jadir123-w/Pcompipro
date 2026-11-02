@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div>
     <el-row :gutter="15" class="mb-3">
       <el-col :span="6">
@@ -53,6 +53,9 @@
                      @click="decide(scope.row, true)">A futuras</el-button>
           <el-button v-if="scope.row.aprobado_para_futuras_grillas === null" size="mini"
                      @click="decide(scope.row, false)">Descartar</el-button>
+          <el-button size="mini" type="danger" icon="el-icon-delete"
+                     v-if="scope.row.aprobado_para_futuras_grillas !== null"
+                     @click="deleteExtraordinary(scope.row)">Borrar</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -141,6 +144,11 @@ export default {
         this.$message.warning('Completa fecha y motivo')
         return
       }
+      const hoy = new Date().toISOString().split('T')[0]
+      if (this.form.fecha < hoy) {
+        this.$message.warning('La fecha no puede ser anterior a hoy')
+        return
+      }
       this.saving = true
       try {
         await this.$http.post('/marketing/mkt03/extraordinary', this.form)
@@ -166,6 +174,26 @@ export default {
       }
     },
 
+    async deleteExtraordinary(item) {
+      try {
+        await this.$confirm(
+          'Â¿Seguro que quieres eliminar este extraordinario?',
+          'Eliminar',
+          { confirmButtonText: 'Eliminar', cancelButtonText: 'Cancelar', type: 'warning' }
+        )
+      } catch (e) {
+        return // el usuario cancela
+      }
+      try {
+        await this.$http.delete('/marketing/mkt03/extraordinary/' + item.id)
+        this.$message.success('Extraordinario eliminado')
+        this.load()
+      } catch (e) {
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error eliminando'
+        this.$message.error(msg)
+      }
+    },
+
     estadoType(estado) {
       var map = {
         'solicitado': 'info', 'en_desarrollo': 'warning', 'entregado': 'primary',
@@ -176,3 +204,5 @@ export default {
   }
 }
 </script>
+
+

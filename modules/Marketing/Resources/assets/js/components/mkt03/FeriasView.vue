@@ -56,6 +56,8 @@
                      @click="generateItems(scope.row)">
             Generar items
           </el-button>
+          <el-button size="mini" type="danger" icon="el-icon-delete"
+                     @click="deleteFeria(scope.row)"></el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -161,7 +163,33 @@ export default {
       this.loading = false
     },
 
+    async deleteFeria(item) {
+      try {
+        await this.$confirm(
+          'Â¿Seguro que quieres eliminar esta feria?',
+          'Eliminar',
+          { confirmButtonText: 'Eliminar', cancelButtonText: 'Cancelar', type: 'warning' }
+        )
+      } catch (e) {
+        return // el usuario cancela
+      }
+      try {
+        await this.$http.delete('/marketing/mkt03/ferias/' + item.id)
+        this.$message.success('Feria eliminada')
+        this.load()
+      } catch (e) {
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error eliminando'
+        this.$message.error(msg)
+      }
+    },
+
     async create() {
+      const hoy = new Date().toISOString().split('T')[0]
+      if (this.form.fecha < hoy) {
+        this.$message.warning('La fecha no puede ser anterior a hoy')
+        return
+      }
+      
       if (!this.form.nombre || !this.form.fecha) {
         this.$message.warning('Completa nombre y fecha')
         return
@@ -184,6 +212,11 @@ export default {
     },
 
     async generateItems(feria) {
+      const hoy = new Date().toISOString().split('T')[0]
+      if (feria.fecha < hoy) {
+        this.$message.warning('La fecha de la feria ya pasó')
+        return
+      }
       this.generatingId = feria.id
       try {
         var r = await this.$http.post('/marketing/mkt03/ferias/' + feria.id + '/generate-items', {})
