@@ -8,6 +8,7 @@ use Modules\Marketing\Exceptions\AIProviderException;
 use Modules\Marketing\Models\Grid;
 use Modules\Marketing\Models\GridItem;
 use Modules\Marketing\Models\LearningPattern;
+use Modules\Marketing\Models\ExtraordinaryContent;
 use Modules\Marketing\Models\PlatformConfig;
 use Modules\Marketing\Models\FeriaReceived;
 
@@ -242,6 +243,27 @@ class GridGeneratorEngine
                 $ctx .= "- {$fecha} | {$red} | {$tema}\n";
             }
             $ctx .= "\n";
+        }
+
+        $ctx .= "\n";
+
+        // ── Extraordinarios aprobados para futuras grillas ──
+        $extraordinarios = ExtraordinaryContent::where('aprobado_para_futuras_grillas', true)
+            ->whereNotNull('aprobado_para_futuras_grillas')
+            ->get();
+
+        if ($extraordinarios->count() > 0) {
+            $ctx .= "# EXTRAORDINARIOS APROBADOS PARA FUTURAS GRILLAS\n\n";
+            foreach ($extraordinarios as $ec) {
+                $ctx .= "- ID:{$ec->id} | Clasificación:{$ec->clasificacion}";
+                if ($ec->motivo) $ctx .= " | Motivo:{$ec->motivo}";
+                $ctx .= "\n";
+            }
+            $ctx .= "\n";
+            $ctx .= "• La IA puede incorporar estos extraordinarios en la grilla generada\n";
+            $ctx .= "• No hay bloqueo rígido por red social - pueden aparecer en cualquier red (FB, IG, LI, TT)\n";
+            $ctx .= "• El objetivo es que 'alimenten futuras grillas' en general, no hay duplicados exactos forzados\n";
+            $ctx .= "• Si un extraordinario ya fue usado en una red específica, la IA preferirá generar alternativas para esa red\n\n";
         }
 
         $ctx .= "Genera la grilla respetando todos los parámetros y devolviendo el JSON según el esquema indicado en las instrucciones del sistema.";
