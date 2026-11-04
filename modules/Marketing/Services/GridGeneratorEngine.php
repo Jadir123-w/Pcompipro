@@ -369,4 +369,48 @@ class GridGeneratorEngine
             '_fallback'          => true,
         ];
     }
+    }
+
+    /**
+     * Insertar un extraordinary en una grilla ya existente, asignándole un item_order
+     * consecutivo (máximo actual + 1) sin reordenar los items existentes.
+     *
+     * Esto garantiza que la columna visual "#" sea exactamente igual al item_order de la BD,
+     * sin necesidad de UPDATE masivo a los items existentes.
+     *
+     * @param int $gridId ID de la grilla existente
+     * @param int $extraordinaryId ID del extraordinary a insertar
+     * @return GridItem El item creado, o null en caso de error
+     */
+    public function insertExtraordinarioDespuesDeGrilla($gridId, $extraordinaryId)
+    {
+        // 1. Calcular el próximo item_order: máximo actual de esa grilla + 1
+        $maxOrder = GridItem::where('grid_id', $gridId)
+            ->max('item_order') ?? 0;
+
+        $nuevoItemOrder = $maxOrder + 1;
+
+        // 2. Obtener el extraordinary para extraer su fecha y otros datos
+        $extra = ExtraordinaryContent::find($extraordinaryId);
+        if (!$extra) {
+            return null;
+        }
+
+        // 3. Insertar el nuevo GridItem con el item_order calculado
+        GridItem::create([
+            'grid_id'           => $gridId,
+            'extraordinary_id'  => $extraordinaryId,
+            'origen'            => 'extraordinario',
+            'fecha_publicacion' => $extra->fecha,
+            'item_order'        => $nuevoItemOrder,
+            'red_social'        => $extra->red_social ?? 'facebook',
+            'tematica'          => $extra->descripcion ? substr($extra->descripcion, 0, 50) : 'Contenido extraordinario',
+            'objetivo'          => 'presencia_institucional',
+            'linea_comercial'   => 'Kits Corporativos',
+            'tipo_contenido'    => 'Promoción',
+            'prioridad'         => 'media',
+            'observaciones'     => $extra->motivo,
+        ]);
+
+    }
 }
