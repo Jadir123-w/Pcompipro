@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Social Media Content (MKT-03)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f0f4f8;
+            color: #333;
+            line-height: 1.5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Tabs */
+        .tabs-container {
+            background: #f8f9fc;
+            border-radius: 8px;
+            padding: 8px;
+            margin-bottom: 24px;
+            border: 1px solid #e8eaed;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 4px;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            font-size: 14px;
+            color: #666;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            background: #f0f2f5;
+        }
+
+        .tab.active {
+            background: #ffffff;
+            color: #2c3e50;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        }
+
+        /* Filter Bar - oculta en dashboard */
+        .filter-bar {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e8eaed;
+            flex-wrap: wrap;
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .select-box {
+            position: relative;
+            min-width: 160px;
+        }
+
+        .select-box select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #e8eaed;
+            border-radius: 6px;
+            background: #f8f9fc;
+            font-size: 14px;
+            color: #333;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .select-box select:hover {
+            border-color: #5c6bc0;
+        }
+
+        .select-box::after {
+            content: '▼';
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 10px;
+            color: #999;
+            pointer-events: none;
+        }
+
+        .date-range-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #f8f9fc;
+            border: 1px solid #e8eaed;
+            border-radius: 6px;
+            padding: 6px 10px;
+        }
+
+        .date-range-group label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 0;
+        }
+
+        .date-range-group input[type="date"] {
+            padding: 8px 10px;
+            border: 1px solid #e8eaed;
+            border-radius: 4px;
+            background: #fff;
+            font-size: 13px;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .date-range-group input[type="date"]:hover {
+            border-color: #5c6bc0;
+        }
+
+        .btn-recargar {
+            padding: 10px 20px;
+            background: #f8f9fc;
+            border: 1px solid #e8eaed;
+            border-radius: 6px;
+            color: #666;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .btn-recargar:hover {
+            background: #f0f2f5;
+            border-color: #dcdde0;
+        }
+
+        .btn-recargar svg {
+            width: 16px;
+            height: 16px;
+            fill: #666;
+        }
+
+        /* Primary Button */
+        .btn-primary {
+            background: #5c6bc0;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+
+        .btn-primary:hover {
+            background: #4a54a0;
+        }
+
+        .btn-primary svg {
+            width: 16px;
+            height: 16px;
+            fill: white;
+        }
+
+        /* Secondary Button - Ampliar */
+        .btn-secondary {
+            background: #fff;
+            color: #5c6bc0;
+            border: 1px solid #5c6bc0;
+            border-radius: 6px;
+            padding: 10px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-left: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+
+        .btn-secondary:hover {
+            background: #e8eaf6;
+            border-color: #4a54a0;
+        }
+
+        .btn-secondary svg {
+            width: 16px;
+            height: 16px;
+            fill: #5c6bc0;
+        }
+
+        /* Table - Grillas */
+        .table-container {
+            background: #ffffff;
+            border-radius: 8px;
+            border: 1px solid #e8eaed;
+            overflow: hidden;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead th {
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 12px;
+            color: #2c3e50;
+            background: #f8f9fc;
+            border-bottom: 1px solid #e8eaed;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        tbody td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f0f2f5;
+            font-size: 13px;
+            color: #333;
+            vertical-align: middle;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        tbody tr:hover {
+            background: #f8f9fc;
+        }
+
+        /* Badges */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+        }
+
+        .badge-social {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .badge-status {
+            background: #e8f5e9;
+            color: #4caf50;
+        }
+
+        .badge-origen {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        /* Actions */
+        .acciones {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .btn-action {
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+
+        .btn-producir {
+            background: #3f51b5;
+            color: white;
+        }
+
+        .btn-producir:hover {
+            background: #2c3e50;
+        }
+
+        .btn-borrar {
+            background: #fff;
+            color: #ff5252;
+            border: 1px solid #ff5252;
+        }
+
+        .btn-borrar:hover {
+            background: #ffebee;
+        }
+
+        .btn-action svg {
+            width: 14px;
+            height: 14px;
+            fill: currentColor;
+        }
+
+        .btn-producir svg {
+            fill: white;
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #888;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: #ffffff;
+            border-radius: 12px;
+            width: 480px;
+            max-width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+        }
+
+        .modal-header {
+            padding: 24px 28px;
+            border-bottom: 1px solid #e8eaed;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin: 0;
+        }
+
+        .modal-close {
+            background: transparent;
+            border: none;
+            font-size: 24px;
+            color: #999;
+            cursor: pointer;
+            line-height: 1;
+            padding: 0;
+        }
+
+        .modal-close:hover {
+            color: #666;
+        }
+
+        .modal-body {
+            padding: 28px;
+        }
+
+        .modal-field {
+            margin-bottom: 20px;
+        }
+
+        .modal-field label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+
+        .modal-field input[type="date"],
+        .modal-field select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #e8eaed;
+            border-radius: 6px;
+            background: #f8f9fc;
+            font-size: 14px;
+            color: #333;
+            outline: none;
+        }
+
+        .modal-field input[type="date"]:hover,
+        .modal-field select:hover {
+            border-color: #5c6bc0;
+        }
+
+        .modal-footer {
+            padding: 20px 28px;
+            border-top: 1px solid #e8eaed;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        .btn-cancel {
+            background: #f8f9fc;
+            color: #666;
+            border: 1px solid #e8eaed;
+            border-radius: 6px;
+            padding: 10px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .btn-cancel:hover {
+            background: #f0f2f5;
+        }
+
+        .btn-confirm {
+            background: #5c6bc0;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .btn-confirm:hover {
+            background: #4a54a0;
+        }
+
+        /* Dashboard View */
+        .dashboard-view {
+            background: #ffffff;
+            border-radius: 8px;
+            border: 1px solid #e8eaed;
+            padding: 24px;
+        }
+
+        .dashboard-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+
+        /* Stats Row (horizontal cards) */
+        .stats-row {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: #ffffff;
+            border: 1px solid #e8eaed;
+            border-radius: 8px;
+            padding: 20px;
+            flex: 1;
+            text-align: center;
+        }
+
+        .stat-card .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .stat-card .stat-label {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .stat-card.blue .stat-value { color: #6c5ce7; }
+        .stat-card.green .stat-value { color: #00b894; }
+        .stat-card.red .stat-value { color: #e17055; }
+        .stat-card.orange .stat-value { color: #e67e22; }
+        .stat-card.purple .stat-value { color: #a29bfe; }
+
+        /* Chart + Table Resumen Layout */
+        .dashboard-top {
+            display: flex;
+            gap: 24px;
+            align-items: flex-start;
+        }
+
+        .chart-panel {
+            flex: 2;
+            min-width: 350px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 320px;
+            background: #ffffff;
+            border: 1px solid #e8eaed;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .stats-panel {
+            flex: 1;
+            min-width: 300px;
+        }
+
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #f8f9fc;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .stats-table thead th {
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 11px;
+            color: #666;
+            background: #f8f9fc;
+            border-bottom: 1px solid #e8eaed;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .stats-table tbody td {
+            padding: 14px 16px;
+            border-bottom: 1px solid #e8eaed;
+            font-size: 13px;
+            color: #333;
+            vertical-align: middle;
+        }
+
+        .stats-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .stats-table tbody tr:hover {
+            background: #f0f2f5;
+        }
+
+        /* Stats Cards 3x2 grid (para poner a la derecha del chart) */
+        .stats-cards-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+
+        .stat-card-compact {
+            background: #ffffff;
+            border: 1px solid #e8eaed;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .stat-card-compact .stat-value {
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .stat-card-compact .stat-label {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .stat-card-compact.blue .stat-value { color: #6c5ce7; }
+        .stat-card-compact.green .stat-value { color: #00b894; }
+        .stat-card-compact.red .stat-value { color: #e17055; }
+        .stat-card-compact.orange .stat-value { color: #e67e22; }
+        .stat-card-compact.purple .stat-value { color: #a29bfe; }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>📅 Social Media Content (MKT-03)</h1>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs-container">
+            <div class="tabs">
+                <button class="tab" onclick="switchTab('dashboard')">Dashboard</button>
+                <button class="tab active" onclick="switchTab('grillas')">Grillas</button>
+                <button class="tab" onclick="switchTab('piezas')">Piezas</button>
+                <button class="tab" onclick="switchTab('historico')">Historico</button>
+                <button class="tab" onclick="switchTab('extraordinario')">Extraordinario</button>
+                <button class="tab" onclick="switchTab('ferias')">Ferias</button>
+                <button class="tab" onclick="switchTab('configuracion')">Configuración</button>
+            </div>
+        </div>
+
+        <!-- Filter Bar (oculta en dashboard) -->
+        <div id="filter-bar" class="filter-bar">
+            <div class="filter-group">
+                <div class="select-box">
+                    <select id="red_social">
+                        <option value="">Todas las redes</option>
+                        <option value="facebook">Facebook</option>
+                        <option value="instagram">Instagram</option>
+                        <option value="tiktok">TikTok</option>
+                        <option value="linkedin">LinkedIn</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="filter-group date-range-group">
+                <label>Desde:</label>
+                <input type="date" id="fecha_desde">
+                <label>Hasta:</label>
+                <input type="date" id="fecha_hasta">
+            </div>
+
+            <button class="btn-recargar" onclick="aplicarFiltros()">
+                <svg viewBox="0 0 24 24"><path d="M23 6c0-3.9-3.1-7-7-7h-4c-.6 0-1 .4-1 1s.4 1 1 1h4c2.8 0 5 2.2 5 5 0 1.3-.5 2.6-1.4 3.5l2.3 2.3c.6.6.6 1.6 0 2.2-.6.6-1.6.6-2.2 0l-4-4c-.8-.8-2-.8-2.8 0s-.8 2 0 2.8l4 4c.6.6 1.6.6 2.2 0 .6-.6.6-1.6 0-2.2l-2.3-2.3c-1-1-2.2-1.5-3.5-1.4C13.4 20 12 20 12 20c-3.9 0-7-3.1-7-7s3.1-7 7-7h4c.6 0 1-.4 1-1s-.4-1-1-1h-4c-2.8 0-5-2.2-5-5 0-1.3.5-2.6 1.4-3.5l-2.3-2.3c-.6-.6-.6-1.6 0-2.2.6-.6 1.6-.6 2.2 0l4 4c.8.8 2 .8 2.8 0s.8-2 0-2.8l-4-4c-.6-.6-1.6-.6-2.2 0-.6.6-.6 1.6 0 2.2l2.3 2.3c1 1 2.2 1.5 3.5 1.4C10.6 4 12 4 12 4c3.9 0 7 3.1 7 7z"/></svg>
+                Recargar
+            </button>
+
+            <button class="btn-primary">
+                <svg viewBox="0 0 24 24"><path d="M12 2c2 0 4 1 5 3l2 2c2 2 2 5 1 7l-3 3c-1 1-2 1-3 1s-2 0-3-1l-3-3c-2-2-2-5-1-7l2-2c2-2 5-2 7 0z"/><path d="M2 21l2-3c1-1 2-1 3 0l3 3c1 1 2 1 3 0l2-3c1-1 3-1 4 0l3 3c1 1 2 1 3 0l2-3c2-2 2-5 0-7l-2-2c-2-2-5-2-7 0l-2 2c-2 2-2 5 0 7l3 3c1 1 2 1 3 0l2-3c1-1 3-1 4 0l3 3c1 1 2 1 3 0l2-3c2-2 2-5 0-7l-2-2c-2-2-5-2-7 0z"/></svg>
+                Generar Grilla con IA (Modo A)
+            </button>
+
+            <button class="btn-secondary" onclick="abrirModalAmpliar()">
+                <svg viewBox="0 0 24 24"><path d="M19 13H5v-2h14v2z"/><path d="M0 0h24v24H0z" fill="none"/><path d="M12 2c5.5 0 10 4.5 10 10s-4.5 10-10 10S2 17.5 2 12 6.5 2 12 2zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm0 12c-2.2 0-4-1.8-4-4s1.8-4 4-4 4 1.8 4 4-1.8 4-4 4zm0-10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                Ampliar
+            </button>
+        </div>
+
+        <!-- Dashboard View -->
+        <div id="view-dashboard" class="dashboard-view" style="display: none;">
+            <div class="dashboard-title">Resumen por Red Social</div>
+
+            <!-- Top Row: Chart Izquierda + Stats Cards Derecha -->
+            <div class="dashboard-top">
+                <div class="chart-panel">
+                    <div class="chart-container">
+                        <canvas id="chartRedes"></canvas>
+                    </div>
+                </div>
+                <div class="stats-panel">
+                    <div class="stats-cards-grid">
+                        <div class="stat-card-compact blue">
+                            <div class="stat-value" id="stat-total">0</div>
+                            <div class="stat-label">Total Items</div>
+                        </div>
+                        <div class="stat-card-compact green">
+                            <div class="stat-value" id="stat-activos">0</div>
+                            <div class="stat-label">Activos</div>
+                        </div>
+                        <div class="stat-card-compact red">
+                            <div class="stat-value" id="stat-cancelados">0</div>
+                            <div class="stat-label">Cancelados</div>
+                        </div>
+                        <div class="stat-card-compact orange">
+                            <div class="stat-value" id="stat-pendientes">0</div>
+                            <div class="stat-label">Pendientes</div>
+                        </div>
+                        <div class="stat-card-compact purple">
+                            <div class="stat-value" id="stat-aprobados">0</div>
+                            <div class="stat-label">Aprobados</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabla Resumen debajo de ambos -->
+            <div class="dashboard-full-table">
+                <table class="stats-table">
+                    <thead>
+                        <tr>
+                            <th>Red Social</th>
+                            <th>Items</th>
+                            <th>Aprobados</th>
+                            <th>Cancelados</th>
+                            <th>Activos</th>
+                            <th>Pendientes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-resumen">
+                        <!-- Filas generadas por JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Grillas View -->
+        <div id="view-grillas" class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Fecha</th>
+                        <th>Red</th>
+                        <th>Temática</th>
+                        <th>Estado</th>
+                        <th>Origen</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpo-tabla">
+                    <!-- Items generados dinámicamente por JavaScript -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Modal Ampliar -->
+        <div class="modal-overlay" id="modalAmpliar">
+            <div class="modal">
+                <div class="modal-header">
+                    <h2>Ampliar Grilla</h2>
+                    <button class="modal-close" onclick="cerrarModalAmpliar()">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-field">
+                        <label>Fecha Desde</label>
+                        <input type="date" id="modal_fecha_desde">
+                    </div>
+                    <div class="modal-field">
+                        <label>Fecha Hasta</label>
+                        <input type="date" id="modal_fecha_hasta">
+                    </div>
+                    <div class="modal-field">
+                        <label>Red Social</label>
+                        <select id="modal_red_social">
+                            <option value="">Todas las redes</option>
+                            <option value="facebook">Facebook</option>
+                            <option value="instagram">Instagram</option>
+                            <option value="tiktok">TikTok</option>
+                            <option value="linkedin">LinkedIn</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-cancel" onclick="cerrarModalAmpliar()">Cancelar</button>
+                    <button class="btn-confirm" onclick="confirmarAmpliar()">Ampliar Grilla</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Generar 50 items entre septiembre y diciembre de 2026
+        const redes = ['facebook', 'instagram', 'linkedin', 'tiktok'];
+        const estados = ['activa', 'concluida', 'pendiente', 'cancelada'];
+        const origenes = ['grilla', 'extraordinario', 'feria', 'puntual'];
+        const temas = [
+            'Campaña de lanzamiento',
+            'Producto nuevo',
+            'Webinar educativo',
+            'Testimonio cliente',
+            'Oferta especial',
+            'Evento corporativo',
+            'Lanzamiento campaña',
+            'Contenido de valor',
+            'Trivia semanal',
+            'Caso de éxito',
+            'Día internacional',
+            'Promoción fin de mes',
+            'Nuevo artículo blog',
+            'Infografía mensual',
+            'Podcast episodio',
+            'Tutorial paso a paso',
+            'Preguntas frecuentes',
+            'Detrás de cámaras',
+            'Aniversario empresa',
+            'Colaboración influencer',
+            'Guía práctica',
+            'Checklist descargable',
+            'Encuesta opinión',
+            'Live Q&A',
+            'Resumen semana',
+            'Objetivo mes',
+            'Lanzamiento herramienta',
+            'Historia marca',
+            'Dato del día',
+            'Frase inspiradora',
+            'Novedad producto',
+            'Webinar próximo',
+            'Ebook gratuito',
+            'Plantilla editable',
+            'Video corto',
+            'Carrusel educativo',
+            'Historia cliente',
+            'Resultado mes',
+            'Próximos eventos',
+            'Misión empresa',
+            'Valores marca',
+            'Equipo detrás',
+            'Objetivos año',
+            'Logros trimestre'
+        ];
+
+        let items = [];
+
+        function generarFechaAleatoria() {
+            const meses = [9, 10, 11, 12];
+            const mes = meses[Math.floor(Math.random() * meses.length)];
+            let maxDia;
+            if (mes === 2) maxDia = 28;
+            else if ([4, 6, 9, 11].includes(mes)) maxDia = 30;
+            else maxDia = 31;
+            const dia = Math.floor(Math.random() * maxDia) + 1;
+            const mesStr = mes.toString().padStart(2, '0');
+            const diaStr = dia.toString().padStart(2, '0');
+            return `2026-${mesStr}-${diaStr}`;
+        }
+
+        function generarItems() {
+            const items = [];
+            for (let i = 1; i <= 50; i++) {
+                const red = redes[Math.floor(Math.random() * redes.length)];
+                const estado = estados[Math.floor(Math.random() * estados.length)];
+                const origen = origenes[Math.floor(Math.random() * origenes.length)];
+                const tema = temas[Math.floor(Math.random() * temas.length)];
+                const fecha = generarFechaAleatoria();
+                items.push({ id: 1000 + i, fecha, red, tematica: tema, estado, origen });
+            }
+            items.sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+            return items;
+        }
+
+        // Inicializar items
+        items = generarItems();
+
+        // Switch tabs
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.currentTarget.classList.add('active');
+
+            document.getElementById('view-dashboard').style.display = 'none';
+            document.getElementById('view-grillas').style.display = 'none';
+
+            const filterBar = document.getElementById('filter-bar');
+            if (tabName === 'dashboard') {
+                document.getElementById('view-dashboard').style.display = 'block';
+                filterBar.style.display = 'none';
+                renderDashboard();
+            } else if (tabName === 'grillas') {
+                document.getElementById('view-grillas').style.display = 'block';
+                filterBar.style.display = 'flex';
+                renderGrillasTabla(items);
+            }
+        }
+
+        // Render Grillas table
+        function renderGrillasTabla(data) {
+            const tbody = document.getElementById('cuerpo-tabla');
+            tbody.innerHTML = '';
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="empty-state">No se encontraron items.</td></tr>`;
+                return;
+            }
+            data.forEach(item => {
+                const fila = document.createElement('tr');
+                fila.innerHTML = `
+                    <td>${item.id}</td>
+                    <td>${item.fecha}</td>
+                    <td><span class="badge badge-social">${item.red}</span></td>
+                    <td>${item.tematica}</td>
+                    <td><span class="badge badge-status">${item.estado}</span></td>
+                    <td><span class="badge badge-origen">${item.origen}</span></td>
+                    <td>
+                        <div class="acciones">
+                            <button class="btn-action btn-producir" onclick="producirItem(${item.id})">
+                                <svg viewBox="0 0 24 24"><path d="M19 13H5v-2h14v2z"/><path d="M0 0h24v24H0z" fill="none"/><path d="M12 2c5.5 0 10 4.5 10 10s-4.5 10-10 10S2 17.5 2 12 6.5 2 12 2zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm0 12c-2.2 0-4-1.8-4-4s1.8-4 4-4 4 1.8 4 4-1.8 4-4 4zm0-10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                                Producir
+                            </button>
+                            <button class="btn-action btn-borrar" onclick="borrarItem(${item.id})">
+                                <svg viewBox="0 0 24 24"><path d="M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 .6.4 1 1 1h10c.6 0 1-.4 1-1V7z"/></svg>
+                                Borrar
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(fila);
+            });
+        }
+
+        // Render Dashboard
+        function renderDashboard() {
+            const redSocial = document.getElementById('red_social').value;
+            const fechaDesde = document.getElementById('fecha_desde').value;
+            const fechaHasta = document.getElementById('fecha_hasta').value;
+
+            let filtered = items.filter(item => {
+                let match = true;
+                if (redSocial && item.red !== redSocial) match = false;
+                if (match && fechaDesde) {
+                    if (new Date(item.fecha) < new Date(fechaDesde)) match = false;
+                }
+                if (match && fechaHasta) {
+                    if (new Date(item.fecha) > new Date(fechaHasta)) match = false;
+                }
+                return match;
+            });
+
+            // Stats
+            const total = filtered.length;
+            const activos = filtered.filter(i => i.estado === 'activa').length;
+            const canceladas = filtered.filter(i => i.estado === 'cancelada').length;
+            const pendientes = filtered.filter(i => i.estado === 'pendiente').length;
+            const aprobadas = filtered.filter(i => i.estado === 'concluida').length;
+
+            document.getElementById('stat-total').textContent = total;
+            document.getElementById('stat-activos').textContent = activos;
+            document.getElementById('stat-cancelados').textContent = canceladas;
+            document.getElementById('stat-pendientes').textContent = pendientes;
+            document.getElementById('stat-aprobados').textContent = aprobadas;
+
+            // Agrupar por red social
+            const redesUnicas = ['facebook', 'instagram', 'linkedin', 'tiktok'];
+            const datosRedes = redesUnicas.map(red => {
+                const itemsRed = filtered.filter(i => i.red === red);
+                const aprobados = itemsRed.filter(i => i.estado === 'concluida').length;
+                const cancelados = itemsRed.filter(i => i.estado === 'cancelada').length;
+                const activosRed = itemsRed.filter(i => i.estado === 'activa').length;
+                const pendientesRed = itemsRed.filter(i => i.estado === 'pendiente').length;
+                return {
+                    red,
+                    total: itemsRed.length,
+                    aprobados,
+                    cancelados,
+                    activos: activosRed,
+                    pendientes: pendientesRed
+                };
+            });
+
+            // Render chart (Chart.js) - IZQUIERDA
+            const ctx = document.getElementById('chartRedes').getContext('2d');
+            if (window.dashboardChart) {
+                window.dashboardChart.destroy();
+            }
+            window.dashboardChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: datosRedes.map(d => d.red.charAt(0).toUpperCase() + d.red.slice(1)),
+                    datasets: [{
+                        label: 'Items por Red Social',
+                        data: datosRedes.map(d => d.total),
+                        backgroundColor: [
+                            '#3f51b5',
+                            '#e91e63',
+                            '#0077b5',
+                            '#fe2c55'
+                        ],
+                        borderColor: [
+                            '#3f51b5',
+                            '#e91e63',
+                            '#0077b5',
+                            '#fe2c55'
+                        ],
+                        borderWidth: 1,
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        title: {
+                            display: true,
+                            text: 'Items por Red Social',
+                            font: { size: 14, weight: '600' }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { stepSize: 1 },
+                            title: { display: true, text: 'Cantidad de Items', font: { size: 12 } }
+                        },
+                        x: {
+                            title: { display: true, text: 'Red Social', font: { size: 12 } }
+                        }
+                    }
+                }
+            });
+
+            // Render tabla resumen (DERECHA del chart)
+            const tbodyResumen = document.getElementById('tabla-resumen');
+            tbodyResumen.innerHTML = '';
+            if (datosRedes.length === 0) {
+                tbodyResumen.innerHTML = `<tr><td colspan="6" class="empty-state">No hay datos.</td></tr>`;
+            } else {
+                datosRedes.forEach(d => {
+                    const fila = document.createElement('tr');
+                    fila.innerHTML = `
+                        <td><span class="badge badge-social">${d.red}</span></td>
+                        <td><strong>${d.total}</strong></td>
+                        <td><span class="badge badge-status">${d.aprobados}</span></td>
+                        <td><span class="badge" style="background:#ffebee;color:#ff5252">${d.cancelados}</span></td>
+                        <td><span class="badge badge-status">${d.activos}</span></td>
+                        <td><span class="badge badge-status" style="background:#fff4e6;color:#e6a23c">${d.pendientes}</span></td>
+                    `;
+                    tbodyResumen.appendChild(fila);
+                });
+            }
+        }
+
+        function aplicarFiltros() {
+            renderGrillasTabla(getFilteredItems());
+            renderDashboard();
+        }
+
+        function getFilteredItems() {
+            const redSocial = document.getElementById('red_social').value;
+            const fechaDesde = document.getElementById('fecha_desde').value;
+            const fechaHasta = document.getElementById('fecha_hasta').value;
+            return items.filter(item => {
+                let match = true;
+                if (redSocial && item.red !== redSocial) match = false;
+                if (match && fechaDesde) {
+                    if (new Date(item.fecha) < new Date(fechaDesde)) match = false;
+                }
+                if (match && fechaHasta) {
+                    if (new Date(item.fecha) > new Date(fechaHasta)) match = false;
+                }
+                return match;
+            });
+        }
+
+        // Modal Ampliar
+        function abrirModalAmpliar() {
+            document.getElementById('modalAmpliar').classList.add('active');
+        }
+
+        function cerrarModalAmpliar() {
+            document.getElementById('modalAmpliar').classList.remove('active');
+        }
+
+        function confirmarAmpliar() {
+            const fechaDesde = document.getElementById('modal_fecha_desde').value;
+            const fechaHasta = document.getElementById('modal_fecha_hasta').value;
+            const redSocial = document.getElementById('modal_red_social').value;
+            if (!fechaDesde || !fechaHasta) {
+                alert('Por favor selecciona ambas fechas');
+                return;
+            }
+            alert(`Ampliando grilla:\nDesde: ${fechaDesde}\nHasta: ${fechaHasta}\nRed: ${redSocial || 'Todas'}`);
+            cerrarModalAmpliar();
+        }
+
+        document.getElementById('modalAmpliar').addEventListener('click', function(e) {
+            if (e.target === this) cerrarModalAmpliar();
+        });
+
+        function producirItem(id) {
+            alert('Producir item: ' + id);
+        }
+
+        function borrarItem(id) {
+            if (confirm('¿Estás seguro de eliminar este item?')) {
+                alert('Item eliminado: ' + id);
+            }
+        }
+
+        // Initialize - mostrar grillas por defecto
+        renderGrillasTabla(items);
+    </script>
+</body>
+</html>
