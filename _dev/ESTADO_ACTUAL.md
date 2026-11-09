@@ -4,7 +4,7 @@
 > lee este archivo + `CAMBIOS_2026-10-14.txt` (bitácora) + `AGENTS.md`
 > (reglas y mapa de edición). No hace falta re-preguntar nada.
 
-**Última actualización:** 2026-10-29
+**Última actualización:** 2026-11-09
 **Rama de trabajo:** `dev-jadir` (working copy local = `E:\laragon\www\erp_compipro`)
 
 ---
@@ -51,6 +51,30 @@ modelo `gemini-3.1-flash-image`, incluida generación y edición con referencias
 El catálogo y las opciones de configuración se instalan ejecutando
 `sql/marketing_ai_provider_nano_banana.sql` manualmente en cada tenant; ese SQL
 queda pendiente de ejecución.
+
+**MKT-03 grillas (2026-11-09):** `GridEditor.vue` ahora presenta una tabla
+paginada de ítems desde `GET /marketing/mkt03/grid-items`, con filtros por red,
+año y rango de fechas. Los ítems sin pieza permiten producir o editar; al
+producirlos, pasan a modo consulta con la acción **Ver**. El modal muestra ID,
+fecha y origen como referencias y permite editar temática, red social, tipo,
+línea y objetivo únicamente antes de producir. El estado de la pieza se muestra
+en la tabla/modal como solo lectura.
+
+La sección **Administrar grillas** permanece comentada en el componente (no
+borrada) y no se consulta al cargar esta vista. La recarga preserva la tabla si
+el servidor devuelve una página vacía inesperadamente; guardar ediciones cambia
+la fila localmente, sin volver a cargar la lista completa.
+
+Se corrigió además una llave sobrante en
+`modules/Marketing/Services/GridGeneratorEngine.php` que cerraba la clase antes
+de `insertExtraordinarioDespuesDeGrilla()`. El parse error se manifestaba al
+intentar producir una pieza porque Laravel cargaba esa clase al resolver el
+orquestador.
+
+En `PieceProducer.vue`, el modal de detalle permite ahora cambiar el estado de
+la pieza junto con sus campos de contenido. `PUT /marketing/mkt03/pieces/{id}`
+valida el estado contra `Piece::ESTADOS` y mantiene `published_at` al pasar a
+`publicada` y `approver_id` al pasar a `lista_publicar`.
 
 ---
 

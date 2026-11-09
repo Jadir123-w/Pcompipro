@@ -1,50 +1,123 @@
 <template>
   <div>
-    <el-row :gutter="15" class="mb-3">
-      <el-col :span="6">
-        <el-select v-model="filters.red_social" clearable placeholder="Red social" @change="loadGrids()">
+    <el-row :gutter="12" class="mb-3">
+      <el-col :xs="24" :sm="5">
+        <el-select v-model="filters.red_social" clearable placeholder="Todas las redes" style="width:100%" @change="filterItems">
           <el-option v-for="r in redes" :key="r.value" :label="r.label" :value="r.value"></el-option>
         </el-select>
       </el-col>
-      <el-col :span="4">
-        <el-input-number v-model="filters.anio" :min="2020" :max="2100" placeholder="Ano"
-                         @change="loadGrids()"></el-input-number>
+      <el-col :xs="24" :sm="8">
+        <el-date-picker
+          v-model="filters.fechas"
+          type="daterange"
+          value-format="yyyy-MM-dd"
+          range-separator="Hasta"
+          start-placeholder="Fecha desde"
+          end-placeholder="Fecha hasta"
+          style="width:100%"
+          @change="filterItems"
+        ></el-date-picker>
       </el-col>
-      <el-col :span="4">
-        <el-button icon="el-icon-refresh" @click="loadGrids(true)">Recargar</el-button>
+      <el-col :xs="24" :sm="3">
+        <el-input-number v-model="filters.anio" :min="2026" :max="2100" placeholder="Año"
+                         style="width:100%" @change="filterItems"></el-input-number>
       </el-col>
-      <el-col :span="10" style="text-align:middle">
+      <el-col :xs="12" :sm="3">
+        <el-button icon="el-icon-refresh" @click="reloadItems">Recargar</el-button>
+      </el-col>
+      <el-col :xs="12" :sm="5" style="text-align:right">
         <el-button type="primary" icon="el-icon-magic-stick" @click="showGenerateDialog = true">
           Generar Grilla con IA (Modo A)
         </el-button>
       </el-col>
     </el-row>
 
-    <el-table :data="grids" stripe border v-loading="loading" empty-text="Sin grillas">
-      <el-table-column prop="id" label="ID" width="60"></el-table-column>
-      <el-table-column prop="titulo" label="Titulo" min-width="200"></el-table-column>
-      <el-table-column prop="anio" label="Ano" width="80"></el-table-column>
-      <el-table-column prop="red_social" label="Red" width="110">
+    <el-table :data="items" stripe border v-loading="loadingItems" empty-text="Sin ítems">
+      <el-table-column prop="id" label="ID" width="75"></el-table-column>
+      <el-table-column label="Fecha" width="115">
+        <template slot-scope="scope">
+          {{ formatDate(scope.row.fecha_publicacion) }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="red_social" label="Red social" width="115">
         <template slot-scope="scope">
           <el-tag size="mini">{{ scope.row.red_social }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="Estado" width="130">
+      <el-table-column prop="tematica" label="Temática" min-width="150" show-overflow-tooltip></el-table-column>
+      <el-table-column prop="linea_comercial" label="Línea" min-width="130" show-overflow-tooltip></el-table-column>
+      <el-table-column prop="tipo_contenido" label="Tipo" min-width="115"></el-table-column>
+      <el-table-column prop="objetivo" label="Objetivo" min-width="140" show-overflow-tooltip></el-table-column>
+      <el-table-column prop="origen" label="Origen" width="125">
         <template slot-scope="scope">
-          <el-tag :type="estadoType(scope.row.estado)" size="small">{{ scope.row.estado }}</el-tag>
+          <el-tag size="mini" :type="scope.row.origen === 'feria' ? 'warning' : 'info'">{{ scope.row.origen }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="items_count" label="Items" width="80" align="center"></el-table-column>
-      <el-table-column label="Acciones" width="300" align="center">
+      <el-table-column label="Estado" width="155">
         <template slot-scope="scope">
-          <el-button size="mini" type="primary" icon="el-icon-view" @click="openGrid(scope.row.id)">Ver</el-button>
-          <el-button size="mini" icon="el-icon-plus" @click="openExtend(scope.row)">Ampliar</el-button>
-          <el-button size="mini" type="danger" icon="el-icon-delete"
-                     :loading="deletingGridId === scope.row.id" :disabled="deletingGridId !== null"
-                     @click="deleteGrid(scope.row)">Borrar</el-button>
+          <el-tag :type="pieceStateType(scope.row.current_piece ? scope.row.current_piece.estado_pieza : 'pendiente')" size="small">
+            {{ scope.row.current_piece ? scope.row.current_piece.estado_pieza : 'pendiente' }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="Acciones" width="190" align="center" fixed="right">
+        <template slot-scope="scope">
+          <template v-if="Number(scope.row.pieces_count) === 0">
+            <el-button
+              size="mini"
+              type="primary"
+              icon="el-icon-magic-stick"
+              @click="producePiece(scope.row)"
+              :loading="producingId === scope.row.id"
+              :disabled="producingId !== null"
+            >Producir</el-button>
+            <el-button size="mini" icon="el-icon-edit" @click="openItemEditor(scope.row)">Editar</el-button>
+          </template>
+          <el-button v-else size="mini" icon="el-icon-view" @click="openItemViewer(scope.row)">Ver</el-button>
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination
+      class="grid-items-pagination"
+      background
+      layout="total, prev, pager, next"
+      :current-page="itemPagination.current_page"
+      :page-size="itemPagination.per_page"
+      :total="itemPagination.total"
+      @current-change="loadItems"
+    ></el-pagination>
+
+    <!-- Administrar grillas queda temporalmente deshabilitado para reducir carga en esta vista.
+    <el-collapse v-model="gridManagerOpen" class="grid-manager">
+      <el-collapse-item name="grids">
+        <template slot="title">Administrar grillas ({{ grids.length }})</template>
+        <el-table :data="grids" stripe border v-loading="loadingGrids" empty-text="Sin grillas">
+          <el-table-column prop="id" label="ID" width="70"></el-table-column>
+          <el-table-column prop="titulo" label="Título" min-width="180"></el-table-column>
+          <el-table-column prop="anio" label="Año" width="85"></el-table-column>
+          <el-table-column prop="red_social" label="Red" width="110"></el-table-column>
+          <el-table-column label="Estado" width="125">
+            <template slot-scope="scope">
+              <el-tag :type="estadoType(scope.row.estado)" size="small">{{ scope.row.estado }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="items_count" label="Ítems" width="80" align="center"></el-table-column>
+          <el-table-column label="Acciones" min-width="230" align="center">
+            <template slot-scope="scope">
+              <el-button v-if="scope.row.estado === 'borrador'" size="mini" type="warning"
+                         @click="changeGridStatus(scope.row, 'validada')">Validar</el-button>
+              <el-button v-if="scope.row.estado === 'validada'" size="mini" type="success"
+                         @click="changeGridStatus(scope.row, 'activa')">Activar</el-button>
+              <el-button size="mini" icon="el-icon-plus" @click="openExtend(scope.row)">Ampliar</el-button>
+              <el-button size="mini" type="danger" icon="el-icon-delete"
+                         :loading="deletingGridId === scope.row.id" :disabled="deletingGridId !== null"
+                         @click="deleteGrid(scope.row)">Borrar</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-collapse-item>
+    </el-collapse>
+    -->
 
     <!-- Dialog: Generar grilla -->
     <el-dialog
@@ -171,56 +244,89 @@
       </div>
     </el-dialog>
 
-    <!-- Dialog: Detalle de grilla con items -->
-    <el-dialog :title="'Grilla: ' + (detailGrid ? detailGrid.titulo : '')" :visible.sync="showDetail" width="90%" top="3vh">
-      <div v-if="detailGrid" v-loading="loadingDetail">
-        <el-row :gutter="10" class="mb-2">
-          <el-col :span="6"><strong>Red:</strong> {{ detailGrid.red_social }}</el-col>
-          <el-col :span="6"><strong>Ano:</strong> {{ detailGrid.anio }}</el-col>
-          <el-col :span="6"><strong>Tipo:</strong> {{ detailGrid.tipo_periodo }}</el-col>
-          <el-col :span="6">
-            <strong>Estado:</strong>
-            <el-tag :type="estadoType(detailGrid.estado)" size="small">{{ detailGrid.estado }}</el-tag>
-          </el-col>
-        </el-row>
-
-        <el-table :data="detailGrid.items || []" stripe border size="mini" empty-text="Sin items">
-          <el-table-column prop="item_order" label="#" width="40" align="center"></el-table-column>
-          <el-table-column prop="fecha_publicacion" label="Fecha" width="110">
-            <template slot-scope="scope">
-              {{ scope.row.fecha_publicacion ? scope.row.fecha_publicacion.substring(0, 10) : '' }}
-            </template>
-          </el-table-column>
-          <el-table-column prop="tematica" label="Tematica" min-width="140"></el-table-column>
-          <el-table-column prop="tipo_contenido" label="Tipo" width="120"></el-table-column>
-          <el-table-column prop="linea_comercial" label="Linea" width="140"></el-table-column>
-          <el-table-column prop="objetivo" label="Objetivo" width="110"></el-table-column>
-          <el-table-column prop="origen" label="Origen" width="100">
-            <template slot-scope="scope">
-              <el-tag size="mini" :type="scope.row.origen === 'feria' ? 'warning' : 'info'">{{ scope.row.origen }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="Acciones" width="140" align="center">
-            <template slot-scope="scope">
-              <el-tag v-if="Number(scope.row.pieces_count) > 0" type="success" size="small">
-                <i class="el-icon-check"></i> Ya producido
-              </el-tag>
-              <el-button v-else size="mini" type="success" icon="el-icon-magic-stick"
-                         @click="producePiece(scope.row)" :loading="producingId === scope.row.id"
-                         :disabled="producingId !== null">
-                Producir
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+    <!-- Dialog: editar ítem no producido o consultar ítem producido -->
+    <el-dialog
+      :visible.sync="showItemEditor"
+      width="min(700px, 94vw)"
+      top="6vh"
+      custom-class="grid-item-dialog"
+    >
+      <div slot="title" class="grid-item-dialog-title">
+        {{ itemDialogReadOnly ? 'Ver ítem #' : 'Editar ítem #' }}{{ editingItem ? editingItem.id : '' }}
       </div>
+      <div v-if="editingItem" class="grid-item-dialog-content" v-loading="savingItem">
+        <div class="grid-item-summary">
+          <div class="grid-item-summary-cell">
+            <small>ID ITEM</small>
+            <strong>{{ editingItem.id }}</strong>
+          </div>
+          <div class="grid-item-summary-cell">
+            <small>FECHA</small>
+            <strong>{{ formatDate(editingItem.fecha_publicacion) }}</strong>
+          </div>
+          <div class="grid-item-summary-cell">
+            <small>ORIGEN</small>
+            <el-tag size="small" :type="editingItem.origen === 'feria' ? 'warning' : 'info'">
+              {{ editingItem.origen }}
+            </el-tag>
+          </div>
+        </div>
 
+        <el-form :model="itemEditForm" label-position="top" size="small" class="grid-item-edit-form">
+          <el-form-item label="Temática del contenido">
+            <el-input v-model="itemEditForm.tematica" :disabled="itemDialogReadOnly"></el-input>
+          </el-form-item>
+          <el-row :gutter="16">
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="Red Social">
+                <el-select v-model="itemEditForm.red_social" style="width:100%" :disabled="itemDialogReadOnly">
+                  <el-option v-for="red in redes" v-if="red.value" :key="red.value"
+                             :label="red.label" :value="red.value"></el-option>
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="Tipo de Contenido">
+                <el-select v-model="itemEditForm.tipo_contenido" filterable allow-create default-first-option
+                           style="width:100%" :disabled="itemDialogReadOnly">
+                  <el-option v-for="tipo in tiposContenido" :key="tipo" :label="tipo" :value="tipo"></el-option>
+                  <el-option v-if="itemEditForm.tipo_contenido && tiposContenido.indexOf(itemEditForm.tipo_contenido) === -1"
+                             :key="itemEditForm.tipo_contenido" :label="itemEditForm.tipo_contenido"
+                             :value="itemEditForm.tipo_contenido"></el-option>
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="Línea Comercial">
+                <el-select v-model="itemEditForm.linea_comercial" filterable allow-create default-first-option
+                           style="width:100%" :disabled="itemDialogReadOnly">
+                  <el-option v-for="linea in lineasComerciales" :key="linea" :label="linea" :value="linea"></el-option>
+                  <el-option v-if="itemEditForm.linea_comercial && lineasComerciales.indexOf(itemEditForm.linea_comercial) === -1"
+                             :key="itemEditForm.linea_comercial" :label="itemEditForm.linea_comercial"
+                             :value="itemEditForm.linea_comercial"></el-option>
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="Objetivo">
+                <el-select v-model="itemEditForm.objetivo" filterable allow-create default-first-option
+                           style="width:100%" :disabled="itemDialogReadOnly">
+                  <el-option v-for="objetivo in objetivos" :key="objetivo.value"
+                             :label="objetivo.label" :value="objetivo.value"></el-option>
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-form-item label="Estado">
+            <el-select v-model="itemEditForm.estado_pieza" style="width:100%" disabled>
+              <el-option v-for="estado in estadosPieza" :key="estado" :label="estadoLabel(estado)" :value="estado"></el-option>
+            </el-select>
+          </el-form-item>
+        </el-form>
+      </div>
       <div slot="footer">
-        <el-button @click="showDetail = false">Cerrar</el-button>
-        <el-button v-if="detailGrid && detailGrid.estado === 'borrador'" type="warning"
-                   @click="changeStatus('validada')" icon="el-icon-circle-check">Validar</el-button>
-        <el-button v-if="detailGrid && detailGrid.estado === 'validada'" type="success"
-                   @click="changeStatus('activa')" icon="el-icon-check">Activar</el-button>
+        <el-button @click="showItemEditor = false">{{ itemDialogReadOnly ? 'Cerrar' : 'Cancelar' }}</el-button>
+        <el-button v-if="!itemDialogReadOnly" type="primary" @click="saveItem" :loading="savingItem">Guardar cambios</el-button>
       </div>
     </el-dialog>
 
@@ -254,16 +360,34 @@ export default {
   data() {
     return {
       grids: [],
-      loading: false,
+      loadingGrids: false,
+      loadingItems: false,
       gridLoadRequestId: 0,
+      itemLoadRequestId: 0,
+      items: [],
+      itemPagination: { current_page: 1, per_page: 20, total: 0 },
       deletingGridId: null,
-      filters: { red_social: '', anio: null },
+      filters: { red_social: '', anio: null, fechas: [] },
+      gridManagerOpen: [],
       redes: [
         { value: '', label: 'Todas' },
         { value: 'facebook', label: 'Facebook' },
         { value: 'instagram', label: 'Instagram' },
         { value: 'linkedin', label: 'LinkedIn' },
         { value: 'tiktok', label: 'TikTok' },
+      ],
+      estadosPieza: ['pendiente', 'por_revisar', 'aprobado', 'publicado', 'observada', 'programado'],
+      tiposContenido: ['Post', 'Reel', 'Story', 'Carrusel', 'Video', 'Imagen', 'Producto', 'Recordatorio', 'Contenido de valor', 'Promoción', 'Expectativa', 'Feria', 'brief_visual_para_video_humano'],
+      lineasComerciales: ['Línea Industrial', 'Línea Tecnología', 'Línea Corporativa'],
+      objetivos: [
+        { value: 'visibilidad', label: 'Visibilidad' },
+        { value: 'posicionamiento', label: 'Posicionamiento' },
+        { value: 'recordacion', label: 'Recordación' },
+        { value: 'campania', label: 'Campaña' },
+        { value: 'temporada', label: 'Temporada' },
+        { value: 'evento', label: 'Evento' },
+        { value: 'conversion', label: 'Conversión' },
+        { value: 'presencia_institucional', label: 'Presencia institucional' },
       ],
       // Generar
       showGenerateDialog: false,
@@ -277,10 +401,12 @@ export default {
         redes: ['facebook'],
         titulo: '',
       },
-      // Detail
-      showDetail: false,
-      detailGrid: null,
-      loadingDetail: false,
+      // Editar ítem
+      showItemEditor: false,
+      savingItem: false,
+      editingItem: null,
+      itemDialogReadOnly: false,
+      itemEditForm: { tematica: '', red_social: '', linea_comercial: '', tipo_contenido: '', objetivo: '', estado_pieza: 'pendiente' },
       producingId: null,
       // Extend
       showExtendDialog: false,
@@ -290,12 +416,12 @@ export default {
     }
   },
   created() {
-    this.loadGrids()
+    this.loadItems(1)
   },
   methods: {
     async loadGrids(preserveOnEmpty) {
       var requestId = ++this.gridLoadRequestId
-      this.loading = true
+      this.loadingGrids = true
       try {
         var params = { page: 1 }
         if (this.filters.red_social) params.red_social = this.filters.red_social
@@ -317,9 +443,64 @@ export default {
         }
       } finally {
         if (requestId === this.gridLoadRequestId) {
-          this.loading = false
+          this.loadingGrids = false
         }
       }
+    },
+
+    async loadItems(page, preserveOnEmpty) {
+      if (typeof page === 'number') this.itemPagination.current_page = page
+      var requestId = ++this.itemLoadRequestId
+      this.loadingItems = true
+      try {
+        var params = {
+          page: this.itemPagination.current_page,
+          per_page: this.itemPagination.per_page,
+        }
+        if (this.filters.red_social) params.red_social = this.filters.red_social
+        if (this.filters.anio) params.anio = this.filters.anio
+        if (this.filters.fechas && this.filters.fechas[0]) params.fecha_desde = this.filters.fechas[0]
+        if (this.filters.fechas && this.filters.fechas[1]) params.fecha_hasta = this.filters.fechas[1]
+
+        var r = await this.$http.get('/marketing/mkt03/grid-items', { params: params })
+        if (requestId !== this.itemLoadRequestId) return
+
+        var pagination = r.data.items
+        if (!pagination || !Array.isArray(pagination.data)) {
+          throw new Error('Formato de respuesta de ítems no válido')
+        }
+        if (preserveOnEmpty && pagination.data.length === 0 && this.items.length > 0) {
+          this.$message.warning('El servidor no devolvió ítems; se conserva la lista actual')
+          return
+        }
+        this.items = pagination.data
+        this.itemPagination = {
+          current_page: pagination.current_page,
+          per_page: pagination.per_page,
+          total: pagination.total,
+        }
+      } catch (e) {
+        if (requestId === this.itemLoadRequestId) {
+          this.$message.error('Error cargando ítems')
+        }
+      } finally {
+        if (requestId === this.itemLoadRequestId) {
+          this.loadingItems = false
+        }
+      }
+    },
+
+    filterItems() {
+      this.itemPagination.current_page = 1
+      this.loadItems(1)
+    },
+
+    reloadItems() {
+      return this.loadItems(this.itemPagination.current_page, true)
+    },
+
+    reloadAll() {
+      return this.reloadItems()
     },
 
     async deleteGrid(grid) {
@@ -342,6 +523,7 @@ export default {
         this.grids = this.grids.filter(function (item) {
           return String(item.id) !== String(grid.id)
         })
+        await this.loadItems(1)
         this.$message.success('Grilla eliminada')
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message) || 'Error eliminando grilla'
@@ -368,25 +550,13 @@ export default {
         var r = await this.$http.post('/marketing/mkt03/grids/generate', payload)
         this.$message.success('Grilla(s) generada(s): ' + (r.data.items_count || 0) + ' items totales')
         this.showGenerateDialog = false
-        await this.loadGrids(true)
+        await this.reloadAll()
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message) || 'Error generando'
         this.$message.error(msg)
       } finally {
         this.generating = false
       }
-    },
-
-    async openGrid(id) {
-      this.showDetail = true
-      this.loadingDetail = true
-      try {
-        var r = await this.$http.get('/marketing/mkt03/grids/' + id)
-        this.detailGrid = r.data.grid
-      } catch (e) {
-        this.$message.error('Error cargando grilla')
-      }
-      this.loadingDetail = false
     },
 
     openExtend(grid) {
@@ -408,7 +578,7 @@ export default {
         )
         this.$message.success('Grilla ampliada: ' + r.data.items_added + ' items agregados')
         this.showExtendDialog = false
-        await this.loadGrids(true)
+        await this.reloadAll()
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message) || 'Error ampliando'
         this.$message.error(msg)
@@ -417,14 +587,76 @@ export default {
       }
     },
 
-    async changeStatus(estado) {
+    async changeGridStatus(grid, estado) {
       try {
-        await this.$http.put('/marketing/mkt03/grids/' + this.detailGrid.id + '/status', { estado: estado })
+        await this.$http.put('/marketing/mkt03/grids/' + grid.id + '/status', { estado: estado })
         this.$message.success('Estado cambiado a: ' + estado)
-        this.openGrid(this.detailGrid.id)
-        this.loadGrids()
+        await this.loadGrids()
       } catch (e) {
-        this.$message.error('Error cambiando estado')
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error cambiando estado'
+        this.$message.error(msg)
+      }
+    },
+
+    openItemEditor(item) {
+      if (Number(item.pieces_count) > 0) return
+      this.openItemDialog(item, false)
+    },
+
+    openItemViewer(item) {
+      this.openItemDialog(item, true)
+    },
+
+    openItemDialog(item, readOnly) {
+      this.editingItem = item
+      this.itemDialogReadOnly = readOnly
+      this.itemEditForm = {
+        tematica: item.tematica || '',
+        red_social: item.red_social || '',
+        linea_comercial: item.linea_comercial || '',
+        tipo_contenido: item.tipo_contenido || '',
+        objetivo: item.objetivo || '',
+        estado_pieza: item.current_piece ? item.current_piece.estado_pieza : 'pendiente',
+      }
+      this.showItemEditor = true
+    },
+
+    async saveItem() {
+      if (!this.editingItem || this.itemDialogReadOnly || Number(this.editingItem.pieces_count) > 0) return
+
+      this.savingItem = true
+      try {
+        var payload = {
+          tematica: this.itemEditForm.tematica,
+          red_social: this.itemEditForm.red_social,
+          linea_comercial: this.itemEditForm.linea_comercial,
+          tipo_contenido: this.itemEditForm.tipo_contenido,
+          objetivo: this.itemEditForm.objetivo,
+        }
+        if (this.editingItem.current_piece) {
+          payload.estado_pieza = this.itemEditForm.estado_pieza
+        }
+
+        var r = await this.$http.put(
+          '/marketing/mkt03/grids/' + this.editingItem.grid_id + '/items/' + this.editingItem.id,
+          payload
+        )
+        var index = this.items.findIndex(function (item) {
+          return String(item.id) === String(this.editingItem.id)
+        }, this)
+        if (index !== -1 && r.data.item) {
+          var current = this.items[index]
+          this.$set(this.items, index, Object.assign({}, current, r.data.item, {
+            pieces_count: current.pieces_count,
+          }))
+        }
+        this.showItemEditor = false
+        this.$message.success('Ítem actualizado')
+      } catch (e) {
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error actualizando ítem'
+        this.$message.error(msg)
+      } finally {
+        this.savingItem = false
       }
     },
 
@@ -435,6 +667,7 @@ export default {
           generate_image: false,
         })
         this.$set(item, 'pieces_count', Math.max(Number(item.pieces_count) || 0, 1))
+        this.$set(item, 'current_piece', r.data.piece)
         this.$message.success('Pieza producida (ID: ' + r.data.piece.id + ')')
       } catch (e) {
         var msg = (e.response && e.response.data && e.response.data.message) || 'Error produciendo pieza'
@@ -450,12 +683,143 @@ export default {
         'activa': 'success', 'cerrada': 'info',
       }
       return map[estado] || 'info'
+    },
+
+    pieceStateType(estado) {
+      var map = {
+        pendiente: 'info',
+        en_produccion: 'warning',
+        lista_publicar: 'primary',
+        publicada: 'success',
+        observada: 'warning',
+        descartada: 'danger',
+      }
+      return map[estado] || 'info'
+    },
+
+    formatDate(fecha) {
+      if (!fecha) return ''
+      var parts = String(fecha).substring(0, 10).split('-')
+      return parts.length === 3 ? parts[2] + '/' + parts[1] + '/' + parts[0] : ''
+    },
+
+    estadoLabel(estado) {
+      var labels = {
+        pendiente: 'Programado',
+        en_produccion: 'En producción',
+        lista_publicar: 'Lista para publicar',
+        publicada: 'Publicada',
+        observada: 'Observada',
+        descartada: 'Descartada',
+      }
+      return labels[estado] || estado
     }
   }
 }
 </script>
 
 <style scoped>
+.grid-item-dialog >>> .el-dialog {
+  border-radius: 12px;
+}
+
+.grid-item-dialog >>> .el-dialog__header {
+  padding: 18px 24px;
+  border-bottom: 1px solid #e8ebf0;
+}
+
+.grid-item-dialog-title {
+  color: #23395d;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.grid-item-dialog >>> .el-dialog__body {
+  padding: 22px 24px 8px;
+}
+
+.grid-item-dialog-content {
+  min-height: 250px;
+}
+
+.grid-item-summary {
+  display: grid;
+  grid-template-columns: 1fr 1.7fr 1fr;
+  align-items: center;
+  padding: 15px 20px;
+  margin-bottom: 22px;
+  background: #f7f8fa;
+  border: 1px solid #e6e9ef;
+  border-radius: 9px;
+}
+
+.grid-item-summary-cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.grid-item-summary-cell + .grid-item-summary-cell {
+  padding-left: 20px;
+  border-left: 1px solid #dfe3e9;
+}
+
+.grid-item-summary-cell small {
+  color: #667085;
+  font-size: 10px;
+  letter-spacing: .04em;
+}
+
+.grid-item-summary-cell strong {
+  color: #203047;
+  font-size: 14px;
+}
+
+.grid-item-summary-cell:last-child {
+  align-items: flex-end;
+}
+
+.grid-item-edit-form >>> .el-form-item {
+  margin-bottom: 16px;
+}
+
+.grid-item-edit-form >>> .el-form-item__label {
+  padding-bottom: 5px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.grid-item-edit-form >>> .el-input__inner,
+.grid-item-edit-form >>> .el-select .el-input__inner {
+  height: 40px;
+  background: #f8f9fb;
+  border-color: #e0e4eb;
+  border-radius: 7px;
+}
+
+.grid-item-dialog >>> .el-dialog__footer {
+  padding: 0 24px 20px;
+}
+
+.grid-items-pagination {
+  margin: 16px 0 24px;
+  text-align: right;
+}
+
+.grid-manager {
+  margin-top: 20px;
+}
+
+.status-edit-hint {
+  display: block;
+  margin-top: 5px;
+  color: #909399;
+  line-height: 1.4;
+}
+
 .generate-grid-dialog >>> .el-dialog {
   display: flex;
   max-height: 92vh;
@@ -746,6 +1110,19 @@ export default {
 }
 
 @media (max-width: 640px) {
+  .grid-item-dialog >>> .el-dialog__body {
+    padding: 16px 18px 4px;
+  }
+
+  .grid-item-summary {
+    grid-template-columns: 1fr 1fr 1fr;
+    padding: 12px;
+  }
+
+  .grid-item-summary-cell + .grid-item-summary-cell {
+    padding-left: 10px;
+  }
+
   .generate-grid-dialog >>> .el-dialog__header {
     padding: 17px 18px;
   }

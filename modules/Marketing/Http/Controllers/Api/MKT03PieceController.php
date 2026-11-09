@@ -105,6 +105,14 @@ class MKT03PieceController extends Controller
     {
         $piece = Piece::findOrFail($id);
 
+        $v = Validator::make($request->all(), [
+            'estado_pieza' => ['sometimes', 'required', 'string', 'in:' . implode(',', Piece::ESTADOS)],
+        ]);
+
+        if ($v->fails()) {
+            return response()->json(['ok' => false, 'errors' => $v->errors()], 422);
+        }
+
         $editable = [
             'copy', 'cta', 'hashtags', 'formato', 'enfoque_visual',
             'referencia_visual', 'texto_en_imagen_video', 'imagen_prompt',
@@ -112,6 +120,19 @@ class MKT03PieceController extends Controller
         ];
 
         $updates = $request->only($editable);
+        if ($request->has('estado_pieza')) {
+            $newStatus = $request->input('estado_pieza');
+            $updates['estado_pieza'] = $newStatus;
+
+            if ($newStatus === Piece::ESTADO_PUBLICADA
+                && $piece->estado_pieza !== Piece::ESTADO_PUBLICADA) {
+                $updates['published_at'] = now();
+            }
+            if ($newStatus === Piece::ESTADO_LISTA_PUBLICAR
+                && $piece->estado_pieza !== Piece::ESTADO_LISTA_PUBLICAR) {
+                $updates['approver_id'] = $request->user() ? $request->user()->id : null;
+            }
+        }
 
         $piece->update($updates);
 

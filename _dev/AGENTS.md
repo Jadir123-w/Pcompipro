@@ -80,6 +80,10 @@ Lint PHP (usar SIEMPRE el 7.4):
 | Pestaña Proveedores (oculta) | `modules/Comercial/Resources/assets/js/view/requerimientos/TabProveedores.vue` |
 | SQL manual | `sql/` (p.ej. `quotation_items_supplier.sql`) |
 | Rutas API | `modules/Marketing/Routes/api.php` y `web.php` |
+| MKT-03 grillas e ítems (front) | `modules/Marketing/Resources/assets/js/components/mkt03/GridEditor.vue` |
+| MKT-03 grillas e ítems (API) | `modules/Marketing/Http/Controllers/Api/MKT03GridController.php` |
+| MKT-03 producción de piezas | `modules/Marketing/Http/Controllers/Api/MKT03PieceController.php`, `modules/Marketing/Services/MKT03Orchestrator.php`, `modules/Marketing/Services/PieceProducerEngine.php` |
+| MKT-03 generación de grillas | `modules/Marketing/Services/GridGeneratorEngine.php` |
 
 ---
 
@@ -266,7 +270,33 @@ No hace falta leer el archivo entero: con estos anclajes se llega directo.
 
 ---
 
-## 9. Checklist antes de terminar
+## 9. MKT-03: grillas e ítems
+
+- La tabla principal de `GridEditor.vue` lista ítems paginados mediante
+  `GET /marketing/mkt03/grid-items`; filtros de red, año y fechas se aplican
+  desde ese endpoint.
+- Los ítems sin piezas muestran **Producir** y **Editar**. Los que ya tienen
+  una pieza muestran **Ver** y son de solo lectura desde esta pantalla. La API
+  `updateItem` también rechaza cambios a ítems producidos.
+- El modal conserva ID, fecha y origen como datos de referencia; permite editar
+  temática, red social, tipo de contenido, línea comercial y objetivo antes de
+  producir. El estado se muestra como lectura.
+- En `PieceProducer.vue`, el modal de detalle permite cambiar `estado_pieza`
+  desde el selector y guardar junto al contenido en `PUT /marketing/mkt03/pieces/{id}`;
+  conservar la validación contra `Piece::ESTADOS` y los metadatos de publicación/
+  aprobación al cambiar a `publicada` o `lista_publicar`.
+- La sección "Administrar grillas" está comentada temporalmente en el template;
+  mantener el código, no borrarlo, salvo pedido explícito.
+- Al recargar o guardar un ítem, preservar las filas existentes cuando la
+  respuesta de consulta venga vacía; al guardar, actualizar la fila en sitio
+  (`this.$set`) en vez de reemplazar/cargar toda la lista.
+- Al cambiar la clase de generación/producción, ejecutar `php -l` también en
+  sus servicios relacionados. Un error de parseo al cargar una clase puede
+  manifestarse al iniciar otro flujo que resuelva la cadena de dependencias.
+
+---
+
+## 10. Checklist antes de terminar
 
 - [ ] `php -l` en cada PHP tocado (con PHP **7.4**).
 - [ ] `npm run development` compila sin errores.
@@ -276,7 +306,7 @@ No hace falta leer el archivo entero: con estos anclajes se llega directo.
 
 ---
 
-## 10. Contexto de una sesión nueva
+## 11. Contexto de una sesión nueva
 
 Si la conversación se recorta por límite de tokens, NO re-preguntes: lee
 `ESTADO_ACTUAL.md` (estado del trabajo) y `CAMBIOS_2026-10-14.txt` (bitácora).

@@ -417,6 +417,9 @@ Route::middleware(['auth', 'redirect.module', 'locked.tenant', 'check.email.veri
         Route::get('/mkt03/grids', [\Modules\Marketing\Http\Controllers\Api\MKT03GridController::class, 'index'])
             ->name('mkt03.grids.index');
 
+        Route::get('/mkt03/grid-items', [\Modules\Marketing\Http\Controllers\Api\MKT03GridController::class, 'items'])
+            ->name('mkt03.grid_items.index');
+
         Route::get('/mkt03/grids/{id}', [\Modules\Marketing\Http\Controllers\Api\MKT03GridController::class, 'show'])
             ->name('mkt03.grids.show');
 

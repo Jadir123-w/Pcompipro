@@ -369,7 +369,6 @@ class GridGeneratorEngine
             '_fallback'          => true,
         ];
     }
-    }
 
     /**
      * Insertar un extraordinary en una grilla ya existente, asignándole un item_order
