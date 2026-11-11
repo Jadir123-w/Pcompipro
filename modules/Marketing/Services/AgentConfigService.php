@@ -202,6 +202,7 @@ class AgentConfigService
             'format'       => $cfg['format'],
             'base_url'     => $cfg['base_url'],
             'aspect_ratio' => $cfg['aspect_ratio'],
+            'account_id'   => config('marketing.chatbot.ai.cloudflare.account_id'),
         ];
 
         switch ($cfg['provider']) {
@@ -211,9 +212,11 @@ class AgentConfigService
                 return new \Modules\Marketing\Services\Image\GPTImage2Provider($providerCfg);
             case 'nano-banana':
                 return new \Modules\Marketing\Services\Image\NanoBananaProvider($providerCfg);
+            case 'cloudflare':
+                return new \Modules\Marketing\Services\Image\CloudflareFluxProvider($providerCfg);
             default:
                 throw new \InvalidArgumentException(
-                    "Image provider no soportado: {$cfg['provider']}. Soportados: dalle3, gpt-image-2, nano-banana."
+                    "Image provider no soportado: {$cfg['provider']}. Soportados: dalle3, gpt-image-2, nano-banana, cloudflare."
                 );
         }
     }
@@ -286,9 +289,14 @@ class AgentConfigService
         $providerKey = config('marketing.chatbot.mkt03.image_provider', 'dalle3');
         $defaultModel = $providerKey === 'gpt-image-2'
             ? 'gpt-image-2'
-            : ($providerKey === 'nano-banana' ? 'gemini-3.1-flash-image' : 'dall-e-3');
+            : ($providerKey === 'nano-banana'
+                ? 'gemini-3.1-flash-image'
+                : ($providerKey === 'cloudflare' ? '@cf/black-forest-labs/flux-1-schnell' : 'dall-e-3'));
         $isNanoBanana = $providerKey === 'nano-banana';
-        $configuredModel = config('marketing.chatbot.mkt03.image_model');
+        $isCloudflare = $providerKey === 'cloudflare';
+        $configuredModel = $isCloudflare
+            ? config('marketing.chatbot.ai.cloudflare.model')
+            : config('marketing.chatbot.mkt03.image_model');
 
         return [
             'source'              => 'env',
@@ -302,10 +310,12 @@ class AgentConfigService
             'supports_image_edit' => $providerKey === 'gpt-image-2' || $isNanoBanana,
             'base_url'            => $isNanoBanana
                 ? config('marketing.chatbot.ai.gemini.base_url')
-                : null,
+                : ($isCloudflare ? config('marketing.chatbot.ai.cloudflare.base_url') : null),
             'api_key'             => $isNanoBanana
                 ? config('marketing.chatbot.ai.gemini.api_key')
-                : config('marketing.chatbot.ai.openai.api_key'),
+                : ($isCloudflare
+                    ? config('marketing.chatbot.ai.cloudflare.api_key')
+                    : config('marketing.chatbot.ai.openai.api_key')),
         ];
     }
 }

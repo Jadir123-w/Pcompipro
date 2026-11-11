@@ -74,7 +74,7 @@ orquestador.
 En `PieceProducer.vue`, el modal de detalle permite ahora cambiar el estado de
 la pieza junto con sus campos de contenido. `PUT /marketing/mkt03/pieces/{id}`
 valida el estado contra `Piece::ESTADOS` y mantiene `published_at` al pasar a
-`publicada` y `approver_id` al pasar a `lista_publicar`.
+`publicada` y `approver_id` al pasar a `aprobado`.
 
 ---
 

@@ -51,7 +51,7 @@ class CreateMktPiecesTable extends Migration
 
             // ── Estado ──
             $table->string('estado_pieza', 30)->default('pendiente')
-                ->comment('pendiente, en_produccion, lista_publicar, publicada, observada, descartada');
+                ->comment('pendiente, en_revision, aprobado, publicada, observada, programado');
 
             // ── Control de versiones de pieza ──
             $table->integer('version')->default(1);

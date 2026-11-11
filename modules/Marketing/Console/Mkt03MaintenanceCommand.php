@@ -20,7 +20,7 @@ use Modules\Marketing\Services\ImageGenerationService;
  *   php artisan marketing:mkt03 status --tenant=1             → Resumen de un tenant específico
  *   php artisan marketing:mkt03 update-feria-fases            → Recalcula fase_editorial_actual de ferias
  *   php artisan marketing:mkt03 continuity-check              → Detecta grillas por agotarse (Modo C auto, Etapa 2)
- *   php artisan marketing:mkt03 auto-schedule                 → Programa piezas "lista_publicar" (Etapa 2 stub)
+ *   php artisan marketing:mkt03 auto-schedule                 → Programa piezas "aprobado" (Etapa 2 stub)
  *   php artisan marketing:mkt03 test-image                                       → Smoke test text→image con prompt default
  *   php artisan marketing:mkt03 test-image --prompt="..."                        → Prompt custom
  *   php artisan marketing:mkt03 test-image --quality=high                        → Override quality

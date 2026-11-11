@@ -144,6 +144,7 @@ class AiProvider extends ModelTenant
         'CHATBOT_CLAUDE_API_KEY' => 'marketing.chatbot.ai.claude.api_key',
         'CHATBOT_OPENAI_API_KEY' => 'marketing.chatbot.ai.openai.api_key',
         'CHATBOT_GEMINI_API_KEY' => 'marketing.chatbot.ai.gemini.api_key',
+        'CLOUDFLARE_API_TOKEN'   => 'marketing.chatbot.ai.cloudflare.api_key',
     ];
 
     /**
@@ -180,7 +181,12 @@ class AiProvider extends ModelTenant
      */
     public function isConfigured()
     {
-        return !empty($this->getApiKey());
+        if (empty($this->getApiKey())) {
+            return false;
+        }
+
+        return $this->provider_key !== 'cloudflare'
+            || !empty(config('marketing.chatbot.ai.cloudflare.account_id'));
     }
 
     /**

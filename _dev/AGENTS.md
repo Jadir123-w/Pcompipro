@@ -284,7 +284,7 @@ No hace falta leer el archivo entero: con estos anclajes se llega directo.
 - En `PieceProducer.vue`, el modal de detalle permite cambiar `estado_pieza`
   desde el selector y guardar junto al contenido en `PUT /marketing/mkt03/pieces/{id}`;
   conservar la validación contra `Piece::ESTADOS` y los metadatos de publicación/
-  aprobación al cambiar a `publicada` o `lista_publicar`.
+  aprobación al cambiar a `publicada` o `aprobado`.
 - La sección "Administrar grillas" está comentada temporalmente en el template;
   mantener el código, no borrarlo, salvo pedido explícito.
 - Al recargar o guardar un ítem, preservar las filas existentes cuando la
@@ -298,7 +298,7 @@ No hace falta leer el archivo entero: con estos anclajes se llega directo.
 
 ## 10. Checklist antes de terminar
 
-- [ ] `php -l` en cada PHP tocado (con PHP **7.4**).
+- [ ] `php -l` en cada PHP tocado (con PHP **7.2**).
 - [ ] `npm run development` compila sin errores.
 - [ ] Sin registros duplicados en BD (limpiar datos de prueba).
 - [ ] `CAMBIOS_2026-10-14.txt` con la sección fechada (causa raíz + verificaciones).

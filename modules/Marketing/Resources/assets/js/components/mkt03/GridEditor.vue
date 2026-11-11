@@ -11,7 +11,6 @@
           v-model="filters.fechas"
           type="daterange"
           value-format="yyyy-MM-dd"
-          range-separator="Hasta"
           start-placeholder="Fecha desde"
           end-placeholder="Fecha hasta"
           style="width:100%"
@@ -22,58 +21,86 @@
         <el-input-number v-model="filters.anio" :min="2026" :max="2100" placeholder="Año"
                          style="width:100%" @change="filterItems"></el-input-number>
       </el-col>
-      <el-col :xs="12" :sm="3">
+       <!--<el-col :xs="12" :sm="3">
         <el-button icon="el-icon-refresh" @click="reloadItems">Recargar</el-button>
       </el-col>
-      <el-col :xs="12" :sm="5" style="text-align:right">
-        <el-button type="primary" icon="el-icon-magic-stick" @click="showGenerateDialog = true">
-          Generar Grilla con IA (Modo A)
-        </el-button>
+    -->
+      <el-col :xs="12" :sm="8" style="text-align:right">
+        <div class="grid-toolbar-actions">
+          <el-button icon="el-icon-plus" @click="openExtendDialog">
+            Ampliar grilla
+          </el-button>
+          <el-button type="primary" icon="el-icon-magic-stick" @click="showGenerateDialog = true">
+            Generar Grilla con IA (Modo A)
+          </el-button>
+        </div>
       </el-col>
     </el-row>
 
-    <el-table :data="items" stripe border v-loading="loadingItems" empty-text="Sin ítems">
-      <el-table-column prop="id" label="ID" width="75"></el-table-column>
-      <el-table-column label="Fecha" width="115">
+    <el-table :data="items" stripe border v-loading="loadingItems" empty-text="Sin ítems" class="grid-items-table">
+      <el-table-column prop="id" label="ID" width="75" :resizable="false"></el-table-column>
+      <el-table-column label="Fecha" width="125">
         <template slot-scope="scope">
           {{ formatDate(scope.row.fecha_publicacion) }}
         </template>
       </el-table-column>
-      <el-table-column prop="red_social" label="Red social" width="115">
+      <el-table-column prop="red_social" label="Red social" width="130">
         <template slot-scope="scope">
           <el-tag size="mini">{{ scope.row.red_social }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="tematica" label="Temática" min-width="150" show-overflow-tooltip></el-table-column>
-      <el-table-column prop="linea_comercial" label="Línea" min-width="130" show-overflow-tooltip></el-table-column>
-      <el-table-column prop="tipo_contenido" label="Tipo" min-width="115"></el-table-column>
-      <el-table-column prop="objetivo" label="Objetivo" min-width="140" show-overflow-tooltip></el-table-column>
-      <el-table-column prop="origen" label="Origen" width="125">
+      <el-table-column prop="tematica" label="Temática" min-width="230" show-overflow-tooltip></el-table-column>
+      <el-table-column prop="linea_comercial" label="Línea" min-width="190" show-overflow-tooltip></el-table-column>
+      <el-table-column prop="tipo_contenido" label="Tipo" min-width="170" show-overflow-tooltip></el-table-column>
+      <el-table-column prop="objetivo" label="Objetivo" min-width="200" show-overflow-tooltip></el-table-column>
+      <el-table-column prop="origen" label="Origen" width="135">
         <template slot-scope="scope">
           <el-tag size="mini" :type="scope.row.origen === 'feria' ? 'warning' : 'info'">{{ scope.row.origen }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="Estado" width="155">
+      <el-table-column label="Estado" width="165">
         <template slot-scope="scope">
           <el-tag :type="pieceStateType(scope.row.current_piece ? scope.row.current_piece.estado_pieza : 'pendiente')" size="small">
             {{ scope.row.current_piece ? scope.row.current_piece.estado_pieza : 'pendiente' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="Acciones" width="190" align="center" fixed="right">
+      <el-table-column label="Acciones" width="110" align="center"
+                       class-name="grid-items-actions" label-class-name="grid-items-actions">
         <template slot-scope="scope">
           <template v-if="Number(scope.row.pieces_count) === 0">
             <el-button
-              size="mini"
               type="primary"
               icon="el-icon-magic-stick"
+              circle
+              size="mini"
+              class="grid-item-action-button"
+              title="Producir pieza"
+              aria-label="Producir pieza"
               @click="producePiece(scope.row)"
               :loading="producingId === scope.row.id"
               :disabled="producingId !== null"
-            >Producir</el-button>
-            <el-button size="mini" icon="el-icon-edit" @click="openItemEditor(scope.row)">Editar</el-button>
+            ></el-button>
+            <el-button
+              circle
+              size="mini"
+              class="grid-item-action-button"
+              icon="el-icon-edit"
+              title="Editar ítem"
+              aria-label="Editar ítem"
+              @click="openItemEditor(scope.row)"
+            ></el-button>
           </template>
-          <el-button v-else size="mini" icon="el-icon-view" @click="openItemViewer(scope.row)">Ver</el-button>
+          <el-button
+            v-else
+            circle
+            size="mini"
+            class="grid-item-action-button"
+            icon="el-icon-view"
+            title="Ver pieza"
+            aria-label="Ver pieza"
+            @click="openItemViewer(scope.row)"
+          ></el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -87,7 +114,7 @@
       @current-change="loadItems"
     ></el-pagination>
 
-    <!-- Administrar grillas queda temporalmente deshabilitado para reducir carga en esta vista.
+    <!-- Administrar grillas queda temporalmente deshabilitado para reducir carga en esta vista. 
     <el-collapse v-model="gridManagerOpen" class="grid-manager">
       <el-collapse-item name="grids">
         <template slot="title">Administrar grillas ({{ grids.length }})</template>
@@ -118,7 +145,6 @@
       </el-collapse-item>
     </el-collapse>
     -->
-
     <!-- Dialog: Generar grilla -->
     <el-dialog
       :visible.sync="showGenerateDialog"
@@ -330,6 +356,100 @@
       </div>
     </el-dialog>
 
+    <!-- Dialog: Ampliar grilla desde la toolbar (selector de grilla + rango) -->
+    <el-dialog
+      :visible.sync="showExtendDialogToolbar"
+      width="min(560px, 94vw)"
+      top="8vh"
+      custom-class="extend-toolbar-dialog"
+    >
+      <div slot="title" class="extend-toolbar-dialog-heading">
+        <span class="extend-toolbar-dialog-heading-copy">
+          <strong>Ampliar grilla con IA</strong>
+          <small>Agrega los tramos siguientes evitando duplicados de fechas y redes</small>
+        </span>
+      </div>
+
+      <div class="extend-toolbar-dialog-content" v-loading="loadingGrids">
+        <el-form :model="extendToolbarForm" label-position="top" size="small">
+          <el-form-item label="Grilla a ampliar">
+            <el-select
+              v-model="extendToolbarForm.grid_id"
+              filterable
+              clearable
+              placeholder="Selecciona una grilla"
+              style="width:100%"
+            >
+              <el-option
+                v-for="grid in expandableGrids"
+                :key="grid.id"
+                :value="grid.id"
+                :label="'#' + grid.id + ' — ' + grid.titulo + ' (' + grid.red_social + ' · ' + grid.anio + ')'"
+              >
+                <span class="extend-toolbar-option">
+                  <span class="extend-toolbar-option-title">
+                    #{{ grid.id }} — {{ grid.titulo }}
+                    <small>{{ grid.red_social }} · {{ grid.tipo_periodo }} · {{ grid.anio }}</small>
+                  </span>
+                  <el-tag size="mini" :type="estadoType(grid.estado)">{{ grid.estado }}</el-tag>
+                </span>
+              </el-option>
+            </el-select>
+          </el-form-item>
+
+          <div v-if="extendToolbarTarget" class="extend-toolbar-target">
+            <div class="extend-toolbar-target-cell">
+              <small>RED</small>
+              <el-tag size="small">{{ extendToolbarTarget.red_social }}</el-tag>
+            </div>
+            <div class="extend-toolbar-target-cell">
+              <small>TIPO</small>
+              <strong>{{ extendToolbarTarget.tipo_periodo }}</strong>
+            </div>
+            <div class="extend-toolbar-target-cell">
+              <small>ÍTEMS</small>
+              <strong>{{ extendToolbarTarget.items_count != null ? extendToolbarTarget.items_count : '—' }}</strong>
+            </div>
+          </div>
+
+          <el-row :gutter="12">
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="Fecha desde">
+                <el-date-picker
+                  v-model="extendToolbarForm.fecha_desde"
+                  type="date"
+                  value-format="yyyy-MM-dd"
+                  placeholder="Selecciona fecha inicial"
+                  style="width:100%"
+                ></el-date-picker>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="Fecha hasta">
+                <el-date-picker
+                  v-model="extendToolbarForm.fecha_hasta"
+                  type="date"
+                  value-format="yyyy-MM-dd"
+                  placeholder="Selecciona fecha final"
+                  style="width:100%"
+                ></el-date-picker>
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <p class="extend-toolbar-hint">
+            Se generarán ítems nuevos en la misma grilla; las fechas y redes existentes no se repiten.
+          </p>
+        </el-form>
+      </div>
+
+      <div slot="footer" class="extend-toolbar-dialog-footer">
+        <el-button @click="showExtendDialogToolbar = false" :disabled="extendingToolbar">Cancelar</el-button>
+        <el-button type="primary" icon="el-icon-plus" @click="extendFromToolbar" :loading="extendingToolbar">
+          Ampliar
+        </el-button>
+      </div>
+    </el-dialog>
+
     <!-- Dialog: Ampliar grilla -->
     <el-dialog title="Ampliar Grilla (Modo C)" :visible.sync="showExtendDialog" width="450px">
       <el-form :model="extendForm" label-position="top" size="small">
@@ -413,7 +533,25 @@ export default {
       extending: false,
       extendTarget: null,
       extendForm: { fecha_desde: '', fecha_hasta: '' },
+      // Extender desde la toolbar (selector de grilla + rango)
+      showExtendDialogToolbar: false,
+      extendingToolbar: false,
+      extendToolbarForm: { grid_id: null, fecha_desde: '', fecha_hasta: '' },
     }
+  },
+  computed: {
+    expandableGrids() {
+      return this.grids.filter(function (grid) {
+        return ['borrador', 'en_revision', 'activa','validada'].indexOf(grid.estado) !== -1
+      })
+    },
+    extendToolbarTarget() {
+      var self = this
+      if (!this.extendToolbarForm.grid_id) return null
+      return this.grids.find(function (grid) {
+        return String(grid.id) === String(self.extendToolbarForm.grid_id)
+      }) || null
+    },
   },
   created() {
     this.loadItems(1)
@@ -500,7 +638,10 @@ export default {
     },
 
     reloadAll() {
-      return this.reloadItems()
+      var self = this
+      return Promise.all([this.reloadItems(), this.loadGrids(true)]).catch(function () {
+        // reloadItems y loadGrids ya reportan errores propios
+      })
     },
 
     async deleteGrid(grid) {
@@ -563,6 +704,57 @@ export default {
       this.extendTarget = grid
       this.extendForm = { fecha_desde: '', fecha_hasta: '' }
       this.showExtendDialog = true
+    },
+
+    async openExtendDialog() {
+      this.extendToolbarForm = { grid_id: null, fecha_desde: '', fecha_hasta: '' }
+      this.showExtendDialogToolbar = true
+      await this.loadExpandableGrids()
+    },
+
+    async loadExpandableGrids() {
+      this.loadingGrids = true
+      try {
+        var r = await this.$http.get('/marketing/mkt03/grids', { params: { page: 1, per_page: 100 } })
+        var grids = r.data.grids
+        if (grids && !Array.isArray(grids)) grids = grids.data
+        this.grids = Array.isArray(grids) ? grids : []
+      } catch (e) {
+        this.$message.error('Error cargando grillas')
+      } finally {
+        this.loadingGrids = false
+      }
+    },
+
+    async extendFromToolbar() {
+      var form = this.extendToolbarForm
+      if (!form.grid_id) {
+        this.$message.warning('Selecciona la grilla a ampliar')
+        return
+      }
+      if (!form.fecha_desde || !form.fecha_hasta) {
+        this.$message.warning('Completa ambas fechas')
+        return
+      }
+      if (form.fecha_desde > form.fecha_hasta) {
+        this.$message.warning('La fecha desde no puede ser posterior a la fecha hasta')
+        return
+      }
+      this.extendingToolbar = true
+      try {
+        var r = await this.$http.post(
+          '/marketing/mkt03/grids/' + form.grid_id + '/extend',
+          { fecha_desde: form.fecha_desde, fecha_hasta: form.fecha_hasta }
+        )
+        this.$message.success('Grilla ampliada: ' + (r.data.items_added || 0) + ' items agregados')
+        this.showExtendDialogToolbar = false
+        await this.reloadAll()
+      } catch (e) {
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error ampliando'
+        this.$message.error(msg)
+      } finally {
+        this.extendingToolbar = false
+      }
     },
 
     async extend() {
@@ -679,7 +871,7 @@ export default {
 
     estadoType(estado) {
       var map = {
-        'borrador': 'info', 'en_revision': 'warning', 'validada': 'primary',
+        'borrador': 'info', 'por_revisar': 'warning', 'aprobado': 'primary',
         'activa': 'success', 'cerrada': 'info',
       }
       return map[estado] || 'info'
@@ -688,11 +880,11 @@ export default {
     pieceStateType(estado) {
       var map = {
         pendiente: 'info',
-        en_produccion: 'warning',
-        lista_publicar: 'primary',
+        por_revisar: 'warning',
+        aprobado: 'primary',
         publicada: 'success',
         observada: 'warning',
-        descartada: 'danger',
+        programado: 'info',
       }
       return map[estado] || 'info'
     },
@@ -706,11 +898,11 @@ export default {
     estadoLabel(estado) {
       var labels = {
         pendiente: 'Programado',
-        en_produccion: 'En producción',
-        lista_publicar: 'Lista para publicar',
+        por_revisar: 'En producción',
+        aprobado: 'Lista para publicar',
         publicada: 'Publicada',
         observada: 'Observada',
-        descartada: 'Descartada',
+        programado: 'Programada',
       }
       return labels[estado] || estado
     }
@@ -809,8 +1001,134 @@ export default {
   text-align: right;
 }
 
+.grid-items-table >>> .el-table__header-wrapper .el-table__cell .cell,
+.grid-items-table >>> .el-table__body-wrapper .el-table__cell .cell {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: normal;
+}
+
+.grid-items-table >>> .grid-items-actions {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #fff;
+  box-shadow: -5px 0 12px rgba(31, 58, 91, .08);
+}
+
+.grid-items-table >>> th.grid-items-actions {
+  z-index: 3;
+}
+
+.grid-items-table >>> .el-table__row--striped td.grid-items-actions {
+  background: #fafafa;
+}
+
+.grid-items-table >>> .grid-items-actions .cell {
+  white-space: nowrap;
+}
+
+.grid-item-action-button + .grid-item-action-button {
+  margin-left: 4px;
+}
+
 .grid-manager {
   margin-top: 20px;
+}
+
+.grid-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .grid-toolbar-actions {
+    justify-content: flex-start;
+  }
+}
+
+.extend-toolbar-dialog >>> .el-dialog__header {
+  padding: 18px 24px;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.extend-toolbar-dialog >>> .el-dialog__body {
+  padding: 20px 24px 6px;
+}
+
+.extend-toolbar-dialog-heading {
+  display: flex;
+  align-items: center;
+}
+
+.extend-toolbar-dialog-heading-copy strong {
+  display: block;
+  color: #182338;
+  font-size: 17px;
+  line-height: 1.3;
+}
+
+.extend-toolbar-dialog-heading-copy small {
+  display: block;
+  margin-top: 4px;
+  color: #7b8798;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.extend-toolbar-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
+.extend-toolbar-option-title small {
+  margin-left: 6px;
+  color: #8792a2;
+}
+
+.extend-toolbar-target {
+  display: flex;
+  gap: 16px;
+  margin: 12px 0 16px;
+  padding: 12px 16px;
+  background: #f7f8fa;
+  border: 1px solid #e6e9ef;
+  border-radius: 9px;
+}
+
+.extend-toolbar-target-cell small {
+  display: block;
+  margin-bottom: 4px;
+  color: #667085;
+  font-size: 10px;
+  letter-spacing: .04em;
+}
+
+.extend-toolbar-target-cell strong {
+  color: #203047;
+  font-size: 14px;
+}
+
+.extend-toolbar-hint {
+  margin: 2px 0 12px;
+  color: #8792a2;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.extend-toolbar-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 24px 18px;
 }
 
 .status-edit-hint {

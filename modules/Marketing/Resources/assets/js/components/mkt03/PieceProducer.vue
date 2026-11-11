@@ -153,7 +153,7 @@
           <el-button class="piece-image-button" @click="regenerateImage" :loading="regenerating" icon="el-icon-picture">
             {{ detailPiece && detailPiece.imagen_final_url ? 'Regenerar imagen' : 'Generar imagen' }}
           </el-button>
-          <el-button v-if="detailPiece && detailPiece.estado_pieza !== 'lista_publicar'"
+          <el-button v-if="detailPiece && detailPiece.estado_pieza !== 'aprobado'"
                      type="success" @click="approve" icon="el-icon-check">Aprobar</el-button>
           <el-button type="primary" @click="saveEdits" :loading="savingDetail" icon="el-icon-check">
             Guardar cambios
@@ -265,7 +265,8 @@ export default {
         this.openPiece(this.detailPiece.id)
         this.loadPieces()
       } catch (e) {
-        this.$message.error('Error aprobando')
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error aprobando'
+        this.$message.error(msg)
       }
     },
 
@@ -295,7 +296,7 @@ export default {
     estadoType(estado) {
       var map = {
         'pendiente': 'info', 'por_revisar': 'warning', 'aprobado': 'success',
-        'publicado': 'success', 'observada': 'warning', 'descartada': 'danger',
+        'publicado': 'success', 'observada': 'warning',
       }
       return map[estado] || 'info'
     },
@@ -303,11 +304,11 @@ export default {
     estadoLabel(estado) {
       var labels = {
         pendiente: 'Pendiente',
-        programado: 'Programado',
-        aprobado: 'Aprobado',
-        observada: 'Observada',
         por_revisar: 'Por revisar',
-        publicado: 'Publicado',
+        aprobado: 'Aprobada · lista para publicar',
+        publicada: 'Publicada',
+        observada: 'Observada',
+        programado: 'Programada',
       }
       return labels[estado] || estado
     }
