@@ -394,7 +394,7 @@ VERIFICACIONES
    el Costo Base del item). Las que no son ganadoras se marcan "Respaldo".
 
 ====================================================================================
-ACTUALIZACION 2026-10-21 (2) � Combo de proveedores listaba solo algunos
+ACTUALIZACION 2026-10-22 � Combo de proveedores listaba solo algunos
 ====================================================================================
 
 SINTOMA
@@ -433,7 +433,7 @@ ARCHIVOS MODIFICADOS
 - modules/Comercial/Http/Controllers/ProyectosController.php
 
 ====================================================================================
-ACTUALIZACION 2026-10-21 (3) � Nueva estructura de quotation_items_supplier
+ACTUALIZACION 2026-10-23 � Nueva estructura de quotation_items_supplier
 ====================================================================================
 
 CAMBIO DE ESTRUCTURA (aplicado por el jefe en la tabla)
@@ -493,7 +493,7 @@ ARCHIVOS MODIFICADOS
 - sql/quotation_items_supplier.sql (estructura nueva para otros tenants)
 
 ====================================================================================
-ACTUALIZACION 2026-10-21 (4) � quotation_prequote_items deja de guardar proveedor/costo
+ACTUALIZACION 2026-10-24 � quotation_prequote_items deja de guardar proveedor/costo
 ====================================================================================
 
 PEDIDO
@@ -544,7 +544,7 @@ ARCHIVOS MODIFICADOS
 - modules/Comercial/.../TabPreCotizacion.vue
 
 ====================================================================================
-ACTUALIZACION 2026-10-21 (5) � Kits ocultados momentaneamente en Pre-Cotizacion
+ACTUALIZACION 2026-10-26 � Kits ocultados momentaneamente en Pre-Cotizacion
 ====================================================================================
 
 PEDIDO: "momentaneamente tambien oculta el anadido de kits en pre cotizacion"
@@ -569,7 +569,7 @@ ARCHIVO MODIFICADO
 - modules/Comercial/.../TabPreCotizacion.vue
 
 ====================================================================================
-ACTUALIZACION 2026-10-21 (6) � user_id de la comparativa = usuario de apoyo
+ACTUALIZACION 2026-10-27 � user_id de la comparativa = usuario de apoyo
 ====================================================================================
 
 PEDIDO
@@ -611,7 +611,7 @@ ARCHIVO MODIFICADO
 - modules/Marketing/Http/Controllers/Api/QuotationPreQuoteController.php
 
 ====================================================================================
-PUSH 2026-10-21 — Comparativa de proveedores (tabla nueva) + fuente unica de costo
+PUSH 2026-10-28 — Comparativa de proveedores (tabla nueva) + fuente unica de costo
 ====================================================================================
 
 Este commit reune el trabajo de la sesion 2026-10-20/21 (documentado en las
@@ -637,7 +637,7 @@ VERIFICACION
   redondeo comercial).
 - php -l limpio en los PHP tocados; npm run development OK.
 ====================================================================================
-ACTUALIZACION 2026-10-21 (7) - Total y Margen (S/) EN VIVO en la fila del item
+ACTUALIZACION 2026-10-29 - Total y Margen (S/) EN VIVO en la fila del item
 ====================================================================================
 
 PEDIDO
@@ -698,7 +698,7 @@ ARCHIVO MODIFICADO
 - modules/Marketing/Models/PreQuoteItem.php
 
 ====================================================================================
-ACTUALIZACION 2026-10-21 (8) - "V. Unit." de la comparativa = unitario final
+ACTUALIZACION 2026-10-29 - "V. Unit." de la comparativa = unitario final
 ====================================================================================
 
 PEDIDO
@@ -767,7 +767,7 @@ ARCHIVO MODIFICADO
 - modules/Comercial/Resources/assets/js/view/requerimientos/TabPreCotizacion.vue
 
 ====================================================================================
-ACTUALIZACION 2026-10-21 (9) - "V. unit." como UN SOLO concepto (fila item + fila
+ACTUALIZACION 2026-10-29 - "V. unit." como UN SOLO concepto (fila item + fila
 proveedor + fila kit), igual que el mockup V24
 ====================================================================================
 
@@ -814,7 +814,7 @@ ARCHIVO MODIFICADO
 - modules/Comercial/Resources/assets/js/view/requerimientos/TabPreCotizacion.vue
 
 ====================================================================================
-ACTUALIZACION 2026-10-21 (10) - Modal de requerimiento nuevo: se cierra al guardar
+ACTUALIZACION 2026-10-29 - Modal de requerimiento nuevo: se cierra al guardar
 + campo Empresa bloqueado en requerimientos ya guardados
 ====================================================================================
 
@@ -849,7 +849,7 @@ ARCHIVO MODIFICADO
 - modules/Comercial/Resources/assets/js/view/requerimientos/TabDatos.vue
 
 ====================================================================================
-PUSH 2026-10-21 (2) - V. unit. como concepto unico + Total/Margen en vivo + modal
+PUSH 2026-10-29 - V. unit. como concepto unico + Total/Margen en vivo + modal
 de requerimiento nuevo
 ====================================================================================
 
@@ -918,7 +918,7 @@ VERIFICACION
 - `npm run development` compila correctamente.
 
 ====================================================================================
-2026-10-22 - Evitar reutilizar correlativo unico de proyecto
+2026-10-30 - Evitar reutilizar correlativo unico de proyecto
 ====================================================================================
 
 CAUSA RAIZ
@@ -943,7 +943,7 @@ VERIFICACION
 - `php -l` con PHP 7.4: sin errores de sintaxis.
 
 ====================================================================================
-2026-10-22 - Renderizado por tipo de linea en detalles de pre-cotizacion
+2026-10-30 - Renderizado por tipo de linea en detalles de pre-cotizacion
 ====================================================================================
 
 CAMBIO
@@ -1191,3 +1191,67 @@ ARCHIVOS
 VERIFICACION
 - Lint correcto con PHP 7.4 en los servicios y pruebas tocados.
 - Pruebas enfocadas: 2 pruebas correctas (6 assertions); `git diff --check` correcto.
+
+====================================================================================
+2026-11-09 - Tabla de items MKT-03, edicion previa a produccion y error PHP
+====================================================================================
+
+CAMBIOS
+- GridEditor.vue ahora lista items de varias grillas en una tabla paginada,
+  con filtros por red social, ano y rango de fechas. Se agrego
+  `GET /marketing/mkt03/grid-items`, que incluye conteo de piezas y pieza vigente.
+- Los items sin producir muestran Producir y Editar. Los ya producidos muestran
+  Ver en modo de solo lectura. El modal sigue el diseno solicitado: resumen de
+  ID, fecha y origen, y campos de tematica, red social, tipo, linea y objetivo.
+- El endpoint de actualizacion valida esos campos y rechaza la edicion si el item
+  ya tiene una pieza. La gestion de grillas se dejo comentada en el componente
+  (no eliminada), y la tabla principal no solicita esa lista.
+- Recargar conserva las filas existentes si una respuesta inesperada viene vacia;
+  guardar una edicion actualiza localmente la fila, sin recargar todos los items.
+- Al intentar producir una pieza, se encontro una llave de cierre sobrante en
+  GridGeneratorEngine.php que dejaba un metodo public fuera de la clase. Se retiro
+  la llave, restaurando la carga del orquestador y el flujo de produccion.
+
+ARCHIVOS
+- modules/Marketing/Resources/assets/js/components/mkt03/GridEditor.vue
+- modules/Marketing/Http/Controllers/Api/MKT03GridController.php
+- modules/Marketing/Routes/web.php
+- modules/Marketing/Services/GridGeneratorEngine.php
+- _dev/AGENTS.md
+- _dev/ESTADO_ACTUAL.md
+- _dev/CAMBIOS_2026-10-14.txt
+
+VERIFICACION
+- PHP 7.2: lint correcto en GridGeneratorEngine.php y en los controladores y
+  servicios PHP del flujo de produccion.
+- Registro de ruta confirmado: GET marketing/mkt03/grid-items.
+- Compilacion de template y validacion sintactica del script Vue correctas con
+  vue-template-compiler y Node.
+- `git diff --check`: correcto.
+- `npm run dev` / `npm run development` no ejecutados por solicitud del usuario.
+
+====================================================================================
+2026-11-09 - Cambiar estado desde el modal de pieza MKT-03
+====================================================================================
+
+CAMBIOS
+- El modal de `PieceProducer.vue` permite seleccionar entre los estados
+  establecidos para la pieza y muestra etiquetas legibles en español.
+- El guardado del modal envía `estado_pieza` junto con los campos de contenido.
+- `MKT03PieceController::update` valida el estado con `Piece::ESTADOS`; al pasar
+  a `publicada` registra `published_at` y al pasar a `lista_publicar` asigna
+  `approver_id`, conservando el endpoint dedicado de cambio de estado para los
+  otros flujos existentes.
+
+ARCHIVOS
+- modules/Marketing/Resources/assets/js/components/mkt03/PieceProducer.vue
+- modules/Marketing/Http/Controllers/Api/MKT03PieceController.php
+- _dev/AGENTS.md
+- _dev/ESTADO_ACTUAL.md
+- _dev/CAMBIOS_2026-10-14.txt
+
+VERIFICACION
+- PHP 7.4: lint correcto en MKT03PieceController.php.
+- Template y script de PieceProducer.vue validados con vue-template-compiler y Node.
+- `git diff --check`: correcto.
+- Guardar contenido y estado usa una sola solicitud HTTP; `npm run dev` no ejecutado.

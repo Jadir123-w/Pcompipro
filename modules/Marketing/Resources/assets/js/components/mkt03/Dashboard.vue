@@ -82,7 +82,7 @@ export default {
         this.stats.grids_activas = list.filter(function (g) { return g.estado === 'activa' }).length
         this.stats.items_total   = list.reduce(function (acc, g) { return acc + (parseInt(g.items_count) || 0) }, 0)
 
-        var pi = await this.$http.get('/marketing/mkt03/pieces', { params: { estado_pieza: 'lista_publicar', per_page: 1 } })
+        var pi = await this.$http.get('/marketing/mkt03/pieces', { params: { estado_pieza: 'aprobado', per_page: 1 } })
         this.stats.piezas_listas = (pi.data.pieces && pi.data.pieces.total) || 0
 
         var fe = await this.$http.get('/marketing/mkt03/ferias', { params: { estado: 'activa', per_page: 1 } })

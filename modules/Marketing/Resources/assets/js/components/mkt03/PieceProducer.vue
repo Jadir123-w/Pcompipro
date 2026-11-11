@@ -67,7 +67,7 @@
               <el-tag size="small" effect="plain"><i class="el-icon-share"></i> {{ detailPiece.red_social }}</el-tag>
               <el-tag size="small" type="info" effect="plain"><i class="el-icon-document"></i> {{ detailPiece.formato }}</el-tag>
               <el-tag :type="estadoType(detailPiece.estado_pieza)" size="small">
-                <i class="el-icon-time"></i> {{ detailPiece.estado_pieza }}
+                <i class="el-icon-time"></i> {{ estadoLabel(detailPiece.estado_pieza) }}
               </el-tag>
             </div>
             <p class="piece-dialog-hint">
@@ -90,6 +90,11 @@
               </el-form-item>
               <el-form-item label="Llamado a la acción (CTA)">
                 <el-input v-model="detailPiece.cta" placeholder="Ej. Escríbenos para más información"></el-input>
+              </el-form-item>
+              <el-form-item label="Estado de la pieza">
+                <el-select v-model="detailPiece.estado_pieza" style="width:100%">
+                  <el-option v-for="estado in estados" :key="estado" :label="estadoLabel(estado)" :value="estado"></el-option>
+                </el-select>
               </el-form-item>
             </div>
 
@@ -148,7 +153,7 @@
           <el-button class="piece-image-button" @click="regenerateImage" :loading="regenerating" icon="el-icon-picture">
             {{ detailPiece && detailPiece.imagen_final_url ? 'Regenerar imagen' : 'Generar imagen' }}
           </el-button>
-          <el-button v-if="detailPiece && detailPiece.estado_pieza !== 'lista_publicar'"
+          <el-button v-if="detailPiece && detailPiece.estado_pieza !== 'aprobado'"
                      type="success" @click="approve" icon="el-icon-check">Aprobar</el-button>
           <el-button type="primary" @click="saveEdits" :loading="savingDetail" icon="el-icon-check">
             Guardar cambios
@@ -167,7 +172,7 @@ export default {
       loading: false,
       filters: { red_social: '', estado_pieza: '' },
       redes: ['facebook', 'instagram', 'linkedin', 'tiktok'],
-      estados: ['pendiente', 'en_produccion', 'lista_publicar', 'publicada', 'observada', 'descartada'],
+      estados: ['pendiente', 'por_revisar', 'aprobado', 'publicado', 'observada', 'programado'],
       showDetail: false,
       showMoreDetails: false,
       detailPiece: null,
@@ -218,15 +223,19 @@ export default {
           texto_en_imagen_video: this.detailPiece.texto_en_imagen_video,
           enfoque_visual: this.detailPiece.enfoque_visual,
           imagen_prompt: this.detailPiece.imagen_prompt,
+          estado_pieza: this.detailPiece.estado_pieza,
         }
         var r = await this.$http.put('/marketing/mkt03/pieces/' + this.detailPiece.id, payload)
         this.detailPiece = r.data.piece
         this.$message.success('Pieza actualizada')
         this.loadPieces()
       } catch (e) {
-        this.$message.error('Error guardando')
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error guardando pieza'
+        this.$message.error(msg)
+        this.loadPieces()
+      } finally {
+        this.savingDetail = false
       }
-      this.savingDetail = false
     },
 
     async regenerateImage() {
@@ -250,13 +259,14 @@ export default {
       try {
         await this.$http.put(
           '/marketing/mkt03/pieces/' + this.detailPiece.id + '/status',
-          { estado_pieza: 'lista_publicar' }
+          { estado_pieza: 'aprobado' }
         )
         this.$message.success('Pieza aprobada')
         this.openPiece(this.detailPiece.id)
         this.loadPieces()
       } catch (e) {
-        this.$message.error('Error aprobando')
+        var msg = (e.response && e.response.data && e.response.data.message) || 'Error aprobando'
+        this.$message.error(msg)
       }
     },
 
@@ -285,10 +295,22 @@ export default {
 
     estadoType(estado) {
       var map = {
-        'pendiente': 'info', 'en_produccion': 'warning', 'lista_publicar': 'success',
-        'publicada': 'success', 'observada': 'warning', 'descartada': 'danger',
+        'pendiente': 'info', 'por_revisar': 'warning', 'aprobado': 'success',
+        'publicado': 'success', 'observada': 'warning',
       }
       return map[estado] || 'info'
+    },
+
+    estadoLabel(estado) {
+      var labels = {
+        pendiente: 'Pendiente',
+        por_revisar: 'Por revisar',
+        aprobado: 'Aprobada · lista para publicar',
+        publicada: 'Publicada',
+        observada: 'Observada',
+        programado: 'Programada',
+      }
+      return labels[estado] || estado
     }
   }
 }

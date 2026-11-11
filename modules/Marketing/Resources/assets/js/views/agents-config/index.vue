@@ -120,7 +120,7 @@
           <!-- Sección: Imagen (solo MKT-03)              -->
           <!-- ═════════════════════════════════════════ -->
           <div v-if="agent.agent_key === 'mkt03'" class="ac-section">
-            <h3 class="ac-section-title">🎨 Configuración de IMAGEN (DALL-E 3 / gpt-image-2 / Nano Banana)</h3>
+            <h3 class="ac-section-title">🎨 Configuración de IMAGEN (DALL-E 3 / gpt-image-2 / Nano Banana / Cloudflare Flux)</h3>
 
             <el-form label-position="top" size="small">
               <el-row :gutter="16">

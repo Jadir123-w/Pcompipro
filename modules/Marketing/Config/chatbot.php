@@ -37,6 +37,12 @@ return [
             'base_url'   => env('CHATBOT_GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/models'),
             'max_tokens' => (int) env('CHATBOT_GEMINI_MAX_TOKENS', 1024),
         ],
+        'cloudflare' => [
+            'api_key'    => env('CLOUDFLARE_API_TOKEN'),
+            'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
+            'model'      => env('CLOUDFLARE_IMAGE_MODEL', '@cf/black-forest-labs/flux-1-schnell'),
+            'base_url'   => env('CLOUDFLARE_AI_BASE_URL', 'https://api.cloudflare.com/client/v4/accounts'),
+        ],
     ],
 
     /*
@@ -129,7 +135,7 @@ return [
     */
     'mkt03' => [
         // ── Generación de imágenes ──
-        // Providers: 'dalle3' | 'gpt-image-2' | 'nano-banana' (Gemini 3.1 Flash Image)
+        // Providers: 'dalle3' | 'gpt-image-2' | 'nano-banana' | 'cloudflare' (Flux 1 Schnell)
         'image_provider'      => env('MKT03_IMAGE_PROVIDER', 'dalle3'),
         'image_model'         => env('MKT03_IMAGE_MODEL'),
 

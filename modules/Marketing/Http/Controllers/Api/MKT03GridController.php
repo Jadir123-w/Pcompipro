@@ -4,9 +4,11 @@ namespace Modules\Marketing\Http\Controllers\Api;
 
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Modules\Marketing\Models\Grid;
 use Modules\Marketing\Models\GridItem;
+use Modules\Marketing\Models\Piece;
 use Modules\Marketing\Services\MKT03Orchestrator;
 
 /**
@@ -111,6 +113,54 @@ class MKT03GridController extends Controller
         $grids = $query->paginate($request->input('per_page', 20));
 
         return response()->json(['ok' => true, 'grids' => $grids]);
+    }
+
+    /**
+     * GET /marketing/mkt03/grid-items
+     *
+     * Listar ítems de todas las grillas con estado de su pieza vigente.
+     */
+    public function items(Request $request)
+    {
+        $v = Validator::make($request->all(), [
+            'red_social'  => ['nullable', 'string', 'in:facebook,instagram,linkedin,tiktok'],
+            'anio'        => ['nullable', 'integer', 'min:2020', 'max:2100'],
+            'fecha_desde' => ['nullable', 'date'],
+            'fecha_hasta' => ['nullable', 'date', 'after_or_equal:fecha_desde'],
+            'per_page'    => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
+        if ($v->fails()) {
+            return response()->json(['ok' => false, 'errors' => $v->errors()], 422);
+        }
+
+        $query = GridItem::query()
+            ->with([
+                'grid:id,titulo',
+                'currentPiece:id,grid_item_id,estado_pieza,is_current',
+            ])
+            ->withCount('pieces')
+            ->orderBy('fecha_publicacion')
+            ->orderBy('id');
+
+        if ($request->filled('red_social')) {
+            $query->where('red_social', $request->input('red_social'));
+        }
+        if ($request->filled('anio')) {
+            $query->whereHas('grid', function ($gridQuery) use ($request) {
+                $gridQuery->where('anio', $request->input('anio'));
+            });
+        }
+        if ($request->filled('fecha_desde')) {
+            $query->whereDate('fecha_publicacion', '>=', $request->input('fecha_desde'));
+        }
+        if ($request->filled('fecha_hasta')) {
+            $query->whereDate('fecha_publicacion', '<=', $request->input('fecha_hasta'));
+        }
+
+        $items = $query->paginate($request->input('per_page', 20));
+
+        return response()->json(['ok' => true, 'items' => $items]);
     }
 
     /**
@@ -353,16 +403,62 @@ class MKT03GridController extends Controller
     {
         $item = GridItem::where('grid_id', $gridId)->where('id', $itemId)->firstOrFail();
 
-        $editableFields = [
-            'fecha_publicacion', 'tematica', 'campania', 'temporada', 'evento',
-            'objetivo', 'linea_comercial', 'tipo_contenido', 'prioridad',
-            'observaciones', 'item_order',
-        ];
+        $v = Validator::make($request->all(), [
+            'tematica'       => ['sometimes', 'nullable', 'string', 'max:100'],
+            'red_social'     => ['sometimes', 'required', 'string', 'in:facebook,instagram,linkedin,tiktok'],
+            'linea_comercial' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'tipo_contenido' => ['sometimes', 'nullable', 'string', 'max:60'],
+            'objetivo'       => ['sometimes', 'nullable', 'string', 'max:100'],
+            'estado_pieza'   => ['sometimes', 'required', 'string', 'in:' . implode(',', Piece::ESTADOS)],
+        ]);
 
-        $updates = $request->only($editableFields);
-        $item->update($updates);
+        if ($v->fails()) {
+            return response()->json(['ok' => false, 'errors' => $v->errors()], 422);
+        }
 
-        return response()->json(['ok' => true, 'item' => $item->fresh()]);
+        $data = $v->validated();
+        $estadoPieza = isset($data['estado_pieza']) ? $data['estado_pieza'] : null;
+        unset($data['estado_pieza']);
+
+        if ($data && $item->pieces()->exists()) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Los ítems producidos no se pueden editar; solo se pueden consultar.',
+            ], 422);
+        }
+
+        if ($estadoPieza && !$item->currentPiece()->exists()) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Primero debes producir la pieza para poder cambiar su estado.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($item, $data, $estadoPieza, $request) {
+            if ($data) {
+                $item->update($data);
+            }
+
+            if ($estadoPieza) {
+                $piece = $item->currentPiece()->first();
+                $pieceUpdates = ['estado_pieza' => $estadoPieza];
+                if ($estadoPieza === Piece::ESTADO_PUBLICADA
+                    && $piece->estado_pieza !== Piece::ESTADO_PUBLICADA) {
+                    $pieceUpdates['published_at'] = now();
+                }
+                if ($estadoPieza === Piece::ESTADO_LISTA_PUBLICAR
+                    && $piece->estado_pieza !== Piece::ESTADO_LISTA_PUBLICAR) {
+                    $pieceUpdates['approver_id'] = $request->user() ? $request->user()->id : null;
+                }
+
+                $piece->update($pieceUpdates);
+            }
+        });
+
+        return response()->json([
+            'ok'   => true,
+            'item' => $item->fresh(['currentPiece']),
+        ]);
     }
 
     /**

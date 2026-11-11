@@ -27,6 +27,7 @@ class Piece extends ModelTenant
         'formato',
         'enfoque_visual',
         'referencia_visual',
+        'texto_en_imagen_video',
         'imagen_final_url',
         'imagen_prompt',
         'imagen_source',
@@ -57,11 +58,11 @@ class Piece extends ModelTenant
     |--------------------------------------------------------------------------
     */
     const ESTADO_PENDIENTE         = 'pendiente';
-    const ESTADO_EN_PRODUCCION     = 'en_produccion';
-    const ESTADO_LISTA_PUBLICAR    = 'lista_publicar';
-    const ESTADO_PUBLICADA         = 'publicada';
+    const ESTADO_EN_PRODUCCION     = 'por_revisar';
+    const ESTADO_LISTA_PUBLICAR    = 'aprobado';
+    const ESTADO_PUBLICADA         = 'publicado';
     const ESTADO_OBSERVADA         = 'observada';
-    const ESTADO_DESCARTADA        = 'descartada';
+    const ESTADO_PROGRAMADO        = 'programado';
 
     const ESTADOS = [
         self::ESTADO_PENDIENTE,
@@ -69,7 +70,7 @@ class Piece extends ModelTenant
         self::ESTADO_LISTA_PUBLICAR,
         self::ESTADO_PUBLICADA,
         self::ESTADO_OBSERVADA,
-        self::ESTADO_DESCARTADA,
+        self::ESTADO_PROGRAMADO,
     ];
 
     const IMAGEN_AI_GENERATED  = 'ai_generated';
