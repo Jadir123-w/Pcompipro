@@ -1255,3 +1255,221 @@ VERIFICACION
 - Template y script de PieceProducer.vue validados con vue-template-compiler y Node.
 - `git diff --check`: correcto.
 - Guardar contenido y estado usa una sola solicitud HTTP; `npm run dev` no ejecutado.
+
+====================================================================================
+2026-11-09 - MKT-03: boton "Ampliar grilla" en la toolbar + modal propio
+====================================================================================
+
+CAMBIOS
+- GridEditor.vue: se agrega el boton "Ampliar grilla" en la barra superior, junto
+  a "Generar Grilla con IA (Modo A)". No toca la seccion "Administrar grillas"
+  ni el dialogo anterior; trae su propio modal.
+- El modal nuevo contiene: selector con buscador de grillas ampliables
+  (borrador, en_revision, activa; validada y cerrada quedan excluidas porque
+  el backend las rechaza en extendGrid), mini-resumen de la grilla
+  (red, tipo de periodo, cantidad de items), rango fecha_desde / fecha_hasta
+  con validacion desde <= hasta, y llamada a POST /marketing/mkt03/grids/{id}/extend.
+  Al confirmar, recarga items y lista de grillas.
+- Datos y computeds agregados al componente: showExtendDialogToolbar,
+  extendingToolbar, extendToolbarForm (grid_id, fecha_desde, fecha_hasta),
+  expandableGrids, extendToolbarTarget y el metodo loadExpandableGrids()
+  (GET /grids?page=1&per_page=100, sin aplicar los filtros de la tabla).
+- reloadAll() ahora refresca en paralelo los items (reloadItems) y las grillas
+  (loadGrids preservando filas en caso de respuesta vacia).
+
+ARCHIVOS
+- modules/Marketing/Resources/assets/js/components/mkt03/GridEditor.vue
+
+VERIFICACION
+- npm run development: compilado OK (2026-11-09).
+====================================================================================
+2026-11-09 - MKT-03: celdas de la tabla de items recortan con ellipsis
+====================================================================================
+
+CAMBIOS
+- GridEditor.vue: reglas .grid-items-table para .el-table__cell .cell
+  (header y body): max-width 100%, overflow hidden, text-overflow ellipsis,
+  white-space nowrap, word-break normal. Asi se evita que el texto largo de
+  una celda se dibuje encima de la celda contigua (efecto visto en Tematica /
+  Linea / Objetivo). El texto completo se ve con el tooltip (show-overflow-tooltip)
+  que ya tenian las columnas.
+- Nota: no se identifico una regla global del tema que desactive el clip;
+  el cambio es un seguro local para esta tabla.
+
+ARCHIVOS
+- modules/Marketing/Resources/assets/js/components/mkt03/GridEditor.vue
+
+VERIFICACION
+- npm run development: compilado OK (2026-11-09 y 2026-11-11).
+====================================================================================
+2026-11-11 - MKT-03: boton ampliar + continuidad del trabajo (push a main)
+====================================================================================
+
+CAMBIOS
+- Commit b3723e9 (dev-jadir): commit con todo el trabajo pendiente:
+  Cloudflare Flux provider, estados de pieza renombrados, seed del provider,
+  tests nuevos y eliminacion de quotation_items_supplier.sql de la raiz.
+- Push de dev-jadir (7edcce1..b3723e9).
+- Merge de dev-jadir en main (commit de merge 152fe53) y push de main
+  (024624b..152fe53). La rama main conservaba mockup_grillas.html (commit
+  024624b, subido directo a GitHub) y se preserva en el merge.
+- Clon/working copy en la maquina sigue en rama dev-jadir, sincronizada con
+  origin/dev-jadir.
+
+VERIFICACION
+- npm run development OK; mergeort sin conflictos; ramas remotas verificadas.
+====================================================================================
+2026-11-11 - Cloudflare Flux (Workers AI) como proveedor de imagen MKT-03
+====================================================================================
+
+CONTEXTO
+- MKT-03 permite providers de imagen: dalle3 | gpt-image-2 | nano-banana | cloudflare.
+  Se incorpora Cloudflare Workers AI (@cf/black-forest-labs/flux-1-schnell).
+- Requiere CLOUDFLARE_API_TOKEN (con permiso Workers AI) y CLOUDFLARE_ACCOUNT_ID
+  (el ID de la cuenta; la URL api.cloudflare.com/client/v4/accounts/{id}/ai/run/...
+  lo lleva siempre; sin el account_id el provider falla con "Account ID no configurado").
+- A diferencia de Gemini (AI Studio), la URL de Cloudflare exige el account_id;
+  Gemini autentica todo con la API key. Vertex AI es el equivalente de Google y
+  si exigiria project_id/location.
+
+CAMBIOS
+- Nuevo modules/Marketing/Services/Image/CloudflareFluxProvider.php:
+  implementa ImageProviderInterface, valida api_key y account_id, genera con
+  flux-1-schnell, guarda la imagen en el disco configurado (mismo patron que
+  Nano Banana) y devuelve URL via PublicUrl.
+- Payload corregido al esquema estricto de flux-1-schnell: solo 'prompt' y
+  'steps' (<=8). Enviar 'width'/'height' devolvia HTTP 400
+  "Additional or unevaluated properties '/width, /height' ... not allowed".
+  aspect_ratio queda como dato informativo (no se envia al API); las dimensiones
+  informadas en el resultado se calculan localmente. Docblock actualizado.
+- AgentConfigService: resuelve 'cloudflare' (api_key, base_url, account_id,
+  aspect_ratio, modelo por defecto flux-1-schnell) y el bloque de env ("source env")
+  pasa a soportar cloudflare; defaultModel/env fallback incluye cloudflare.
+- AiProvider::isConfigured(): para provider cloudflare ademas exige
+  CLOUDFLARE_ACCOUNT_ID (leido del config marketing.chatbot.ai.cloudflare.account_id).
+- chatbot.php: nueva clave 'cloudflare' (api_key/account_id/model/base_url) y
+  comentario de providers actualizado.
+- .env.example: nuevas variables CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
+  CLOUDFLARE_IMAGE_MODEL, CLOUDFLARE_AI_BASE_URL.
+- AiProvider: listado de env vars incluye CLOUDFLARE_API_TOKEN.
+- agents-config/index.vue: etiqueta de la seccion IMAGEN menciona Cloudflare Flux.
+
+ARCHIVOS
+- modules/Marketing/Services/Image/CloudflareFluxProvider.php (nuevo en git)
+- modules/Marketing/Services/AgentConfigService.php
+- modules/Marketing/Models/AiProvider.php
+- modules/Marketing/Config/chatbot.php
+- modules/Marketing/Console/Mkt03MaintenanceCommand.php (texto doc)
+- modules/Marketing/Resources/assets/js/views/agents-config/index.vue
+- .env.example
+
+PENDIENTE (IMPORTANTE)
+- Correr la migracion seed por tenant:
+  database/migrations/tenant/2026_11_11_000001_seed_cloudflare_flux_image_provider.php
+  (php artisan migrate --path=database/migrations/tenant/2026_11_11_000001_seed_cloudflare_flux_image_provider.php)
+- En el entorno/tenant que use MKT03_IMAGE_PROVIDER=cloudflare, configurar
+  CLOUDFLARE_API_TOKEN y CLOUDFLARE_ACCOUNT_ID en el .env y recargar
+  workers/queues (config()).
+====================================================================================
+2026-11-11 - MKT-03: estados de pieza renombrados (workflow por_revisar/aprobado/publicado/programado)
+====================================================================================
+
+CAMBIOS
+- Piece.php: se renombraron los valores para que coincidan con la UI del
+  listado de items (GridEditor) y con el mockup de "lista de piezas":
+    en_produccion -> por_revisar
+    lista_publicar -> aprobado
+    publicada      -> publicado
+    descartada     -> programado
+  (pendiente, observada se mantienen). Se agrego 'texto_en_imagen_video' al fillable.
+- Comentario de la columna estado_pieza en 2026_04_16_000003_create_mkt_pieces_table.php
+  actualizado a: pendiente, en_revision, aprobado, publicada, observada, programado
+  (revisar esta inconsistencia con textos nuevos en una proxima pasada: los
+  comentarios de la migracion no reflejan exactamente los valores actuales).
+- Dashboard.vue: stat de piezas listas usa estado_pieza=aprobado.
+- PieceProducer.vue y GridEditor.vue: listas de estados, etiquetas y colores
+  alimentan/esperan el nuevo set (pendiente, por_revisar, aprobado, publicado,
+  observada, programado).
+- Mkt03MaintenanceCommand.php: referencia de doc auto-schedule actualizada a "aprobado".
+
+ADVERTENCIA
+- Los registros existentes en mkt_pieces.estado_pieza siguen con los valores
+  antiguos (en_produccion, lista_publicar, publicada, descartada); production
+  no se migra sola. Antes de ir a produccion real hay que decidir entre
+  (a) migrar datos con un UPDATE controlado, o
+  (b) volver al set antiguo en codigo.
+- Cualquier llamada directa a /status o /pieces con los valores viejos devolvera
+  422 porque la validacion usa Piece::ESTADOS (nuevo set).
+
+ARCHIVOS
+- modules/Marketing/Models/Piece.php
+- database/migrations/tenant/2026_04_16_000003_create_mkt_pieces_table.php
+- modules/Marketing/Resources/assets/js/components/mkt03/Dashboard.vue
+- modules/Marketing/Resources/assets/js/components/mkt03/PieceProducer.vue
+- modules/Marketing/Resources/assets/js/components/mkt03/GridEditor.vue
+- modules/Marketing/Console/Mkt03MaintenanceCommand.php
+
+VERIFICACION
+- npm run development OK.
+- php -l (PHP 7.4) OK en CloudflareFluxProvider.php.
+- PHPUnit Unit/Marketing/CloudflareFluxProviderTest OK (payload esperado ajustado
+  al esquema de schnell: solo prompt).
+- Migracion seed y migracion de datos: NO ejecutada automaticamente.
+====================================================================================
+2026-11-11 - MKT-03: prompt de imagen, coherencia con copy/enfoque (revision, sin cambios)
+====================================================================================
+
+ANALISIS DOCUMENTADO
+- Se reviso como se genera el campo imagen_prompt del modal "Editar pieza" de
+  PieceProducer.vue:
+  1) El LLM recibe el item de grilla + mkt_platform_config + addendum de
+     EditorialGuidelinesService (identidad, anti-vicios, storytelling).
+  2) El JSON de salida incluye pieza_producida.imagen_prompt (y aspect_ratio
+     auto-reportado).
+  3) Se guarda en mkt_pieces.imagen_prompt cuando nace la pieza.
+  4) "Regenerar imagen" envia ese texto directo al provider activo; NO vuelve a
+     pasar por el LLM ni refleja ediciones posteriores del copy/CTA.
+- Se detecto incoherencia real: copy de trivia + enfoque_visual de "diapositiva
+  con pregunta/grafico" y sin embargo el imagen_prompt describe una foto de
+  botella "on a white minimal desk setup". Causa: el imagen_prompt se inventa
+  en paralelo dentro del mismo JSON, sin anclaje al copy/enfoque_visual. El
+  addendum y el contexto no restringen esto, y nadie valida la correspondencia.
+- Segun provider: Nano Banana respeta aspect_ratio via imageConfig (1:1, 4:5,
+  9:16, etc.); Flux-1-schnell NO acepta dimensiones/ratios (resolucion fija).
+- Propuestas pendientes de aprobacion (no implementadas aun):
+  A) instrucciones en el system prompt para alinear imagen_prompt con
+     enfoque_visual/copy (+ negativos explicitos: no text/letters/watermark).
+  B) segunda pasada LLM dedicada solo al prompt de imagen usando
+     copy + enfoque_visual ya generados.
+  C) whitelist server-side de aspect_ratio por red (cae al default de
+     PlatformConfig si llega invalido).
+  D) referencia a fotos reales del producto (referencia_visual + edit multimodal)
+     para que "el producto" no lo invente el modelo.
+
+ARCHIVOS DE REFERENCIA (sin cambios de codigo)
+- modules/Marketing/Prompts/mkt03-piece-producer-prompt.md
+- modules/Marketing/Services/PieceProducerEngine.php
+- modules/Marketing/Services/EditorialGuidelinesService.php
+- modules/Marketing/Services/ImageGenerationService.php
+- modules/Marketing/Services/Image/NanoBananaProvider.php
+- modules/Marketing/Services/Image/CloudflareFluxProvider.php
+
+VERIFICACION
+- Revision de codigo y docs; sin ejecucion de la llamada IA real.
+====================================================================================
+2026-11-11 - Push a main + limpieza de archivos del repo
+====================================================================================
+
+CAMBIOS
+- Se eliminaron del arbol de git: quotation_items_supplier.sql (raiz). Las
+  demas migraciones/sql manuales de marketing quedan en sql/ (ver AGENTS.md).
+- Commits y ramas (ver seccion 2026-11-11 "boton ampliar + continuidad"):
+  dev-jadir b3723e9; main = merge 152fe53 sobre 024624b.
+- El archivo bitacora referenciado historicamente como CAMBIOS_2026-10-14.txt
+  se sigue llamando CAMBIOS_2026-11-11.txt en la version actual del repo; los
+  textos historicos mantienen la referencia antigua.
+- Los documentos _dev/AGENTS.md y _dev/ESTADO_ACTUAL.md reflejan el estado al
+  2026-11-11 (listado de items, modal ampliar, provider Cloudflare Flux).
+
+VERIFICACION
+- git status limpio en dev-jadir; origin/main y origin/dev-jadir verificados.
