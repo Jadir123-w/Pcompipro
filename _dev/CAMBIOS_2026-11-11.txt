@@ -1473,3 +1473,26 @@ CAMBIOS
 
 VERIFICACION
 - git status limpio en dev-jadir; origin/main y origin/dev-jadir verificados.
+====================================================================================
+2026-11-10 - Rehabilitacion del check "Kit" en la tabla de items de pre-cotizacion
+====================================================================================
+
+CAUSA / CAMBIO
+- El check de la columna Kit no reenderizaba: el `el-checkbox` tenia un
+  `v-if="false"` hardcodeado (ocultamiento del 2026-10-21 "pedido del jefe").
+  El flag `mostrarKits` solo controla la COLUMNA, no el check interno.
+- Se restauro la condicion original del commit 11854a5: el check se pinta en
+  items sueltos que no son comision (`!scope.row._isKit && !isComision(scope.row)`).
+- Los flags `mostrarItemManual` y `mostrarKits` ya estaban en true (edicion local
+  previa de la sesion): el boton "Item manual" y la columna Kit quedan visibles.
+- El acordeon "Agrupacion de kits" SIGUE oculto con `v-if="false"` (linea ~115):
+  sin el, los checks marcados no tienen barra de creacion de kit todavia.
+
+ARCHIVOS
+- modules/Comercial/Resources/assets/js/view/requerimientos/TabPreCotizacion.vue
+
+VERIFICACION
+- `npm run development` (node E:\node): compilado sin errores.
+- Tablas tenant verificadas: quotation_proposal_kits/_items existen en
+  tenancy_prueba y tenancy_boceto.
+- No se toco PHP (no requiere php -l).
