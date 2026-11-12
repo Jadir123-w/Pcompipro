@@ -167,8 +167,13 @@ valida el estado contra `Piece::ESTADOS` y mantiene `published_at` al pasar a
 ## 5. Lo que está oculto (código intacto, se reactiva con `v-if="false"`)
 
 - **Pestaña "Proveedores"** (IA de proveedores) en `index.vue` y `kanban.vue`.
-- **Kits** en pre-cotización: el colapso "Agrupación de kits" y el check de la
-  columna "Kit". Los kits **ya creados** se siguen viendo (con su botón "Disolver").
+- **Kits** en pre-cotización: SOLO queda oculto el colapso "Agrupación de
+  kits" (`el-col` con `v-if="false"`). El check de la columna "Kit" fue
+  rehabilitado el 2026-11-10 (condición original del commit 11854a5:
+  `!scope.row._isKit && !isComision(scope.row)`); los flags `mostrarKits` y
+  `mostrarItemManual` están en `true`. Los kits **ya creados** se siguen viendo
+  (con su botón "Disolver"). OJO: sin el colapso, los checks marcados no
+  tienen barra de creación de kit todavía.
 
 ---
 
