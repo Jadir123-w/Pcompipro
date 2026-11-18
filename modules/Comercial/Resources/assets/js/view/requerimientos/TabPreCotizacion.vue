@@ -110,9 +110,9 @@
           </el-collapse-item>
         </el-collapse>
       </el-col>
-      <!-- [NUEVO FLUJO 2026-10-21] Kits ocultados momentaneamente (pedido del jefe).
+      <!-- [NUEVO FLUJO 2026-10-21] Kits ocultados momentaneamente.
            El código queda intacto: solo se oculta la UI de creación/agrupación. -->
-      <el-col v-if="false" :xs="24" :md="12">
+      <el-col v-if="true" :xs="24" :md="12">
         <el-collapse v-model="kitCollapseOpen" class="precot-collapse">
           <el-collapse-item name="kit">
             <template slot="title">
@@ -1342,10 +1342,9 @@
             <span class="col-tip" title="Marca 2 o más productos para crear un kit. La comisión no entra a kits.">Kit <i class="el-icon-info"></i></span>
           </template>
           <template slot-scope="scope">
-            <!-- [NUEVO FLUJO 2026-10-21] Kits ocultados momentaneamente (pedido del
-                 jefe): el check de marcado queda oculto. Si el item YA pertenece a
+            <!-- [NUEVO FLUJO 2026-10-21] Kits ocultados momentaneamente: el check de marcado queda oculto. Si el item YA pertenece a
                  un kit, se sigue mostrando el kit y el botón "Disolver". -->
-            <el-checkbox v-if="false"
+            <el-checkbox v-if="!scope.row._isKit && !isComision(scope.row)"
                          :value="kitSelection.indexOf(scope.row.id) !== -1"
                          :disabled="!isEditable"
                          @change="toggleKitSelected(scope.row)"></el-checkbox>
@@ -1854,9 +1853,9 @@ export default {
       addingManual: false,
       // Botón "Ítem manual" oculto en esta etapa: todo se genera con IA. Se usará más
       // adelante con la búsqueda sin IA.
-      mostrarItemManual: false,
+      mostrarItemManual: true,
       // Columna Kit oculta en esta etapa: los kits aún no están completos.
-      mostrarKits: false,
+      mostrarKits: true,
       // Cambio de estado en curso (emitir, respuesta del cliente, reabrir).
       cambiandoEstado: false,
       // Rediseño: acordeones de ingreso (IA abierto por defecto, kits cerrado)

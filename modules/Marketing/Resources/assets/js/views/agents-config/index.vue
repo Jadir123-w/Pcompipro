@@ -63,7 +63,8 @@
               <el-row :gutter="16">
                 <el-col :span="12">
                   <el-form-item label="Provider de texto">
-                    <el-select v-model="forms[agent.agent_key].text_provider_id" placeholder="Elegir provider" style="width: 100%;">
+                    <el-select v-model="forms[agent.agent_key].text_provider_id" placeholder="Elegir provider"
+                               style="width: 100%;" @change="clearProviderCheck(agent.agent_key)">
                       <el-option v-for="p in textProviders" :key="p.id" :value="p.id"
                                  :label="p.display_name + (p.is_configured ? '' : ' (sin API key)')"
                                  :disabled="!p.is_configured">
@@ -83,13 +84,26 @@
                   <el-form-item label="Modelo (override)">
                     <el-select v-model="forms[agent.agent_key].text_model_override"
                                placeholder="(usar default del provider)"
-                               clearable style="width: 100%;">
+                               clearable style="width: 100%;" @change="clearProviderCheck(agent.agent_key)">
                       <el-option v-for="m in textModelOptions(agent.agent_key)" :key="m" :value="m" :label="m"></el-option>
                     </el-select>
                     <small class="ac-hint">Vacío = usa el default del provider</small>
                   </el-form-item>
                 </el-col>
               </el-row>
+
+              <div v-if="selectedTextProvider(agent.agent_key) && selectedTextProvider(agent.agent_key).is_configured"
+                   class="provider-test-row">
+                <el-button size="mini" type="success"
+                           :loading="providerChecks[agent.agent_key] && providerChecks[agent.agent_key].loading"
+                           @click="testSelectedTextProvider(agent.agent_key)">
+                  Probar proveedor seleccionado con “Hola”
+                </el-button>
+                <el-alert v-if="providerChecks[agent.agent_key] && providerChecks[agent.agent_key].result"
+                          :title="providerChecks[agent.agent_key].result"
+                          :type="providerChecks[agent.agent_key].ok ? 'success' : 'error'"
+                          :closable="false" style="margin-top: 8px;"></el-alert>
+              </div>
 
               <el-row :gutter="16">
                 <el-col :span="12">
@@ -215,9 +229,14 @@
         <span slot="label"><i class="el-icon-set-up"></i> Providers (catálogo)</span>
 
         <div class="providers-list">
-          <p class="text-muted" style="margin-bottom: 12px;">
-            Proveedores de IA disponibles. Activa o desactiva cuáles puede elegir el usuario en cada agente.
-          </p>
+          <div class="provider-toolbar">
+            <p class="text-muted" style="margin-bottom: 12px;">
+              Los proveedores existentes conservan su integración actual. Los nuevos usan el protocolo OpenAI-compatible.
+            </p>
+            <el-button type="primary" icon="el-icon-plus" @click="openProviderDialog()">
+              Agregar proveedor
+            </el-button>
+          </div>
 
           <el-table :data="providers" border>
             <el-table-column label="Provider" min-width="220">
@@ -243,7 +262,7 @@
                   {{ scope.row.is_configured ? 'OK' : 'MISSING' }}
                 </el-tag>
                 <div class="text-muted" style="font-size: 11px; margin-top: 2px;">
-                  {{ scope.row.api_key_env_var }}
+                  {{ scope.row.adapter_type === 'openai_compatible' ? 'Cifrada en BD' : scope.row.api_key_env_var }}
                 </div>
               </template>
             </el-table-column>
@@ -259,16 +278,109 @@
                 <el-switch v-model="scope.row.enabled" @change="toggleProviderEnabled(scope.row)"></el-switch>
               </template>
             </el-table-column>
+            <el-table-column label="Acciones" width="110" align="center">
+              <template slot-scope="scope">
+                <el-button v-if="scope.row.adapter_type === 'openai_compatible'"
+                           size="mini" icon="el-icon-edit"
+                           @click="openProviderDialog(scope.row)">Editar</el-button>
+              </template>
+            </el-table-column>
           </el-table>
 
           <p class="text-muted" style="margin-top: 12px; font-size: 12px;">
-            <strong>Nota:</strong> las API keys se mantienen en el archivo <code>.env</code> del servidor por seguridad.
-            Aquí solo gestionas qué providers están disponibles para usar.
+            <strong>Compatibilidad:</strong> los proveedores legacy conservan sus clases y credenciales actuales.
+            Los nuevos deben implementar las rutas estándar OpenAI-compatible (<code>/models</code> y
+            <code>/chat/completions</code> o <code>/images/generations</code>). La prueba “Hola” solo aplica a texto;
+            no se generan imágenes de prueba.
           </p>
         </div>
       </el-tab-pane>
 
     </el-tabs>
+
+    <el-dialog :title="editingProviderId ? 'Editar proveedor' : 'Agregar proveedor'"
+               :visible.sync="providerDialog" width="620px" :close-on-click-modal="false">
+      <el-form label-position="top" size="small">
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="Nombre visible">
+              <el-input v-model="providerForm.display_name" maxlength="100"></el-input>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="Identificador único">
+              <el-input v-model="providerForm.provider_key" maxlength="40"
+                        :disabled="!!editingProviderId"></el-input>
+              <small class="ac-hint">Usa minúsculas, números, guion o guion bajo, sin puntos ni espacios; por ejemplo: <code>openrouter</code>.</small>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="Capacidad">
+              <el-select v-model="providerForm.capability" style="width: 100%;"
+                         :disabled="!!editingProviderId">
+                <el-option label="Texto" value="text"></el-option>
+                <el-option label="Imagen" value="image"></el-option>
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="URL base HTTPS">
+              <el-input v-model="providerForm.base_url" placeholder="https://api.ejemplo.com/v1"></el-input>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="API key">
+          <el-input v-model="providerForm.api_key" type="password" show-password
+                    autocomplete="new-password"
+                    :placeholder="editingProviderId ? 'Vacío = conservar la clave actual' : 'API key del proveedor'"></el-input>
+          <small class="ac-hint">Se cifra al guardar y no vuelve a mostrarse en pantalla.</small>
+        </el-form-item>
+        <el-form-item label="Modelo por defecto">
+          <el-select v-model="providerForm.default_model" filterable allow-create default-first-option
+                     style="width: 100%;" placeholder="Escribe un modelo o carga la lista">
+            <el-option v-for="model in providerModelOptions" :key="model" :label="model" :value="model"></el-option>
+          </el-select>
+        </el-form-item>
+        <div class="provider-dialog-actions">
+          <el-button size="mini" :loading="providerModelsLoading" @click="loadDraftModels">
+            Cargar modelos disponibles
+          </el-button>
+          <el-button v-if="providerForm.capability === 'text'" size="mini" type="success"
+                     :loading="providerTesting" @click="testDraftProvider">
+            Probar con “Hola”
+          </el-button>
+        </div>
+        <el-alert v-if="providerTestResult" :title="providerTestResult"
+                  :type="providerTestOk ? 'success' : 'error'" :closable="false"
+                  style="margin: 8px 0 16px;"></el-alert>
+        <template v-if="providerForm.capability === 'image'">
+          <el-form-item label="Calidades admitidas (opcional)">
+            <el-select v-model="providerForm.supported_qualities" multiple filterable allow-create
+                       default-first-option style="width: 100%;"></el-select>
+          </el-form-item>
+          <el-form-item label="Relaciones de aspecto admitidas (opcional)">
+            <el-select v-model="providerForm.supported_aspect_ratios" multiple filterable allow-create
+                       default-first-option style="width: 100%;"></el-select>
+          </el-form-item>
+          <el-alert title="No se ejecutarán pruebas de generación de imagen ni se consumirán créditos desde este panel."
+                    type="info" :closable="false" show-icon></el-alert>
+        </template>
+        <el-form-item label="Descripción">
+          <el-input v-model="providerForm.description" type="textarea" :rows="2"></el-input>
+        </el-form-item>
+        <el-form-item label="Notas de precio">
+          <el-input v-model="providerForm.pricing_notes" type="textarea" :rows="2"></el-input>
+        </el-form-item>
+      </el-form>
+      <span slot="footer">
+        <el-button @click="providerDialog = false">Cancelar</el-button>
+        <el-button type="primary" :loading="providerSaving" @click="saveProvider">
+          {{ editingProviderId ? 'Guardar cambios' : 'Guardar proveedor' }}
+        </el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
@@ -283,6 +395,16 @@ export default {
       forms: {},        // forms[agent_key] = { ...campos editables }
       resolved: {},     // resolved[agent_key] = { text: {...}, image: {...} }
       saving: {},
+      providerDialog: false,
+      providerSaving: false,
+      providerModelsLoading: false,
+      providerTesting: false,
+      providerTestResult: '',
+      providerTestOk: false,
+      editingProviderId: null,
+      providerModelOptions: [],
+      providerForm: this.emptyProviderForm(),
+      providerChecks: {},
     }
   },
   computed: {
@@ -406,6 +528,145 @@ export default {
       }
     },
 
+    emptyProviderForm() {
+      return {
+        provider_key: '',
+        display_name: '',
+        capability: 'text',
+        base_url: '',
+        api_key: '',
+        default_model: '',
+        description: '',
+        pricing_notes: '',
+        supported_qualities: [],
+        supported_aspect_ratios: [],
+      }
+    },
+
+    openProviderDialog(provider) {
+      this.editingProviderId = provider ? provider.id : null
+      this.providerForm = provider ? {
+        provider_key: provider.provider_key,
+        display_name: provider.display_name,
+        capability: provider.capability,
+        base_url: provider.base_url || '',
+        api_key: '',
+        default_model: provider.default_model || '',
+        description: provider.description || '',
+        pricing_notes: provider.pricing_notes || '',
+        supported_qualities: provider.supported_qualities || [],
+        supported_aspect_ratios: provider.supported_aspect_ratios || [],
+      } : this.emptyProviderForm()
+      this.providerModelOptions = provider && Array.isArray(provider.supported_models)
+        ? provider.supported_models.slice()
+        : []
+      this.providerTestResult = ''
+      this.providerTestOk = false
+      this.providerDialog = true
+    },
+
+    async loadDraftModels() {
+      this.providerModelsLoading = true
+      this.providerTestResult = ''
+      try {
+        const r = await this.$http.post('/marketing/agents-config/providers/models', {
+          base_url: this.providerForm.base_url,
+          api_key: this.providerForm.api_key || undefined,
+          provider_id: this.editingProviderId || undefined,
+        })
+        this.providerModelOptions = r.data.models || []
+        if (!this.providerForm.default_model && this.providerModelOptions.length) {
+          this.providerForm.default_model = this.providerModelOptions[0]
+        }
+        this.providerTestResult = this.providerModelOptions.length
+          ? 'Modelos cargados: ' + this.providerModelOptions.length
+          : 'La API respondió, pero no devolvió modelos.'
+        this.providerTestOk = true
+      } catch (e) {
+        this.providerTestResult = (e.response && e.response.data && e.response.data.message) || 'No se pudieron cargar los modelos.'
+        this.providerTestOk = false
+      } finally {
+        this.providerModelsLoading = false
+      }
+    },
+
+    async testDraftProvider() {
+      this.providerTesting = true
+      this.providerTestResult = ''
+      try {
+        const r = await this.$http.post('/marketing/agents-config/providers/test', {
+          base_url: this.providerForm.base_url,
+          api_key: this.providerForm.api_key || undefined,
+          capability: this.providerForm.capability,
+          model: this.providerForm.default_model,
+          provider_id: this.editingProviderId || undefined,
+        })
+        this.providerTestResult = r.data.message + (r.data.response ? ' Respuesta: ' + r.data.response : '')
+        this.providerTestOk = true
+      } catch (e) {
+        this.providerTestResult = (e.response && e.response.data && e.response.data.message) || 'Falló la prueba del proveedor.'
+        this.providerTestOk = false
+      } finally {
+        this.providerTesting = false
+      }
+    },
+
+    async testSelectedTextProvider(agentKey) {
+      const provider = this.selectedTextProvider(agentKey)
+      if (!provider || !provider.is_configured) return
+
+      const model = this.forms[agentKey].text_model_override || provider.default_model
+      this.$set(this.providerChecks, agentKey, { loading: true, result: '', ok: false })
+      try {
+        const r = await this.$http.post('/marketing/agents-config/providers/test', {
+          provider_id: provider.id,
+          capability: 'text',
+          model: model,
+        })
+        this.$set(this.providerChecks, agentKey, {
+          loading: false,
+          result: r.data.message + (r.data.response ? ' Respuesta: ' + r.data.response : ''),
+          ok: true,
+        })
+      } catch (e) {
+        const message = (e.response && e.response.data && e.response.data.message) || 'Falló la prueba del proveedor.'
+        this.$set(this.providerChecks, agentKey, { loading: false, result: message, ok: false })
+      }
+    },
+
+    clearProviderCheck(agentKey) {
+      if (this.providerChecks[agentKey]) {
+        this.$set(this.providerChecks, agentKey, { loading: false, result: '', ok: false })
+      }
+    },
+
+    async saveProvider() {
+      this.providerSaving = true
+      try {
+        const payload = JSON.parse(JSON.stringify(this.providerForm))
+        payload.supported_models = this.providerModelOptions.slice()
+        const url = this.editingProviderId
+          ? '/marketing/agents-config/providers/' + this.editingProviderId
+          : '/marketing/agents-config/providers'
+        const r = this.editingProviderId
+          ? await this.$http.put(url, payload)
+          : await this.$http.post(url, payload)
+        const provider = r.data.provider
+        const index = this.providers.findIndex(item => item.id === provider.id)
+        if (index >= 0) this.$set(this.providers, index, provider)
+        else this.providers.push(provider)
+        this.providerDialog = false
+        this.$message.success('Proveedor guardado. Asígnalo al agente correspondiente para empezar a usarlo.')
+      } catch (e) {
+        const data = e.response && e.response.data
+        const errors = data && data.errors
+        const firstError = errors ? Object.values(errors)[0][0] : null
+        this.$message.error(firstError || (data && data.message) || 'No se pudo guardar el proveedor.')
+      } finally {
+        this.providerSaving = false
+      }
+    },
+
     onImageProviderChange(agentKey) {
       // Limpiar overrides incompatibles con el nuevo provider
       const provider = this.selectedImageProvider(agentKey)
@@ -516,6 +777,18 @@ export default {
   font-size: 11px;
   margin-top: 2px;
   line-height: 1.3;
+}
+.provider-test-row {
+  margin: 0 0 16px;
+}
+.provider-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.provider-dialog-actions {
+  margin-bottom: 12px;
 }
 .text-muted {
   color: #909399;

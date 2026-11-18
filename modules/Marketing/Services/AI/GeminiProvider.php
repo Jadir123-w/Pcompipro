@@ -81,7 +81,7 @@ class GeminiProvider implements AIProviderInterface
         $this->client = new Client([
             // 90s alcanza para respuestas largas (análisis de patrones, etc.).
             // Con 30s se cortaba el GridPatternAnalyzer al procesar 100+ ítems.
-            'timeout'         => 90,
+            'timeout'         => 200,
             'connect_timeout' => 10,
         ]);
     }
