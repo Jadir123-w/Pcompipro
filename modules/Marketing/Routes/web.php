@@ -596,7 +596,12 @@ Route::middleware(['auth', 'redirect.module', 'locked.tenant', 'check.email.veri
         // Catálogo de providers
         Route::get('/agents-config/providers', [\Modules\Marketing\Http\Controllers\Api\AgentConfigController::class, 'listProviders'])
             ->name('agents-config.providers.list');
-
+        Route::post('/agents-config/providers', [\Modules\Marketing\Http\Controllers\Api\AgentConfigController::class, 'storeProvider'])
+            ->name('agents-config.providers.store');
+        Route::post('/agents-config/providers/models', [\Modules\Marketing\Http\Controllers\Api\AgentConfigController::class, 'listProviderModels'])
+            ->name('agents-config.providers.models');
+        Route::post('/agents-config/providers/test', [\Modules\Marketing\Http\Controllers\Api\AgentConfigController::class, 'testProvider'])
+            ->name('agents-config.providers.test');
         Route::put('/agents-config/providers/{id}', [\Modules\Marketing\Http\Controllers\Api\AgentConfigController::class, 'updateProvider'])
             ->name('agents-config.providers.update');
 

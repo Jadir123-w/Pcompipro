@@ -3,6 +3,8 @@
 namespace Modules\Marketing\Models;
 
 use App\Models\Tenant\ModelTenant;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Log;
 
 /**
  * AiProvider — Catálogo de proveedores de IA disponibles.
@@ -47,6 +49,9 @@ class AiProvider extends ModelTenant
     */
     protected $fillable = [
         'provider_key',
+        'adapter_type',
+        'api_key_encrypted',
+        'max_tokens_limit',
         'capability',
         'display_name',
         'description',
@@ -71,6 +76,10 @@ class AiProvider extends ModelTenant
         'enabled'                 => 'boolean',
         'max_tokens_default'      => 'integer',
         'sort_order'              => 'integer',
+    ];
+
+    protected $hidden = [
+        'api_key_encrypted',
     ];
 
     /*
@@ -159,6 +168,18 @@ class AiProvider extends ModelTenant
      */
     public function getApiKey()
     {
+        if (!empty($this->api_key_encrypted)) {
+            try {
+                return Crypt::decryptString($this->api_key_encrypted);
+            } catch (\Exception $e) {
+                Log::warning('AiProvider: no se pudo descifrar la API key', [
+                    'provider_id' => $this->id,
+                    'provider_key' => $this->provider_key,
+                ]);
+                return null;
+            }
+        }
+
         if (empty($this->api_key_env_var)) {
             return null;
         }
@@ -183,6 +204,10 @@ class AiProvider extends ModelTenant
     {
         if (empty($this->getApiKey())) {
             return false;
+        }
+
+        if ($this->adapter_type === 'openai_compatible') {
+            return !empty($this->base_url) && !empty($this->default_model);
         }
 
         return $this->provider_key !== 'cloudflare'

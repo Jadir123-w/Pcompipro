@@ -58,9 +58,11 @@ class AgentConfigService
                 'source'      => 'db',
                 'agent_key'   => $agentKey,
                 'provider'    => $provider->provider_key,
+                'adapter_type' => $provider->adapter_type,
                 'model'       => $cfg->resolvedTextModel(),
                 'temperature' => $cfg->text_temperature !== null ? (float) $cfg->text_temperature : 0.7,
                 'max_tokens'  => $cfg->resolvedTextMaxTokens() ?: 1024,
+                'max_tokens_limit' => $provider->max_tokens_limit,
                 'base_url'    => $provider->base_url,
                 'api_key'     => $provider->getApiKey(),
             ];
@@ -94,6 +96,7 @@ class AgentConfigService
                 'source'              => 'db',
                 'agent_key'           => $agentKey,
                 'provider'            => $provider->provider_key,
+                'adapter_type'        => $provider->adapter_type,
                 'model'               => $cfg->resolvedImageModel(),
                 'quality'             => $cfg->image_quality,
                 'format'              => $cfg->image_format ?: 'png',
@@ -168,7 +171,13 @@ class AgentConfigService
             'model'      => $cfg['model'],
             'base_url'   => $cfg['base_url'],
             'max_tokens' => $cfg['max_tokens'],
+            'max_tokens_limit' => isset($cfg['max_tokens_limit']) ? $cfg['max_tokens_limit'] : null,
+            'provider_key' => $cfg['provider'],
         ];
+
+        if (isset($cfg['adapter_type']) && $cfg['adapter_type'] === 'openai_compatible') {
+            return new \Modules\Marketing\Services\AI\OpenAICompatibleTextProvider($providerCfg);
+        }
 
         switch ($cfg['provider']) {
             case 'claude':
@@ -203,7 +212,12 @@ class AgentConfigService
             'base_url'     => $cfg['base_url'],
             'aspect_ratio' => $cfg['aspect_ratio'],
             'account_id'   => config('marketing.chatbot.ai.cloudflare.account_id'),
+            'provider_key' => $cfg['provider'],
         ];
+
+        if (isset($cfg['adapter_type']) && $cfg['adapter_type'] === 'openai_compatible') {
+            return new \Modules\Marketing\Services\Image\OpenAICompatibleImageProvider($providerCfg);
+        }
 
         switch ($cfg['provider']) {
             case 'dalle3':
